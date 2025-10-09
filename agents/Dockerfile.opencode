@@ -1,12 +1,23 @@
+FROM golang:1.24-bookworm AS builder
+
+WORKDIR /build
+COPY go.mod go.sum ./
+COPY cmd ./cmd
+COPY tasks ./tasks
+RUN go build -o /bin/latasks ./cmd/latasks
+
 FROM debian:bookworm-slim
 
 # Install packages and clean up temporary files
-RUN apt update && apt install -y curl zip && apt clean && rm -rf /var/lib/apt/lists/*
+RUN apt update && apt install -y curl zip sqlite3 && apt clean && rm -rf /var/lib/apt/lists/*
+
+# Copy the latasks binary from builder
+COPY --from=builder /bin/latasks /bin/latasks
 
 # Create a non-root user and group
 RUN adduser --disabled-password --gecos "" opencode
-RUN mkdir -p /home/opencode/.config/opencode /home/opencode/.local/share/opencode /src
-RUN chown -R opencode:opencode /home/opencode
+RUN mkdir -p /home/opencode/.config/opencode /home/opencode/.local/share/opencode /src /state
+RUN chown -R opencode:opencode /home/opencode /state
 
 # Switch to the non-root user
 USER opencode
@@ -17,4 +28,5 @@ RUN curl -fsSL https://opencode.ai/install | bash
 
 WORKDIR /src
 
-ENTRYPOINT ["/home/opencode/.opencode/bin/opencode"]
+#ENTRYPOINT ["/home/opencode/.opencode/bin/opencode"]
+CMD ["/bin/bash"]

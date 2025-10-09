@@ -14,7 +14,7 @@ Available commands:
 - `latasks update <task_id> <status>`: Update the status of a task.
 - `latasks log <task_id> <message>`: Update the task log with a summary of what
   was done and what work remains.
-- `latasks review <message> <attachment>`: Send a review request and move the
+- `latasks review <task_id> <message> <attachment>`: Send a review request and move the
   task to "in-review". This should be the last update to the task in the
   session. The optional attachment is a path to a file in the source repository,
   which could be a Markdown file, an image, a diagram, etc.
@@ -30,7 +30,10 @@ Task statuses:
 ## Implementation
 
 `latasks` is written in Go which is built and added to the agent container in
-/bin. At runtime the tasks are stored in a SQLite database, which is assumed to
+/bin. The entrypoint is cmd/latasks/main.go and the logic is in a new package
+tasks/ in this repository.
+
+At runtime the tasks are stored in a SQLite database, which is assumed to
 be mounted in the container as /state/tasks.db. The database schema is as
 follows:
 
@@ -101,3 +104,26 @@ CREATE TABLE work_queue (
   status is updated to `completed`.
 - Parent tasks should not be marked as `completed` until all child tasks are
   completed (enforced by the host process or within the Go application logic).
+
+## Development Tasks
+
+**High Priority:**
+- ✅ T1: Create Go project structure and main.go with CLI setup
+- ✅ T2: Implement SQLite database connection and schema initialization
+- ✅ T3: Implement 'latasks add' command to create new tasks
+- ✅ T6: Implement 'latasks update' command to change task status
+- ✅ T8: Implement 'latasks next' command with proper queue ordering
+- ✅ T12: Add validation to prevent completing parent tasks before child tasks
+
+**Medium Priority:**
+- ✅ T4: Implement 'latasks list' command to display all tasks
+- ✅ T5: Implement 'latasks view' command to show task details
+- ✅ T7: Implement 'latasks queue' command to add tasks to work queue
+- ✅ T9: Implement 'latasks log' command to add task logs
+- ✅ T10: Implement 'latasks review' command for review requests
+- ✅ T13: Update agents/Dockerfile.opencode to build and install latasks binary
+- ✅ T14: Add comprehensive error handling and user-friendly messages
+
+**Low Priority:**
+- ✅ T11: Implement 'latasks delete' command to remove tasks
+- T15: Write tests for all command functionality
