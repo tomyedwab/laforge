@@ -2,6 +2,7 @@ PHONY: build test test-all test-tasks test-cli test-integration test-coverage te
 
 build:
 	docker build -t laforge-agent .
+	docker build -t laforge-self-agent -f Dockerfile.laforge .
 
 run-opencode:
 	mkdir -p /tmp/laforge/log /tmp/laforge/state
@@ -11,9 +12,9 @@ run-opencode:
 		-v /tmp/laforge/log:/home/laforge/.local/share/opencode/log \
 		-v /tmp/laforge/state:/state \
 		-v $(PWD):/src \
-		laforge-agent
+		laforge-self-agent
 
-# opencode -m moonshot/kimi-k2-0905-preview run "What can you do?"
+# opencode -m moonshot/kimi-k2-0905-preview run "Work on the next task."
 
 # Test targets
 test: test-all
