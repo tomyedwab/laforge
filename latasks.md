@@ -126,4 +126,4 @@ CREATE TABLE work_queue (
 
 **Low Priority:**
 - ✅ T11: Implement 'latasks delete' command to remove tasks
-- T15: Write tests for all command functionality
+- ✅ T15: Write tests for all command functionality
