@@ -1,17 +1,19 @@
 PHONY: build test test-all test-tasks test-cli test-integration test-coverage test-coverage-html test-verbose clean test-pattern test-bench test-race test-quick help ci-test
 
 build:
-	docker build -t opencode-agent -f agents/Dockerfile.opencode .
+	docker build -t laforge-agent .
 
-run:
+run-opencode:
 	mkdir -p /tmp/opencode-agent/log /tmp/opencode-agent/state
 	docker run -it --rm \
-		-v $(HOME)/.config/opencode:/home/opencode/.config/opencode \
-		-v $(HOME)/.local/share/opencode/auth.json:/home/opencode/.local/share/opencode/auth.json \
-		-v /tmp/opencode-agent/log:/home/opencode/.local/share/opencode/log \
+		-v $(HOME)/.config/opencode:/home/laforge/.config/opencode \
+		-v $(HOME)/.local/share/opencode/auth.json:/home/laforge/.local/share/opencode/auth.json \
+		-v /tmp/opencode-agent/log:/home/laforge/.local/share/opencode/log \
 		-v /tmp/opencode-agent/state:/state \
 		-v $(PWD):/src \
-		opencode-agent
+		laforge-agent
+
+# -m moonshot/kimi-k2-0905-preview run "What can you do?"
 
 # Test targets
 test: test-all
@@ -103,5 +105,3 @@ help:
 	@echo "  ci-test            - Run CI-friendly tests with coverage"
 	@echo "  clean              - Clean test artifacts"
 	@echo "  help               - Show this help message"
-
-# -m moonshot/kimi-k2-0905-preview run "What can you do?"

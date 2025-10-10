@@ -15,13 +15,13 @@ RUN apt update && apt install -y curl zip sqlite3 && apt clean && rm -rf /var/li
 COPY --from=builder /bin/latasks /bin/latasks
 
 # Create a non-root user and group
-RUN adduser --disabled-password --gecos "" opencode
-RUN mkdir -p /home/opencode/.config/opencode /home/opencode/.local/share/opencode /src /state
-RUN chown -R opencode:opencode /home/opencode /state
+RUN adduser --disabled-password --gecos "" laforge
+RUN mkdir -p /home/laforge/.config/opencode /home/laforge/.local/share/opencode /src /state
+RUN chown -R laforge:laforge /home/laforge /state
 
 # Switch to the non-root user
-USER opencode
-WORKDIR /home/opencode
+USER laforge
+WORKDIR /home/laforge
 
 # Install opencode
 RUN curl -fsSL https://opencode.ai/install | bash
@@ -29,4 +29,3 @@ RUN curl -fsSL https://opencode.ai/install | bash
 WORKDIR /src
 
 #ENTRYPOINT ["/home/opencode/.opencode/bin/opencode"]
-CMD ["/bin/bash"]
