@@ -1,4 +1,4 @@
-LaForge: A long-running collaborative coding agent
+# LaForge: A long-running collaborative coding agent
 
 ## Background
 
