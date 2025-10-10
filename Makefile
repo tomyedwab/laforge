@@ -4,16 +4,16 @@ build:
 	docker build -t laforge-agent .
 
 run-opencode:
-	mkdir -p /tmp/opencode-agent/log /tmp/opencode-agent/state
+	mkdir -p /tmp/laforge/log /tmp/laforge/state
 	docker run -it --rm \
 		-v $(HOME)/.config/opencode:/home/laforge/.config/opencode \
 		-v $(HOME)/.local/share/opencode/auth.json:/home/laforge/.local/share/opencode/auth.json \
-		-v /tmp/opencode-agent/log:/home/laforge/.local/share/opencode/log \
-		-v /tmp/opencode-agent/state:/state \
+		-v /tmp/laforge/log:/home/laforge/.local/share/opencode/log \
+		-v /tmp/laforge/state:/state \
 		-v $(PWD):/src \
 		laforge-agent
 
-# -m moonshot/kimi-k2-0905-preview run "What can you do?"
+# opencode -m moonshot/kimi-k2-0905-preview run "What can you do?"
 
 # Test targets
 test: test-all

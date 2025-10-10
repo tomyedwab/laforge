@@ -53,9 +53,10 @@ Each step runs as follows:
    interrupted.
 
 LaForge is implemented in Go, including the main executable that handles the
-main loop as well as the specialized tools for managing tasks and artifacts.
+main loop and provides the API server (used by the web UI) as well as the
+specialized tools for managing tasks and artifacts.
 
-The LaForge UI is a native Android application that provides a user-friendly
+The LaForge UI is a web application that provides a user-friendly
 interface for interacting with the LaForge agent. The most important features of
 this UI are:
 - Viewing task progress in real-time
