@@ -17,7 +17,8 @@ Every time I ask you to run you will follow these steps:
 7. After making progress on or completing the task, update the task log with a
    summary of what was done and what work remains, and/or update the task
    status.
-8. Once the task is updated, you can stop work immediately.
+8. Once the task is updated, clean up any temporary files (e.g., build
+   artifacts, logs) and write a commit message in COMMIT.md.
 
 ## Task management
 
