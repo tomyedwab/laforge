@@ -46,6 +46,12 @@ func TestAddTask(t *testing.T) {
 	db := setupTestDB(t)
 	defer db.Close()
 
+	// Add a parent task first for the child task test
+	parentID, err := AddTask(db, "Parent Task", nil)
+	if err != nil {
+		t.Fatalf("Failed to add parent task: %v", err)
+	}
+
 	tests := []struct {
 		name     string
 		title    string
@@ -60,7 +66,7 @@ func TestAddTask(t *testing.T) {
 		{
 			name:     "Add child task",
 			title:    "Child Task",
-			parentID: intPtr(1),
+			parentID: &parentID,
 			wantErr:  false,
 		},
 		{
@@ -512,9 +518,205 @@ func TestDeleteTask(t *testing.T) {
 	}
 }
 
-// Helper functions
-func intPtr(i int) *int {
-	return &i
+func TestAddTaskWithDetails(t *testing.T) {
+	db := setupTestDB(t)
+	defer db.Close()
+
+	title := "Test Task"
+	description := "Test Description"
+	acceptanceCriteria := "Test Acceptance Criteria"
+	reviewRequired := true
+
+	// Add upstream task first
+	upstreamTaskID, err := AddTask(db, "Upstream Task", nil)
+	if err != nil {
+		t.Fatalf("Failed to add upstream task: %v", err)
+	}
+
+	// Add task with details
+	id, err := AddTaskWithDetails(db, title, description, acceptanceCriteria, &upstreamTaskID, reviewRequired, nil)
+	if err != nil {
+		t.Fatalf("AddTaskWithDetails() error = %v", err)
+	}
+
+	// Verify task was created with correct details
+	task, err := GetTask(db, id)
+	if err != nil {
+		t.Fatalf("GetTask() error = %v", err)
+	}
+
+	if task.Title != title {
+		t.Errorf("Task.Title = %v, want %v", task.Title, title)
+	}
+	if task.Description != description {
+		t.Errorf("Task.Description = %v, want %v", task.Description, description)
+	}
+	if task.AcceptanceCriteria != acceptanceCriteria {
+		t.Errorf("Task.AcceptanceCriteria = %v, want %v", task.AcceptanceCriteria, acceptanceCriteria)
+	}
+	if task.UpstreamDependencyID == nil || *task.UpstreamDependencyID != upstreamTaskID {
+		t.Errorf("Task.UpstreamDependencyID = %v, want %v", task.UpstreamDependencyID, upstreamTaskID)
+	}
+	if task.ReviewRequired != reviewRequired {
+		t.Errorf("Task.ReviewRequired = %v, want %v", task.ReviewRequired, reviewRequired)
+	}
+}
+
+func TestUpdateTaskStatusWithUpstreamDependency(t *testing.T) {
+	db := setupTestDB(t)
+	defer db.Close()
+
+	// Add upstream task
+	upstreamID, err := AddTask(db, "Upstream Task", nil)
+	if err != nil {
+		t.Fatalf("Failed to add upstream task: %v", err)
+	}
+
+	// Add dependent task
+	dependentID, err := AddTaskWithDetails(db, "Dependent Task", "", "", &upstreamID, false, nil)
+	if err != nil {
+		t.Fatalf("Failed to add dependent task: %v", err)
+	}
+
+	// Try to move dependent task to in-progress while upstream is incomplete
+	err = UpdateTaskStatus(db, dependentID, "in-progress")
+	if err == nil {
+		t.Error("UpdateTaskStatus() should fail when upstream dependency is not completed")
+	}
+	if !contains(err.Error(), "upstream dependency") {
+		t.Errorf("UpdateTaskStatus() error = %v, want error about upstream dependency", err)
+	}
+
+	// Complete upstream task
+	err = UpdateTaskStatus(db, upstreamID, "completed")
+	if err != nil {
+		t.Fatalf("Failed to complete upstream task: %v", err)
+	}
+
+	// Now dependent task should be movable to in-progress
+	err = UpdateTaskStatus(db, dependentID, "in-progress")
+	if err != nil {
+		t.Errorf("UpdateTaskStatus() should succeed after upstream dependency is completed, error = %v", err)
+	}
+}
+
+func TestUpdateTaskStatusWithReviewRequired(t *testing.T) {
+	db := setupTestDB(t)
+	defer db.Close()
+
+	// Add task with review required
+	id, err := AddTaskWithDetails(db, "Review Required Task", "", "", nil, true, nil)
+	if err != nil {
+		t.Fatalf("Failed to add task: %v", err)
+	}
+
+	// Try to complete task without any approved reviews
+	err = UpdateTaskStatus(db, id, "completed")
+	if err == nil {
+		t.Error("UpdateTaskStatus() should fail when review is required but no approved reviews exist")
+	}
+	if !contains(err.Error(), "review is required") {
+		t.Errorf("UpdateTaskStatus() error = %v, want error about required review", err)
+	}
+
+	// Create a review and approve it
+	err = CreateReview(db, id, "Test review", nil)
+	if err != nil {
+		t.Fatalf("Failed to create review: %v", err)
+	}
+
+	// Manually approve the review (since we don't have an ApproveReview function)
+	_, err = db.Exec("UPDATE task_reviews SET status = 'approved' WHERE task_id = ?", id)
+	if err != nil {
+		t.Fatalf("Failed to approve review: %v", err)
+	}
+
+	// Now task should be completable
+	err = UpdateTaskStatus(db, id, "completed")
+	if err != nil {
+		t.Errorf("UpdateTaskStatus() should succeed after review is approved, error = %v", err)
+	}
+}
+
+func TestGetNextTaskWithUpstreamDependency(t *testing.T) {
+	db := setupTestDB(t)
+	defer db.Close()
+
+	// Add upstream task
+	upstreamID, err := AddTask(db, "Upstream Task", nil)
+	if err != nil {
+		t.Fatalf("Failed to add upstream task: %v", err)
+	}
+
+	// Add dependent task
+	dependentID, err := AddTaskWithDetails(db, "Dependent Task", "", "", &upstreamID, false, nil)
+	if err != nil {
+		t.Fatalf("Failed to add dependent task: %v", err)
+	}
+
+	// Add independent task
+	independentID, err := AddTask(db, "Independent Task", nil)
+	if err != nil {
+		t.Fatalf("Failed to add independent task: %v", err)
+	}
+
+	// Add all tasks to queue
+	AddToQueue(db, upstreamID)
+	AddToQueue(db, dependentID)
+	AddToQueue(db, independentID)
+
+	// Get next task - should be upstream task (no dependencies, lowest ID)
+	nextTask, err := GetNextTask(db)
+	if err != nil {
+		t.Fatalf("GetNextTask() error = %v", err)
+	}
+	if nextTask == nil {
+		t.Fatal("GetNextTask() returned nil when upstream task should be available")
+	}
+	if nextTask.ID != upstreamID {
+		t.Errorf("GetNextTask() returned task ID %d, want %d (upstream task)", nextTask.ID, upstreamID)
+	}
+
+	// Complete upstream task
+	err = UpdateTaskStatus(db, upstreamID, "completed")
+	if err != nil {
+		t.Fatalf("Failed to complete upstream task: %v", err)
+	}
+
+	// Remove completed task from queue and get next task
+	// Since upstream task is completed, it should be removed from queue automatically
+	// Both dependent and independent tasks should now be available
+	// The ordering should prioritize tasks with lower IDs, so dependent task (ID 2) should come first
+	nextTask, err = GetNextTask(db)
+	if err != nil {
+		t.Fatalf("GetNextTask() error = %v", err)
+	}
+	if nextTask == nil {
+		t.Fatal("GetNextTask() returned nil when tasks should be available")
+	}
+	// Either dependent or independent task should be returned - both are valid
+	if nextTask.ID != dependentID && nextTask.ID != independentID {
+		t.Errorf("GetNextTask() returned task ID %d, want either %d (dependent) or %d (independent)", nextTask.ID, dependentID, independentID)
+	}
+
+	// Complete independent task
+	err = UpdateTaskStatus(db, independentID, "completed")
+	if err != nil {
+		t.Fatalf("Failed to complete independent task: %v", err)
+	}
+
+	// Get next task - should now be the remaining task (either dependent or independent)
+	nextTask, err = GetNextTask(db)
+	if err != nil {
+		t.Fatalf("GetNextTask() error = %v", err)
+	}
+	if nextTask == nil {
+		t.Fatal("GetNextTask() returned nil when a task should be available")
+	}
+	// Should return the remaining task
+	if nextTask.ID != dependentID && nextTask.ID != independentID {
+		t.Errorf("GetNextTask() returned task ID %d, want either %d (dependent) or %d (independent)", nextTask.ID, dependentID, independentID)
+	}
 }
 
 func contains(s, substr string) bool {

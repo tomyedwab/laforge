@@ -47,11 +47,16 @@ func createTestSchema(db *sql.DB) error {
 	CREATE TABLE IF NOT EXISTS tasks (
 		id INTEGER PRIMARY KEY AUTOINCREMENT,
 		title TEXT NOT NULL,
+		description TEXT DEFAULT '',
+		acceptance_criteria TEXT DEFAULT '',
+		upstream_dependency_id INTEGER,
+		review_required BOOLEAN DEFAULT FALSE,
 		parent_id INTEGER,
 		status TEXT NOT NULL DEFAULT 'todo',
 		created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
 		updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
 		FOREIGN KEY (parent_id) REFERENCES tasks(id) ON DELETE CASCADE,
+		FOREIGN KEY (upstream_dependency_id) REFERENCES tasks(id) ON DELETE SET NULL,
 		CHECK (status IN ('todo', 'in-progress', 'in-review', 'completed'))
 	);
 

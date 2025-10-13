@@ -3,7 +3,7 @@ FROM laforge-agent
 USER root
 
 # Development packages and the Go environment
-RUN apt update && apt install -y make wget && apt clean && rm -rf /var/lib/apt/lists/*
+RUN apt update && apt install -y make wget gcc && apt clean && rm -rf /var/lib/apt/lists/*
 RUN wget -O go1.25.2.linux-amd64.tar.gz https://go.dev/dl/go1.25.2.linux-amd64.tar.gz && tar -C /usr/local -xzf go1.25.2.linux-amd64.tar.gz
 
 ENV PATH="/usr/local/go/bin:$PATH"

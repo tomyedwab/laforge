@@ -7,7 +7,7 @@ echo "=== latasks Integration Test ==="
 echo
 
 # Set up test database
-export TEST_DB=":memory:"
+export TASKS_DB_PATH="./integration-test.db"
 
 # Build the latasks binary
 echo "Building latasks..."

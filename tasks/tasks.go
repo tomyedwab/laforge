@@ -3,18 +3,23 @@ package tasks
 import (
 	"database/sql"
 	"fmt"
+	"os"
 	"time"
 
 	_ "github.com/mattn/go-sqlite3"
 )
 
 type Task struct {
-	ID        int
-	Title     string
-	ParentID  *int
-	Status    string
-	CreatedAt time.Time
-	UpdatedAt time.Time
+	ID                   int
+	Title                string
+	Description          string
+	AcceptanceCriteria   string
+	UpstreamDependencyID *int
+	ReviewRequired       bool
+	ParentID             *int
+	Status               string
+	CreatedAt            time.Time
+	UpdatedAt            time.Time
 }
 
 type TaskLog struct {
@@ -36,7 +41,13 @@ type TaskReview struct {
 }
 
 func InitDB() (*sql.DB, error) {
-	db, err := sql.Open("sqlite3", "/state/tasks.db")
+	// Try to use environment variable for database path, fallback to default
+	dbPath := os.Getenv("TASKS_DB_PATH")
+	if dbPath == "" {
+		dbPath = "/state/tasks.db"
+	}
+
+	db, err := sql.Open("sqlite3", dbPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to open database: %w", err)
 	}
@@ -58,11 +69,16 @@ func createSchema(db *sql.DB) error {
 	CREATE TABLE IF NOT EXISTS tasks (
 		id INTEGER PRIMARY KEY AUTOINCREMENT,
 		title TEXT NOT NULL,
+		description TEXT DEFAULT '',
+		acceptance_criteria TEXT DEFAULT '',
+		upstream_dependency_id INTEGER,
+		review_required BOOLEAN DEFAULT FALSE,
 		parent_id INTEGER,
 		status TEXT NOT NULL DEFAULT 'todo',
 		created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
 		updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
 		FOREIGN KEY (parent_id) REFERENCES tasks(id) ON DELETE CASCADE,
+		FOREIGN KEY (upstream_dependency_id) REFERENCES tasks(id) ON DELETE SET NULL,
 		CHECK (status IN ('todo', 'in-progress', 'in-review', 'completed'))
 	);
 
@@ -111,10 +127,25 @@ func AddTask(db *sql.DB, title string, parentID *int) (int, error) {
 	return int(id), nil
 }
 
+func AddTaskWithDetails(db *sql.DB, title string, description string, acceptanceCriteria string, upstreamDependencyID *int, reviewRequired bool, parentID *int) (int, error) {
+	result, err := db.Exec("INSERT INTO tasks (title, description, acceptance_criteria, upstream_dependency_id, review_required, parent_id) VALUES (?, ?, ?, ?, ?, ?)",
+		title, description, acceptanceCriteria, upstreamDependencyID, reviewRequired, parentID)
+	if err != nil {
+		return 0, fmt.Errorf("failed to insert task: %w", err)
+	}
+
+	id, err := result.LastInsertId()
+	if err != nil {
+		return 0, fmt.Errorf("failed to get last insert id: %w", err)
+	}
+
+	return int(id), nil
+}
+
 func GetTask(db *sql.DB, taskID int) (*Task, error) {
 	var task Task
-	err := db.QueryRow("SELECT id, title, parent_id, status, created_at, updated_at FROM tasks WHERE id = ?", taskID).
-		Scan(&task.ID, &task.Title, &task.ParentID, &task.Status, &task.CreatedAt, &task.UpdatedAt)
+	err := db.QueryRow("SELECT id, title, description, acceptance_criteria, upstream_dependency_id, review_required, parent_id, status, created_at, updated_at FROM tasks WHERE id = ?", taskID).
+		Scan(&task.ID, &task.Title, &task.Description, &task.AcceptanceCriteria, &task.UpstreamDependencyID, &task.ReviewRequired, &task.ParentID, &task.Status, &task.CreatedAt, &task.UpdatedAt)
 
 	if err == sql.ErrNoRows {
 		return nil, nil
@@ -127,7 +158,7 @@ func GetTask(db *sql.DB, taskID int) (*Task, error) {
 }
 
 func ListTasks(db *sql.DB) ([]Task, error) {
-	rows, err := db.Query("SELECT id, title, parent_id, status, created_at, updated_at FROM tasks ORDER BY id")
+	rows, err := db.Query("SELECT id, title, description, acceptance_criteria, upstream_dependency_id, review_required, parent_id, status, created_at, updated_at FROM tasks ORDER BY id")
 	if err != nil {
 		return nil, fmt.Errorf("failed to query tasks: %w", err)
 	}
@@ -136,7 +167,7 @@ func ListTasks(db *sql.DB) ([]Task, error) {
 	var tasks []Task
 	for rows.Next() {
 		var task Task
-		if err := rows.Scan(&task.ID, &task.Title, &task.ParentID, &task.Status, &task.CreatedAt, &task.UpdatedAt); err != nil {
+		if err := rows.Scan(&task.ID, &task.Title, &task.Description, &task.AcceptanceCriteria, &task.UpstreamDependencyID, &task.ReviewRequired, &task.ParentID, &task.Status, &task.CreatedAt, &task.UpdatedAt); err != nil {
 			return nil, fmt.Errorf("failed to scan task: %w", err)
 		}
 		tasks = append(tasks, task)
@@ -155,6 +186,29 @@ func UpdateTaskStatus(db *sql.DB, taskID int, status string) error {
 
 	if !validStatuses[status] {
 		return fmt.Errorf("invalid status: %s", status)
+	}
+
+	// Get the current task to check its properties
+	task, err := GetTask(db, taskID)
+	if err != nil {
+		return fmt.Errorf("failed to get task: %w", err)
+	}
+	if task == nil {
+		return fmt.Errorf("task not found: T%d", taskID)
+	}
+
+	// Check upstream dependency for in-progress and completed statuses
+	if status == "in-progress" || status == "completed" {
+		if task.UpstreamDependencyID != nil {
+			var upstreamStatus string
+			err := db.QueryRow("SELECT status FROM tasks WHERE id = ?", *task.UpstreamDependencyID).Scan(&upstreamStatus)
+			if err != nil {
+				return fmt.Errorf("failed to check upstream dependency: %w", err)
+			}
+			if upstreamStatus != "completed" {
+				return fmt.Errorf("cannot move task T%d to '%s': upstream dependency T%d is not completed", taskID, status, *task.UpstreamDependencyID)
+			}
+		}
 	}
 
 	// Check if task has incomplete child tasks when trying to complete
@@ -177,9 +231,21 @@ func UpdateTaskStatus(db *sql.DB, taskID int, status string) error {
 		if pendingReviews > 0 {
 			return fmt.Errorf("cannot complete task T%d: %d pending reviews exist", taskID, pendingReviews)
 		}
+
+		// Check if review is required but no approved reviews exist
+		if task.ReviewRequired {
+			var approvedReviews int
+			err = db.QueryRow("SELECT COUNT(*) FROM task_reviews WHERE task_id = ? AND status = 'approved'", taskID).Scan(&approvedReviews)
+			if err != nil {
+				return fmt.Errorf("failed to check approved reviews: %w", err)
+			}
+			if approvedReviews == 0 {
+				return fmt.Errorf("cannot complete task T%d: review is required but no approved reviews exist", taskID)
+			}
+		}
 	}
 
-	_, err := db.Exec("UPDATE tasks SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?", status, taskID)
+	_, err = db.Exec("UPDATE tasks SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?", status, taskID)
 	if err != nil {
 		return fmt.Errorf("failed to update task status: %w", err)
 	}
@@ -200,27 +266,53 @@ func AddToQueue(db *sql.DB, taskID int) error {
 }
 
 func GetNextTask(db *sql.DB) (*Task, error) {
+	// First, get all candidate tasks from the queue
 	query := `
-		SELECT t.id, t.title, t.parent_id, t.status, t.created_at, t.updated_at
+		SELECT t.id, t.title, t.description, t.acceptance_criteria, t.upstream_dependency_id, t.review_required, t.parent_id, t.status, t.created_at, t.updated_at
 		FROM tasks t
 		JOIN work_queue w ON t.id = w.task_id
 		WHERE t.status != 'completed'
 		ORDER BY 
 			CASE WHEN t.parent_id IS NULL THEN 1 ELSE 0 END,
-			t.id
-		LIMIT 1`
+			t.id`
 
-	var task Task
-	err := db.QueryRow(query).Scan(&task.ID, &task.Title, &task.ParentID, &task.Status, &task.CreatedAt, &task.UpdatedAt)
-
-	if err == sql.ErrNoRows {
-		return nil, nil
-	}
+	rows, err := db.Query(query)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get next task: %w", err)
 	}
+	defer rows.Close()
 
-	return &task, nil
+	var candidateTasks []Task
+	for rows.Next() {
+		var task Task
+		if err := rows.Scan(&task.ID, &task.Title, &task.Description, &task.AcceptanceCriteria, &task.UpstreamDependencyID, &task.ReviewRequired, &task.ParentID, &task.Status, &task.CreatedAt, &task.UpdatedAt); err != nil {
+			return nil, fmt.Errorf("failed to scan task: %w", err)
+		}
+		candidateTasks = append(candidateTasks, task)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("failed to iterate tasks: %w", err)
+	}
+
+	// Now check upstream dependencies for each candidate task
+	for _, task := range candidateTasks {
+		// Check if upstream dependency is completed
+		if task.UpstreamDependencyID != nil {
+			var upstreamStatus string
+			err := db.QueryRow("SELECT status FROM tasks WHERE id = ?", *task.UpstreamDependencyID).Scan(&upstreamStatus)
+			if err != nil {
+				continue // Skip this task if we can't check upstream dependency
+			}
+			if upstreamStatus != "completed" {
+				continue // Skip this task if upstream dependency is not completed
+			}
+		}
+
+		return &task, nil
+	}
+
+	return nil, nil
 }
 
 func AddTaskLog(db *sql.DB, taskID int, message string) error {
@@ -287,7 +379,7 @@ func GetTaskReviews(db *sql.DB, taskID int) ([]TaskReview, error) {
 }
 
 func GetChildTasks(db *sql.DB, parentID int) ([]Task, error) {
-	rows, err := db.Query("SELECT id, title, parent_id, status, created_at, updated_at FROM tasks WHERE parent_id = ? ORDER BY id", parentID)
+	rows, err := db.Query("SELECT id, title, description, acceptance_criteria, upstream_dependency_id, review_required, parent_id, status, created_at, updated_at FROM tasks WHERE parent_id = ? ORDER BY id", parentID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to query child tasks: %w", err)
 	}
@@ -296,7 +388,7 @@ func GetChildTasks(db *sql.DB, parentID int) ([]Task, error) {
 	var tasks []Task
 	for rows.Next() {
 		var task Task
-		if err := rows.Scan(&task.ID, &task.Title, &task.ParentID, &task.Status, &task.CreatedAt, &task.UpdatedAt); err != nil {
+		if err := rows.Scan(&task.ID, &task.Title, &task.Description, &task.AcceptanceCriteria, &task.UpstreamDependencyID, &task.ReviewRequired, &task.ParentID, &task.Status, &task.CreatedAt, &task.UpdatedAt); err != nil {
 			return nil, fmt.Errorf("failed to scan child task: %w", err)
 		}
 		tasks = append(tasks, task)

@@ -23,6 +23,12 @@ func main() {
 }
 
 func init() {
+	// Add flags to add command
+	addCmd.Flags().String("description", "", "Task description")
+	addCmd.Flags().String("acceptance-criteria", "", "Task acceptance criteria")
+	addCmd.Flags().String("upstream-dependency", "", "Upstream dependency task ID (e.g., T123)")
+	addCmd.Flags().Bool("review-required", false, "Whether review is required before completion")
+
 	rootCmd.AddCommand(nextCmd)
 	rootCmd.AddCommand(addCmd)
 	rootCmd.AddCommand(queueCmd)
@@ -41,6 +47,18 @@ func printTask(task *tasks.Task, db *sql.DB) {
 
 	fmt.Printf("Task T%d: %s\n", task.ID, task.Title)
 	fmt.Printf("Status: %s\n", task.Status)
+	if task.Description != "" {
+		fmt.Printf("Description: %s\n", task.Description)
+	}
+	if task.AcceptanceCriteria != "" {
+		fmt.Printf("Acceptance Criteria: %s\n", task.AcceptanceCriteria)
+	}
+	if task.UpstreamDependencyID != nil {
+		fmt.Printf("Upstream Dependency: T%d\n", *task.UpstreamDependencyID)
+	}
+	if task.ReviewRequired {
+		fmt.Printf("Review Required: Yes\n")
+	}
 	if task.ParentID != nil {
 		fmt.Printf("Parent: T%d\n", *task.ParentID)
 	}
@@ -130,7 +148,29 @@ var addCmd = &cobra.Command{
 			parentID = &pid
 		}
 
-		taskID, err := tasks.AddTask(db, title, parentID)
+		// Get flags for new fields
+		description, _ := cmd.Flags().GetString("description")
+		acceptanceCriteria, _ := cmd.Flags().GetString("acceptance-criteria")
+		upstreamDepStr, _ := cmd.Flags().GetString("upstream-dependency")
+		reviewRequired, _ := cmd.Flags().GetBool("review-required")
+
+		var upstreamDependencyID *int
+		if upstreamDepStr != "" {
+			var upstreamID int
+			if _, err := fmt.Sscanf(upstreamDepStr, "T%d", &upstreamID); err != nil {
+				return fmt.Errorf("invalid upstream_dependency format: %s", upstreamDepStr)
+			}
+			upstreamDependencyID = &upstreamID
+		}
+
+		// Use the appropriate function based on whether we have additional fields
+		var taskID int
+		if description != "" || acceptanceCriteria != "" || upstreamDependencyID != nil || reviewRequired {
+			taskID, err = tasks.AddTaskWithDetails(db, title, description, acceptanceCriteria, upstreamDependencyID, reviewRequired, parentID)
+		} else {
+			taskID, err = tasks.AddTask(db, title, parentID)
+		}
+
 		if err != nil {
 			return fmt.Errorf("failed to add task: %w", err)
 		}
@@ -303,7 +343,20 @@ var listCmd = &cobra.Command{
 			if task.ParentID != nil {
 				fmt.Printf(" (parent: T%d)", *task.ParentID)
 			}
+			if task.UpstreamDependencyID != nil {
+				fmt.Printf(" (depends on: T%d)", *task.UpstreamDependencyID)
+			}
+			if task.ReviewRequired {
+				fmt.Printf(" [review required]")
+			}
 			fmt.Println()
+
+			if task.Description != "" {
+				fmt.Printf("  Description: %s\n", task.Description)
+			}
+			if task.AcceptanceCriteria != "" {
+				fmt.Printf("  Acceptance Criteria: %s\n", task.AcceptanceCriteria)
+			}
 		}
 
 		return nil
