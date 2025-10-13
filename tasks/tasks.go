@@ -310,6 +310,16 @@ func GetNextTask(db *sql.DB) (*Task, error) {
 			}
 		}
 
+		// Check if task has incomplete child tasks (epics should not be worked on until children are done)
+		var incompleteChildren int
+		err := db.QueryRow("SELECT COUNT(*) FROM tasks WHERE parent_id = ? AND status != 'completed'", task.ID).Scan(&incompleteChildren)
+		if err != nil {
+			continue // Skip this task if we can't check child tasks
+		}
+		if incompleteChildren > 0 {
+			continue // Skip this task if it has incomplete child tasks
+		}
+
 		return &task, nil
 	}
 

@@ -310,8 +310,8 @@ func TestGetNextTask(t *testing.T) {
 
 	// No need to add tasks to queue - they are automatically ready for work
 
-	// Get next task - should be task1 (root task, lowest ID)
-	// Root tasks are prioritized over child tasks
+	// Get next task - should be task2 (root task with no children)
+	// task1 is excluded because it has an incomplete child task
 	nextTask, err := GetNextTask(db)
 	if err != nil {
 		t.Fatalf("GetNextTask() error = %v", err)
@@ -319,35 +319,44 @@ func TestGetNextTask(t *testing.T) {
 	if nextTask == nil {
 		t.Fatal("GetNextTask() returned nil")
 	}
-	if nextTask.ID != task1ID {
-		t.Errorf("GetNextTask() returned task ID %d, want %d (root task)", nextTask.ID, task1ID)
-	}
-
-	// Complete child task first (parent cannot be completed with incomplete children)
-	err = UpdateTaskStatus(db, childID, "completed")
-	if err != nil {
-		t.Fatalf("Failed to complete child task: %v", err)
-	}
-
-	// Now complete task1
-	err = UpdateTaskStatus(db, task1ID, "completed")
-	if err != nil {
-		t.Fatalf("Failed to complete task1: %v", err)
-	}
-
-	// Get next task - should be task2 (only remaining root task)
-	nextTask, err = GetNextTask(db)
-	if err != nil {
-		t.Fatalf("GetNextTask() error = %v", err)
-	}
 	if nextTask.ID != task2ID {
-		t.Errorf("GetNextTask() returned task ID %d, want %d", nextTask.ID, task2ID)
+		t.Errorf("GetNextTask() returned task ID %d, want %d (task2 - task1 has incomplete children)", nextTask.ID, task2ID)
 	}
 
 	// Complete task2
 	err = UpdateTaskStatus(db, task2ID, "completed")
 	if err != nil {
 		t.Fatalf("Failed to complete task2: %v", err)
+	}
+
+	// Get next task - should be the child task (task1 still has incomplete children)
+	nextTask, err = GetNextTask(db)
+	if err != nil {
+		t.Fatalf("GetNextTask() error = %v", err)
+	}
+	if nextTask.ID != childID {
+		t.Errorf("GetNextTask() returned task ID %d, want %d (child task)", nextTask.ID, childID)
+	}
+
+	// Complete child task
+	err = UpdateTaskStatus(db, childID, "completed")
+	if err != nil {
+		t.Fatalf("Failed to complete child task: %v", err)
+	}
+
+	// Get next task - should be task1 (now that its child is complete)
+	nextTask, err = GetNextTask(db)
+	if err != nil {
+		t.Fatalf("GetNextTask() error = %v", err)
+	}
+	if nextTask.ID != task1ID {
+		t.Errorf("GetNextTask() returned task ID %d, want %d (task1 - all children complete)", nextTask.ID, task1ID)
+	}
+
+	// Complete task1
+	err = UpdateTaskStatus(db, task1ID, "completed")
+	if err != nil {
+		t.Fatalf("Failed to complete task1: %v", err)
 	}
 
 	// Get next task - should be nil (all tasks completed)
@@ -706,6 +715,110 @@ func TestGetNextTaskWithUpstreamDependency(t *testing.T) {
 	}
 	if nextTask.ID != independentID {
 		t.Errorf("GetNextTask() returned task ID %d, want %d (independent task)", nextTask.ID, independentID)
+	}
+}
+
+func TestGetNextTaskExcludesEpicsWithIncompleteChildren(t *testing.T) {
+	db := setupTestDB(t)
+	defer db.Close()
+
+	// Add an epic (parent task)
+	epicID, err := AddTask(db, "Epic Task", nil)
+	if err != nil {
+		t.Fatalf("Failed to add epic task: %v", err)
+	}
+
+	// Add child tasks to the epic
+	child1ID, err := AddTask(db, "Child Task 1", &epicID)
+	if err != nil {
+		t.Fatalf("Failed to add child task 1: %v", err)
+	}
+
+	child2ID, err := AddTask(db, "Child Task 2", &epicID)
+	if err != nil {
+		t.Fatalf("Failed to add child task 2: %v", err)
+	}
+
+	// Add an independent task (no children)
+	independentID, err := AddTask(db, "Independent Task", nil)
+	if err != nil {
+		t.Fatalf("Failed to add independent task: %v", err)
+	}
+
+	// Get next task - should NOT be the epic (has incomplete children)
+	// Should be the independent task instead
+	nextTask, err := GetNextTask(db)
+	if err != nil {
+		t.Fatalf("GetNextTask() error = %v", err)
+	}
+	if nextTask == nil {
+		t.Fatal("GetNextTask() returned nil when independent task should be available")
+	}
+	if nextTask.ID == epicID {
+		t.Errorf("GetNextTask() returned epic task ID %d, but it should be excluded (has incomplete children)", epicID)
+	}
+	if nextTask.ID != independentID {
+		t.Errorf("GetNextTask() returned task ID %d, want %d (independent task)", nextTask.ID, independentID)
+	}
+
+	// Complete independent task
+	err = UpdateTaskStatus(db, independentID, "completed")
+	if err != nil {
+		t.Fatalf("Failed to complete independent task: %v", err)
+	}
+
+	// Get next task - should be one of the child tasks, not the epic
+	nextTask, err = GetNextTask(db)
+	if err != nil {
+		t.Fatalf("GetNextTask() error = %v", err)
+	}
+	if nextTask == nil {
+		t.Fatal("GetNextTask() returned nil when child tasks should be available")
+	}
+	if nextTask.ID == epicID {
+		t.Errorf("GetNextTask() returned epic task ID %d, but it should be excluded (has incomplete children)", epicID)
+	}
+	if nextTask.ID != child1ID && nextTask.ID != child2ID {
+		t.Errorf("GetNextTask() returned task ID %d, want either child task %d or %d", nextTask.ID, child1ID, child2ID)
+	}
+
+	// Complete first child
+	err = UpdateTaskStatus(db, child1ID, "completed")
+	if err != nil {
+		t.Fatalf("Failed to complete child task 1: %v", err)
+	}
+
+	// Get next task - should be the remaining child task, not the epic
+	nextTask, err = GetNextTask(db)
+	if err != nil {
+		t.Fatalf("GetNextTask() error = %v", err)
+	}
+	if nextTask == nil {
+		t.Fatal("GetNextTask() returned nil when second child task should be available")
+	}
+	if nextTask.ID == epicID {
+		t.Errorf("GetNextTask() returned epic task ID %d, but it should be excluded (still has incomplete children)", epicID)
+	}
+	if nextTask.ID != child2ID {
+		t.Errorf("GetNextTask() returned task ID %d, want %d (second child task)", nextTask.ID, child2ID)
+	}
+
+	// Complete second child
+	err = UpdateTaskStatus(db, child2ID, "completed")
+	if err != nil {
+		t.Fatalf("Failed to complete child task 2: %v", err)
+	}
+
+	// Get next task - now the epic should be available (all children completed)
+	nextTask, err = GetNextTask(db)
+	if err != nil {
+		t.Fatalf("GetNextTask() error = %v", err)
+	}
+	if nextTask == nil {
+		t.Fatal("GetNextTask() returned nil when epic task should be available")
+	}
+	if nextTask.ID != epicID {
+		t.Errorf("GetNextTask() returned task ID %d, want %d (epic task, now that all children are completed)", nextTask.ID, epicID)
 	}
 }
 
