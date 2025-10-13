@@ -3,9 +3,15 @@ package main
 import (
 	"fmt"
 	"os"
+	"os/exec"
+	"strings"
+	"time"
 
 	"github.com/spf13/cobra"
+	"github.com/tomyedwab/laforge/database"
+	"github.com/tomyedwab/laforge/docker"
 	"github.com/tomyedwab/laforge/errors"
+	"github.com/tomyedwab/laforge/git"
 	"github.com/tomyedwab/laforge/projects"
 )
 
@@ -155,11 +161,141 @@ func runStep(cmd *cobra.Command, args []string) error {
 		return errors.NewProjectNotFoundError(projectID)
 	}
 
-	// TODO: Implement the actual step logic using the git, database, and docker packages
-	// This will be implemented when T10 (Implement laforge step command) is worked on
+	// Get project directory
+	projectDir, err := projects.GetProjectDir(projectID)
+	if err != nil {
+		return errors.Wrap(errors.ErrUnknown, err, "failed to get project directory")
+	}
 
-	fmt.Printf("Step command for project '%s' with agent image '%s' and timeout %v\n", projectID, agentImage, timeout)
-	fmt.Println("Step command implementation is in progress...")
+	// Get task database path
+	taskDBPath, err := projects.GetProjectTaskDatabase(projectID)
+	if err != nil {
+		return errors.Wrap(errors.ErrUnknown, err, "failed to get project task database path")
+	}
 
-	return errors.New(errors.ErrUnknown, "step command implementation is not yet complete")
+	fmt.Printf("Starting LaForge step for project '%s'\n", projectID)
+
+	// Step 1: Create temporary git worktree
+	fmt.Println("Creating temporary git worktree...")
+	worktree, err := git.CreateTempWorktree(projectDir, "step")
+	if err != nil {
+		return errors.Wrap(errors.ErrUnknown, err, "failed to create temporary worktree")
+	}
+	defer func() {
+		// Clean up worktree
+		fmt.Println("Cleaning up temporary worktree...")
+		if err := git.RemoveWorktree(worktree); err != nil {
+			fmt.Fprintf(os.Stderr, "Warning: failed to remove worktree: %v\n", err)
+		}
+	}()
+
+	// Step 2: Copy task database for isolation
+	fmt.Println("Copying task database for isolation...")
+	tempDBPath, err := database.CreateTempDatabaseCopy(taskDBPath, "step")
+	if err != nil {
+		return errors.Wrap(errors.ErrUnknown, err, "failed to create temporary database copy")
+	}
+	defer func() {
+		// Clean up temporary database
+		fmt.Println("Cleaning up temporary database...")
+		if err := database.CleanupTempDatabase(tempDBPath); err != nil {
+			fmt.Fprintf(os.Stderr, "Warning: failed to cleanup temporary database: %v\n", err)
+		}
+	}()
+
+	// Step 3: Create Docker client
+	fmt.Println("Initializing Docker client...")
+	dockerClient, err := docker.NewClient()
+	if err != nil {
+		return errors.Wrap(errors.ErrUnknown, err, "failed to create Docker client")
+	}
+	defer dockerClient.Close()
+
+	// Step 4: Launch agent container
+	fmt.Printf("Launching agent container with image '%s'...\n", agentImage)
+	containerConfig := &docker.ContainerConfig{
+		Image:      agentImage,
+		Name:       fmt.Sprintf("laforge-agent-%s-%d", projectID, time.Now().Unix()),
+		WorkDir:    worktree.Path,
+		TaskDBPath: tempDBPath,
+		Environment: map[string]string{
+			"LAFORGE_PROJECT_ID": projectID,
+			"LAFORGE_STEP":       "true",
+		},
+		AutoRemove: true,
+		Timeout:    timeout,
+	}
+
+	// Run the agent container and wait for completion
+	exitCode, logs, err := dockerClient.RunAgentContainer(containerConfig)
+	if err != nil {
+		return errors.Wrap(errors.ErrUnknown, err, "failed to run agent container")
+	}
+
+	fmt.Printf("Agent container completed with exit code: %d\n", exitCode)
+	if logs != "" {
+		fmt.Printf("Container logs:\n%s\n", logs)
+	}
+
+	// Step 5: Check if there are changes to commit
+	fmt.Println("Checking for changes to commit...")
+	hasChanges, err := hasGitChanges(worktree.Path)
+	if err != nil {
+		return errors.Wrap(errors.ErrUnknown, err, "failed to check for git changes")
+	}
+
+	if hasChanges {
+		fmt.Println("Changes detected, committing to git...")
+		if err := commitChanges(worktree.Path, fmt.Sprintf("LaForge step S%d - Automated changes", time.Now().Unix())); err != nil {
+			return errors.Wrap(errors.ErrUnknown, err, "failed to commit changes")
+		}
+		fmt.Println("Changes committed successfully")
+	} else {
+		fmt.Println("No changes to commit")
+	}
+
+	// Step 6: Copy changes back from temporary database to main database
+	fmt.Println("Updating main task database...")
+	if err := database.CopyDatabase(tempDBPath, taskDBPath); err != nil {
+		return errors.Wrap(errors.ErrUnknown, err, "failed to update main task database")
+	}
+
+	fmt.Printf("LaForge step completed successfully for project '%s'\n", projectID)
+	return nil
+}
+
+// hasGitChanges checks if there are uncommitted changes in the git repository
+func hasGitChanges(repoDir string) (bool, error) {
+	cmd := exec.Command("git", "status", "--porcelain")
+	cmd.Dir = repoDir
+	output, err := cmd.Output()
+	if err != nil {
+		return false, fmt.Errorf("failed to check git status: %w", err)
+	}
+
+	// If there's any output, there are changes
+	return len(strings.TrimSpace(string(output))) > 0, nil
+}
+
+// commitChanges commits all changes in the repository with the given message
+func commitChanges(repoDir string, message string) error {
+	// Add all changes
+	cmd := exec.Command("git", "add", ".")
+	cmd.Dir = repoDir
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("failed to add changes: %w", err)
+	}
+
+	// Commit changes
+	cmd = exec.Command("git", "commit", "-m", message)
+	cmd.Dir = repoDir
+	if output, err := cmd.CombinedOutput(); err != nil {
+		// It's okay if there's nothing to commit
+		if strings.Contains(string(output), "nothing to commit") {
+			return nil
+		}
+		return fmt.Errorf("failed to commit changes: %w\nOutput: %s", err, string(output))
+	}
+
+	return nil
 }

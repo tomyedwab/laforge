@@ -15,6 +15,7 @@ run-opencode:
 		laforge-self-agent
 
 # opencode -m moonshot/kimi-k2-0905-preview run "Work on the next task."
+# opencode -m moonshot/kimi-k2-0905-preview run --continue "Clean up any build artifacts and write a commit message to COMMIT.md"
 
 # Test targets
 test: test-all

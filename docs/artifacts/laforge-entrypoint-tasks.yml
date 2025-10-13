@@ -1,0 +1,157 @@
+# LaForge Entrypoint Implementation Tasks
+# This YAML defines the tasks needed to implement the initial laforge entrypoint
+
+tasks:
+  - id: 10
+    title: "[EPIC] Initial laforge entrypoint implementation"
+    description: "Create the main laforge executable with init and step commands as specified in docs/specs/laforge.md"
+    acceptance_criteria: |
+      - laforge init command creates project structure in ~/.laforge/projects/<id>
+      - laforge step command executes complete step cycle
+      - Commands follow exact interface from specifications
+      - Proper error handling and cleanup
+      - Integration with existing task management system
+    upstream_dependency_id: null
+    review_required: true
+    parent_id: null
+    status: "todo"
+
+  - id: 11
+    title: "Create basic CLI structure"
+    description: "Set up cobra CLI framework and main entrypoint in cmd/laforge/main.go"
+    acceptance_criteria: |
+      - Main.go file created in cmd/laforge/
+      - Cobra CLI framework properly configured
+      - Command structure matches specifications
+      - Basic help and version commands working
+    upstream_dependency_id: null
+    review_required: false
+    parent_id: 10
+    status: "todo"
+
+  - id: 12
+    title: "Implement project management utilities"
+    description: "Create project.go with functions for project directory creation and management"
+    acceptance_criteria: |
+      - Project directory creation in ~/.laforge/projects/<id>
+      - Project configuration file generation
+      - Project metadata management
+      - Error handling for existing projects
+    upstream_dependency_id: 11
+    review_required: false
+    parent_id: 10
+    status: "todo"
+
+  - id: 13
+    title: "Implement laforge init command"
+    description: "Create the init command that initializes a new LaForge project"
+    acceptance_criteria: |
+      - laforge init <project_id> command works
+      - Creates project directory structure
+      - Initializes git repository
+      - Creates task database (SQLite)
+      - Generates project configuration file
+      - Supports --name and --description options
+    upstream_dependency_id: 12
+    review_required: true
+    parent_id: 10
+    status: "todo"
+
+  - id: 14
+    title: "Implement git worktree management"
+    description: "Create utilities for temporary git worktree creation and management"
+    acceptance_criteria: |
+      - Temporary worktree creation function
+      - Worktree cleanup and removal
+      - Branch creation for steps
+      - Proper git repository state management
+      - Error handling for git operations
+    upstream_dependency_id: 11
+    review_required: false
+    parent_id: 10
+    status: "todo"
+
+  - id: 15
+    title: "Implement task database copying"
+    description: "Create functionality to copy task database for isolated step execution"
+    acceptance_criteria: |
+      - SQLite database copying function
+      - Proper file permissions and cleanup
+      - Database integrity verification
+      - Error handling for database operations
+    upstream_dependency_id: 11
+    review_required: false
+    parent_id: 10
+    status: "todo"
+
+  - id: 16
+    title: "Implement Docker container orchestration"
+    description: "Create Docker client integration for launching agent containers"
+    acceptance_criteria: |
+      - Docker API client integration
+      - Container creation with volume mounts
+      - Agent container configuration
+      - Container lifecycle management
+      - Proper resource cleanup
+    upstream_dependency_id: 11
+    review_required: false
+    parent_id: 10
+    status: "todo"
+
+  - id: 17
+    title: "Implement laforge step command"
+    description: "Create the step command that runs a single LaForge step cycle"
+    acceptance_criteria: |
+      - laforge step <project_id> command works
+      - Creates temporary git worktree
+      - Copies task database for isolation
+      - Launches agent container with proper mounts
+      - Captures and commits changes
+      - Proper cleanup of resources
+      - Supports --agent-image and --timeout options
+    upstream_dependency_id: 14
+    review_required: true
+    parent_id: 10
+    status: "todo"
+
+  - id: 18
+    title: "Implement step logging and monitoring"
+    description: "Add logging and monitoring capabilities for step execution"
+    acceptance_criteria: |
+      - Step execution logging
+      - Container output capture
+      - Timing information collection
+      - Error logging and reporting
+      - Integration with host process logging
+    upstream_dependency_id: 17
+    review_required: false
+    parent_id: 10
+    status: "todo"
+
+  - id: 19
+    title: "Add comprehensive error handling"
+    description: "Implement robust error handling throughout the laforge commands"
+    acceptance_criteria: |
+      - Graceful error handling in all commands
+      - Proper cleanup on failure
+      - User-friendly error messages
+      - Exit codes for different error types
+      - Resource cleanup in error scenarios
+    upstream_dependency_id: null
+    review_required: false
+    parent_id: 10
+    status: "todo"
+
+  - id: 20
+    title: "Create integration tests"
+    description: "Write integration tests for init and step commands"
+    acceptance_criteria: |
+      - Integration tests for init command
+      - Integration tests for step command
+      - Mock agent for testing step execution
+      - Project directory validation tests
+      - Git repository state verification
+    upstream_dependency_id: 13
+    review_required: true
+    parent_id: 10
+    status: "todo"
