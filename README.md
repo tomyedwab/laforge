@@ -16,6 +16,24 @@ suggestions and feedback. These artifacts can include high-level plans,
 architectural decisions, technical specifications, UI mockups, and short code
 snippets, so that the agent is always making positive progress.
 
+## Project management
+
+LaForge stores project metadata in the user's home directory at
+~/.laforge/projects/<name>, which is created by the `laforge init` command and
+is not committed to source control. This allows the agent to manage the full
+history of multiple projects without cluttering the repository with metadata.
+
+Every call to the LaForge implementation loop is a numbered "step", starting at
+S1 and increasing monotonically. Since each step is associated with a commit in
+the repository, it is easy to revert to a previous state if needed. The step
+metadata includes a snapshot of the task state sqlite database and any container
+logs from the step. A file in the project root specifies the current committed
+step as well as any currently running steps. The metadata also includes the log
+of steps tracking time and tokens spent on each step.
+
+If LaForge chooses to run multiple steps in parallel, it will have to create
+separate branches for each step and run a separate step to merge them together.
+
 ## Technical implementation
 
 The technical process for enabling a long-running agent is to prompt the agent
@@ -64,3 +82,12 @@ this UI are:
 - Viewing review artifacts and sending feedback
 - Viewing agent logs and interrupting the agent if it is misbehaving
 - [Stretch goal] Tracking token usage and cost
+
+## Code layout
+
+LaForge consists of several binary entrypoints in the cmd/ folder, which use
+shared modules in tasks/, projects/, etc.
+
+The binaries are:
+- laforge: The main executable that handles the main loop and provides the API server (used by the web UI) as well as the specialized tools for managing tasks and artifacts.
+- latasks: Tool exposed to the agent container for managing tasks.

@@ -4,7 +4,7 @@
 This document specifies the REST API for the LaForge web UI to track task status and reviews. The API provides endpoints for retrieving task information, managing task status, handling reviews, and accessing task logs.
 
 ## Base URL
-All API endpoints are prefixed with: `/api/v1`
+All API endpoints are prefixed with: `/api/v1/projects/<project_id>/`
 
 ## Authentication
 API requests should include authentication headers (implementation TBD based on deployment requirements).
