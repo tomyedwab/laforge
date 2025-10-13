@@ -5,6 +5,7 @@ import (
 	"os"
 
 	"github.com/spf13/cobra"
+	"github.com/tomyedwab/laforge/projects"
 )
 
 var (
@@ -79,8 +80,39 @@ func init() {
 
 // runInit is the handler for the init command
 func runInit(cmd *cobra.Command, args []string) error {
-	// TODO: Implement init command logic
-	return fmt.Errorf("init command not yet implemented")
+	projectID := args[0]
+
+	// Get flags
+	name, _ := cmd.Flags().GetString("name")
+	description, _ := cmd.Flags().GetString("description")
+
+	// Use project ID as name if name is not provided
+	if name == "" {
+		name = projectID
+	}
+
+	// Create the project
+	project, err := projects.CreateProject(projectID, name, description)
+	if err != nil {
+		return fmt.Errorf("failed to create project: %w", err)
+	}
+
+	// Get project directory for display
+	projectDir, err := projects.GetProjectDir(projectID)
+	if err != nil {
+		return fmt.Errorf("failed to get project directory: %w", err)
+	}
+
+	fmt.Printf("Successfully created LaForge project '%s'\n", project.ID)
+	if project.Name != project.ID {
+		fmt.Printf("Project name: %s\n", project.Name)
+	}
+	if project.Description != "" {
+		fmt.Printf("Description: %s\n", project.Description)
+	}
+	fmt.Printf("Location: %s\n", projectDir)
+
+	return nil
 }
 
 // runStep is the handler for the step command
