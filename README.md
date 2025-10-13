@@ -91,3 +91,4 @@ shared modules in tasks/, projects/, etc.
 The binaries are:
 - laforge: The main executable that handles the main loop and provides the API server (used by the web UI) as well as the specialized tools for managing tasks and artifacts.
 - latasks: Tool exposed to the agent container for managing tasks.
+- latools: Tools meant for debugging and testing in the host environment.

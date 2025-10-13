@@ -7,6 +7,7 @@ import (
 	"time"
 
 	_ "github.com/mattn/go-sqlite3"
+	"gopkg.in/yaml.v3"
 )
 
 type Task struct {
@@ -272,7 +273,7 @@ func GetNextTask(db *sql.DB) (*Task, error) {
 		FROM tasks t
 		JOIN work_queue w ON t.id = w.task_id
 		WHERE t.status != 'completed'
-		ORDER BY 
+		ORDER BY
 			CASE WHEN t.parent_id IS NULL THEN 1 ELSE 0 END,
 			t.id`
 
@@ -400,4 +401,330 @@ func GetChildTasks(db *sql.DB, parentID int) ([]Task, error) {
 func DeleteTask(db *sql.DB, taskID int) error {
 	_, err := db.Exec("DELETE FROM tasks WHERE id = ?", taskID)
 	return err
+}
+
+// YAMLTask represents a task in the YAML import format
+type YAMLTask struct {
+	ID                   int    `yaml:"id"`
+	Title                string `yaml:"title"`
+	Description          string `yaml:"description"`
+	AcceptanceCriteria   string `yaml:"acceptance_criteria"`
+	UpstreamDependencyID *int   `yaml:"upstream_dependency_id"`
+	ReviewRequired       bool   `yaml:"review_required"`
+	ParentID             *int   `yaml:"parent_id"`
+	Status               string `yaml:"status"`
+}
+
+// YAMLTaskLog represents a task log entry in the YAML import format
+type YAMLTaskLog struct {
+	TaskID  int    `yaml:"task_id"`
+	Message string `yaml:"message"`
+}
+
+// YAMLTaskReview represents a task review in the YAML import format
+type YAMLTaskReview struct {
+	TaskID     int     `yaml:"task_id"`
+	Message    string  `yaml:"message"`
+	Attachment *string `yaml:"attachment"`
+	Status     string  `yaml:"status"`
+	Feedback   *string `yaml:"feedback"`
+}
+
+// YAMLProject represents a project with nested tasks
+type YAMLProject struct {
+	Name  string     `yaml:"name"`
+	Tasks []YAMLTask `yaml:"tasks"`
+}
+
+// YAMLTaskSpec represents the complete YAML task specification format
+type YAMLTaskSpec struct {
+	Tasks            []YAMLTask       `yaml:"tasks"`
+	Projects         []YAMLProject    `yaml:"projects"`
+	WorkflowExamples []YAMLTask       `yaml:"workflow_examples"`
+	TaskLogs         []YAMLTaskLog    `yaml:"task_logs"`
+	TaskReviews      []YAMLTaskReview `yaml:"task_reviews"`
+}
+
+// ImportTasksFromYAML imports tasks from a YAML file
+func ImportTasksFromYAML(db *sql.DB, yamlPath string) error {
+	// Read the YAML file
+	data, err := os.ReadFile(yamlPath)
+	if err != nil {
+		return fmt.Errorf("failed to read YAML file: %w", err)
+	}
+
+	// Parse the YAML
+	var spec YAMLTaskSpec
+	if err := yaml.Unmarshal(data, &spec); err != nil {
+		return fmt.Errorf("failed to parse YAML: %w", err)
+	}
+
+	// Start a transaction
+	tx, err := db.Begin()
+	if err != nil {
+		return fmt.Errorf("failed to begin transaction: %w", err)
+	}
+	defer tx.Rollback()
+
+	// Validate and import tasks, get ID mapping
+	yamlIDToDBID, err := importTasks(tx, spec.Tasks)
+	if err != nil {
+		return fmt.Errorf("failed to import tasks: %w", err)
+	}
+
+	// Import task logs
+	if err := importTaskLogs(tx, spec.TaskLogs, yamlIDToDBID); err != nil {
+		return fmt.Errorf("failed to import task logs: %w", err)
+	}
+
+	// Import task reviews
+	if err := importTaskReviews(tx, spec.TaskReviews, yamlIDToDBID); err != nil {
+		return fmt.Errorf("failed to import task reviews: %w", err)
+	}
+
+	// Commit the transaction
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("failed to commit transaction: %w", err)
+	}
+
+	return nil
+}
+
+// importTasks validates and imports tasks, handling dependencies correctly
+// Returns a map from YAML task IDs to database-assigned task IDs
+func importTasks(tx *sql.Tx, tasks []YAMLTask) (map[int]int, error) {
+	if len(tasks) == 0 {
+		return make(map[int]int), nil
+	}
+
+	// Validate task statuses
+	validStatuses := map[string]bool{
+		"todo":        true,
+		"in-progress": true,
+		"in-review":   true,
+		"completed":   true,
+	}
+
+	for _, task := range tasks {
+		if task.Title == "" {
+			return nil, fmt.Errorf("task with ID %d has empty title", task.ID)
+		}
+
+		// Set default status if not provided
+		status := task.Status
+		if status == "" {
+			status = "todo"
+		}
+
+		if !validStatuses[status] {
+			return nil, fmt.Errorf("task %d has invalid status: %s", task.ID, status)
+		}
+	}
+
+	// Build a map of task IDs for reference validation
+	taskIDMap := make(map[int]bool)
+	for _, task := range tasks {
+		if task.ID > 0 {
+			taskIDMap[task.ID] = true
+		}
+	}
+
+	// Validate references
+	for _, task := range tasks {
+		if task.ParentID != nil {
+			if !taskIDMap[*task.ParentID] {
+				return nil, fmt.Errorf("task %d references non-existent parent task %d", task.ID, *task.ParentID)
+			}
+		}
+		if task.UpstreamDependencyID != nil {
+			if !taskIDMap[*task.UpstreamDependencyID] {
+				return nil, fmt.Errorf("task %d references non-existent upstream dependency %d", task.ID, *task.UpstreamDependencyID)
+			}
+		}
+	}
+
+	// Sort tasks to ensure parent tasks and upstream dependencies are inserted first
+	sortedTasks := topologicalSortTasks(tasks)
+
+	// Map from YAML ID to database-assigned ID
+	yamlIDToDBID := make(map[int]int)
+
+	// Insert tasks in order
+	for _, task := range sortedTasks {
+		status := task.Status
+		if status == "" {
+			status = "todo"
+		}
+
+		// Resolve references using the ID map
+		var parentID *int
+		var upstreamDependencyID *int
+
+		if task.ParentID != nil {
+			if dbID, ok := yamlIDToDBID[*task.ParentID]; ok {
+				parentID = &dbID
+			} else {
+				return nil, fmt.Errorf("task '%s' references parent ID %d which hasn't been inserted yet", task.Title, *task.ParentID)
+			}
+		}
+
+		if task.UpstreamDependencyID != nil {
+			if dbID, ok := yamlIDToDBID[*task.UpstreamDependencyID]; ok {
+				upstreamDependencyID = &dbID
+			} else {
+				return nil, fmt.Errorf("task '%s' references upstream dependency ID %d which hasn't been inserted yet", task.Title, *task.UpstreamDependencyID)
+			}
+		}
+
+		// Always let database auto-generate IDs
+		result, err := tx.Exec(`
+			INSERT INTO tasks (title, description, acceptance_criteria, upstream_dependency_id, review_required, parent_id, status)
+			VALUES (?, ?, ?, ?, ?, ?, ?)`,
+			task.Title, task.Description, task.AcceptanceCriteria,
+			upstreamDependencyID, task.ReviewRequired, parentID, status)
+
+		if err != nil {
+			return nil, fmt.Errorf("failed to insert task '%s': %w", task.Title, err)
+		}
+
+		// Get the database-assigned ID
+		newID, err := result.LastInsertId()
+		if err != nil {
+			return nil, fmt.Errorf("failed to get last insert ID for task '%s': %w", task.Title, err)
+		}
+
+		// Map YAML ID to database ID
+		if task.ID > 0 {
+			yamlIDToDBID[task.ID] = int(newID)
+		}
+	}
+
+	return yamlIDToDBID, nil
+}
+
+// topologicalSortTasks sorts tasks so that parent tasks and upstream dependencies come before dependent tasks
+func topologicalSortTasks(tasks []YAMLTask) []YAMLTask {
+	// Build adjacency list for dependencies
+	taskMap := make(map[int]YAMLTask)
+	dependsOn := make(map[int][]int) // task ID -> list of tasks that depend on it
+
+	for _, task := range tasks {
+		if task.ID > 0 {
+			taskMap[task.ID] = task
+		}
+	}
+
+	// Build dependency graph
+	for _, task := range tasks {
+		if task.ID > 0 {
+			if task.ParentID != nil {
+				dependsOn[*task.ParentID] = append(dependsOn[*task.ParentID], task.ID)
+			}
+			if task.UpstreamDependencyID != nil {
+				dependsOn[*task.UpstreamDependencyID] = append(dependsOn[*task.UpstreamDependencyID], task.ID)
+			}
+		}
+	}
+
+	// Topological sort using DFS
+	visited := make(map[int]bool)
+	sorted := make([]YAMLTask, 0, len(tasks))
+
+	var visit func(int)
+	visit = func(taskID int) {
+		if visited[taskID] {
+			return
+		}
+		visited[taskID] = true
+
+		// Visit dependencies first
+		task := taskMap[taskID]
+		if task.ParentID != nil {
+			visit(*task.ParentID)
+		}
+		if task.UpstreamDependencyID != nil {
+			visit(*task.UpstreamDependencyID)
+		}
+
+		sorted = append(sorted, task)
+	}
+
+	// Visit all tasks
+	for _, task := range tasks {
+		if task.ID > 0 {
+			visit(task.ID)
+		} else {
+			// Tasks without IDs go at the end
+			sorted = append(sorted, task)
+		}
+	}
+
+	return sorted
+}
+
+// importTaskLogs imports task log entries
+func importTaskLogs(tx *sql.Tx, logs []YAMLTaskLog, yamlIDToDBID map[int]int) error {
+	for _, log := range logs {
+		if log.TaskID == 0 {
+			return fmt.Errorf("task log has invalid task_id: %d", log.TaskID)
+		}
+		if log.Message == "" {
+			return fmt.Errorf("task log for task %d has empty message", log.TaskID)
+		}
+
+		// Map YAML task ID to database task ID
+		dbTaskID, ok := yamlIDToDBID[log.TaskID]
+		if !ok {
+			return fmt.Errorf("task log references non-existent task ID %d", log.TaskID)
+		}
+
+		_, err := tx.Exec(`INSERT INTO task_logs (task_id, message) VALUES (?, ?)`,
+			dbTaskID, log.Message)
+		if err != nil {
+			return fmt.Errorf("failed to insert task log for task %d: %w", log.TaskID, err)
+		}
+	}
+	return nil
+}
+
+// importTaskReviews imports task review entries
+func importTaskReviews(tx *sql.Tx, reviews []YAMLTaskReview, yamlIDToDBID map[int]int) error {
+	validStatuses := map[string]bool{
+		"pending":  true,
+		"approved": true,
+		"rejected": true,
+	}
+
+	for _, review := range reviews {
+		if review.TaskID == 0 {
+			return fmt.Errorf("task review has invalid task_id: %d", review.TaskID)
+		}
+		if review.Message == "" {
+			return fmt.Errorf("task review for task %d has empty message", review.TaskID)
+		}
+
+		status := review.Status
+		if status == "" {
+			status = "pending"
+		}
+
+		if !validStatuses[status] {
+			return fmt.Errorf("task review for task %d has invalid status: %s", review.TaskID, status)
+		}
+
+		// Map YAML task ID to database task ID
+		dbTaskID, ok := yamlIDToDBID[review.TaskID]
+		if !ok {
+			return fmt.Errorf("task review references non-existent task ID %d", review.TaskID)
+		}
+
+		_, err := tx.Exec(`
+			INSERT INTO task_reviews (task_id, message, attachment, status, feedback)
+			VALUES (?, ?, ?, ?, ?)`,
+			dbTaskID, review.Message, review.Attachment, status, review.Feedback)
+		if err != nil {
+			return fmt.Errorf("failed to insert task review for task %d: %w", review.TaskID, err)
+		}
+	}
+	return nil
 }

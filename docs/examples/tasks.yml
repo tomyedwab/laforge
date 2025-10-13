@@ -37,9 +37,9 @@ tasks:
       - Returns JWT token on success
       - Proper error handling for invalid credentials
       - Rate limiting implemented
-    upstream_dependency_id: 2  # Depends on database schema
+    upstream_dependency_id: 2 # Depends on database schema
     review_required: true
-    parent_id: 1  # Child of authentication system
+    parent_id: 1 # Child of authentication system
     status: "in-progress"
 
   - id: 4
@@ -50,9 +50,9 @@ tasks:
       - Email validation implemented
       - Password strength requirements enforced
       - Duplicate email prevention
-    upstream_dependency_id: 2  # Depends on database schema
+    upstream_dependency_id: 2 # Depends on database schema
     review_required: true
-    parent_id: 1  # Child of authentication system
+    parent_id: 1 # Child of authentication system
     status: "todo"
 
   - id: 5
@@ -63,9 +63,9 @@ tasks:
       - Form validation with clear error messages
       - Loading states during API calls
       - Accessible with proper ARIA labels
-    upstream_dependency_id: 3  # Depends on login endpoint
+    upstream_dependency_id: 3 # Depends on login endpoint
     review_required: false
-    parent_id: 1  # Child of authentication system
+    parent_id: 1 # Child of authentication system
     status: "todo"
 
   - id: 6
@@ -76,9 +76,9 @@ tasks:
       - Form validation with clear error messages
       - Password strength indicator
       - Terms of service checkbox
-    upstream_dependency_id: 4  # Depends on registration endpoint
+    upstream_dependency_id: 4 # Depends on registration endpoint
     review_required: false
-    parent_id: 1  # Child of authentication system
+    parent_id: 1 # Child of authentication system
     status: "todo"
 
   - id: 7
@@ -89,9 +89,9 @@ tasks:
       - Email with reset link sent
       - Password reset confirmation endpoint
       - Reset links expire after 1 hour
-    upstream_dependency_id: 2  # Depends on database schema
+    upstream_dependency_id: 2 # Depends on database schema
     review_required: true
-    parent_id: 1  # Child of authentication system
+    parent_id: 1 # Child of authentication system
     status: "todo"
 
   - id: 8
@@ -102,9 +102,9 @@ tasks:
       - Tests for all edge cases
       - Mock external dependencies
       - Integration tests for API endpoints
-    upstream_dependency_id: null  # Can be started independently
+    upstream_dependency_id: null # Can be started independently
     review_required: true
-    parent_id: 1  # Child of authentication system
+    parent_id: 1 # Child of authentication system
     status: "todo"
 
   - id: 9
@@ -116,7 +116,7 @@ tasks:
       - Proper input sanitization
       - Security headers implemented
       - Penetration test report completed
-    upstream_dependency_id: 1  # Depends on complete authentication system
+    upstream_dependency_id: 1 # Depends on complete authentication system
     review_required: true
     parent_id: null
     status: "todo"
@@ -129,82 +129,78 @@ tasks:
       - Deployment guide for production
       - Environment configuration guide
       - Troubleshooting documentation
-    upstream_dependency_id: 1  # Depends on complete authentication system
+    upstream_dependency_id: 1 # Depends on complete authentication system
     review_required: false
     parent_id: null
     status: "todo"
 
-# Example of a complex project with nested tasks
-projects:
-  - name: "E-commerce Platform Development"
-    tasks:
-      - id: 101
-        title: "[EPIC] E-commerce Platform"
-        description: "Complete e-commerce platform with shopping cart, payments, and inventory"
-        acceptance_criteria: |
-          - Full shopping cart functionality
-          - Secure payment processing
-          - Inventory management
-          - Order tracking system
-        upstream_dependency_id: null
-        review_required: true
-        parent_id: null
-        status: "in-progress"
+  # Example of a complex project with nested tasks
+  - id: 101
+    title: "[EPIC] E-commerce Platform"
+    description: "Complete e-commerce platform with shopping cart, payments, and inventory"
+    acceptance_criteria: |
+      - Full shopping cart functionality
+      - Secure payment processing
+      - Inventory management
+      - Order tracking system
+    upstream_dependency_id: null
+    review_required: true
+    parent_id: null
+    status: "in-progress"
 
-      - id: 102
-        title: "[FEAT] Product Catalog System"
-        description: "Product management and catalog display"
-        acceptance_criteria: |
-          - Product CRUD operations
-          - Product categories and filtering
-          - Product images and galleries
-          - Search functionality
-        upstream_dependency_id: null
-        review_required: true
-        parent_id: 101
-        status: "todo"
+  - id: 102
+    title: "[FEAT] Product Catalog System"
+    description: "Product management and catalog display"
+    acceptance_criteria: |
+      - Product CRUD operations
+      - Product categories and filtering
+      - Product images and galleries
+      - Search functionality
+    upstream_dependency_id: null
+    review_required: true
+    parent_id: 101
+    status: "todo"
 
-      - id: 103
-        title: "[FEAT] Shopping Cart Implementation"
-        description: "Shopping cart with session management"
-        acceptance_criteria: |
-          - Add/remove items from cart
-          - Cart persistence across sessions
-          - Quantity management
-          - Cart total calculations
-        upstream_dependency_id: 102  # Depends on product catalog
-        review_required: true
-        parent_id: 101
-        status: "todo"
+  - id: 103
+    title: "[FEAT] Shopping Cart Implementation"
+    description: "Shopping cart with session management"
+    acceptance_criteria: |
+      - Add/remove items from cart
+      - Cart persistence across sessions
+      - Quantity management
+      - Cart total calculations
+    upstream_dependency_id: 102 # Depends on product catalog
+    review_required: true
+    parent_id: 101
+    status: "todo"
 
-      - id: 104
-        title: "[FEAT] Payment Integration"
-        description: "Integrate with payment gateway"
-        acceptance_criteria: |
-          - Stripe/PayPal integration
-          - Secure payment processing
-          - Payment confirmation emails
-          - Refund handling
-        upstream_dependency_id: 103  # Depends on shopping cart
-        review_required: true
-        parent_id: 101
-        status: "todo"
+  - id: 104
+    title: "[FEAT] Payment Integration"
+    description: "Integrate with payment gateway"
+    acceptance_criteria: |
+      - Stripe/PayPal integration
+      - Secure payment processing
+      - Payment confirmation emails
+      - Refund handling
+    upstream_dependency_id: 103 # Depends on shopping cart
+    review_required: true
+    parent_id: 101
+    status: "todo"
 
-      - id: 105
-        title: "[BUG] Fix mobile responsive issues"
-        description: "Resolve layout problems on mobile devices"
-        acceptance_criteria: |
-          - All pages work on screens 320px+
-          - Touch-friendly interface
-          - No horizontal scrolling
-          - Proper font sizing
-        upstream_dependency_id: null
-        review_required: false
-        parent_id: 101
-        status: "in-review"
+  - id: 105
+    title: "[BUG] Fix mobile responsive issues"
+    description: "Resolve layout problems on mobile devices"
+    acceptance_criteria: |
+      - All pages work on screens 320px+
+      - Touch-friendly interface
+      - No horizontal scrolling
+      - Proper font sizing
+    upstream_dependency_id: null
+    review_required: false
+    parent_id: 101
+    status: "in-review"
 
-# Example of tasks with different statuses and dependencies
-workflow_examples:
+  # Example of tasks with different statuses and dependencies
   - id: 201
     title: "[PLAN] Architecture Design Phase"
     description: "Plan and design the system architecture"
@@ -252,7 +248,7 @@ workflow_examples:
       - Profile management
       - Role-based access control
       - User preferences
-    upstream_dependency_id: 202  # Depends on architecture
+    upstream_dependency_id: 202 # Depends on architecture
     review_required: true
     parent_id: null
     status: "todo"
@@ -265,7 +261,7 @@ workflow_examples:
       - Responsive design implementation
       - State management with Redux
       - Unit and integration tests
-    upstream_dependency_id: 203  # Depends on UI design
+    upstream_dependency_id: 203 # Depends on UI design
     review_required: true
     parent_id: null
     status: "todo"
@@ -274,15 +270,12 @@ workflow_examples:
 task_logs:
   - task_id: 202
     message: "Started architecture design review with team"
-    created_at: "2025-10-12T10:00:00Z"
-  
+
   - task_id: 202
     message: "Updated service boundaries based on feedback"
-    created_at: "2025-10-12T14:30:00Z"
-  
+
   - task_id: 203
     message: "Completed initial wireframes for dashboard"
-    created_at: "2025-10-12T11:15:00Z"
 
 task_reviews:
   - task_id: 202
@@ -290,8 +283,6 @@ task_reviews:
     attachment: "docs/artifacts/architecture-review.md"
     status: "pending"
     feedback: null
-    created_at: "2025-10-12T16:00:00Z"
-    updated_at: "2025-10-12T16:00:00Z"
 
 # YAML Schema Definition
 schema:
@@ -308,7 +299,7 @@ schema:
       - parent_id
     status_values:
       - "todo"
-      - "in-progress" 
+      - "in-progress"
       - "in-review"
       - "completed"
     field_types:
@@ -320,7 +311,6 @@ schema:
       review_required: boolean
       parent_id: integer or null
       status: string (must be one of status_values)
-
 # Usage Notes:
 # - Tasks can be organized in any order, IDs are used for references
 # - Upstream dependencies must be completed before dependent tasks can start

@@ -63,12 +63,18 @@ Some examples:
 [DESIGN]: A task to come up with possible visual designs (UI wireframes for
   example) and get them reviewed.
 
+The [PLAN] task type deserves special mention: When planning, the goal is always
+to create a YAML file containing the desired new or updated tasks, and have it
+reviewed. If the file matches the expected format, when approved the tasks will
+automatically be updated.
+
 ## Artifacts
 
 Artifacts are files attached to a review that can be reviewed by a human, and
 therefore need to be human readable. Thus, the format needs to be one of the
 following:
 
+- YAML specification for tasks to create/update, as documented below
 - Markdown document, for one-pagers and written architecture documents
 - PlantUML diagram, for actor models, architectural diagrams (using NPlant), and UI mocks (using Salt)
 - Mermaid diagram, for architecture diagrams
@@ -80,6 +86,55 @@ feedback, or left as-is for future reference.
 
 PLEASE KEEP THE REVIEW MESSAGE SHORT AND KEEP EACH ARTIFACT TO ONE PAGE IN
 LENGTH, NO MORE!
+
+## Task definition YAML
+
+This is the format for task definitions:
+
+```yaml
+tasks:
+  - id: 1
+    title: "Implement user authentication system"
+    description: "Create a complete authentication system with login, logout, and registration"
+    acceptance_criteria: |
+      - Users can register with email and password
+      - Users can login with valid credentials
+      - Users can logout
+      - Password reset functionality works
+      - Session management is secure
+    upstream_dependency_id: null
+    review_required: true
+    parent_id: null
+    status: "todo"
+
+  - id: 2
+    title: "Design database schema"
+    description: "Create the database schema for user management"
+    acceptance_criteria: |
+      - Users table with required fields
+      - Proper indexing for performance
+      - Migration scripts are created
+    upstream_dependency_id: null
+    review_required: true
+    parent_id: null
+    status: "completed"
+
+  - id: 3
+    title: "Implement login endpoint"
+    description: "Create REST API endpoint for user login"
+    acceptance_criteria: |
+      - POST /api/login endpoint exists
+      - Returns JWT token on success
+      - Proper error handling for invalid credentials
+      - Rate limiting implemented
+    upstream_dependency_id: 2  # Depends on database schema
+    review_required: true
+    parent_id: 1  # Child of authentication system
+    status: "in-progress"
+```
+
+When a YAML document of this type is reviewed and approved, the tasks will
+automatically be updated in the task database.
 
 ## Documentation
 
