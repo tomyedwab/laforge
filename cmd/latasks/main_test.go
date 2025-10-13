@@ -79,12 +79,6 @@ func createTestSchema(db *sql.DB) error {
 		updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
 		FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE CASCADE,
 		CHECK (status IN ('pending', 'approved', 'rejected'))
-	);
-
-	CREATE TABLE IF NOT EXISTS work_queue (
-		task_id INTEGER PRIMARY KEY,
-		queued_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-		FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE CASCADE
 	);`
 
 	_, err := db.Exec(schema)
@@ -373,73 +367,6 @@ func TestUpdateCommand(t *testing.T) {
 	}
 }
 
-func TestQueueCommand(t *testing.T) {
-	_, db, cleanup := setupTestCLI(t)
-	defer cleanup()
-
-	// Add a test task
-	_, err := tasks.AddTask(db, "Test Task", nil)
-	if err != nil {
-		t.Fatalf("Failed to add test task: %v", err)
-	}
-
-	tests := []struct {
-		name    string
-		args    []string
-		wantErr bool
-		wantOut string
-	}{
-		{
-			name:    "Queue existing task",
-			args:    []string{"T1"},
-			wantErr: false,
-			wantOut: "Added T1 to queue",
-		},
-		{
-			name:    "Queue with invalid format",
-			args:    []string{"invalid"},
-			wantErr: true,
-			wantOut: "invalid task_id format",
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			var buf bytes.Buffer
-
-			cmd := &cobra.Command{
-				Use:  "queue",
-				Args: cobra.ExactArgs(1),
-				RunE: func(cmd *cobra.Command, args []string) error {
-					var taskID int
-					if _, err := fmt.Sscanf(args[0], "T%d", &taskID); err != nil {
-						return fmt.Errorf("invalid task_id format: %s", args[0])
-					}
-
-					if err := tasks.AddToQueue(db, taskID); err != nil {
-						return fmt.Errorf("failed to add task to queue: %w", err)
-					}
-
-					fmt.Fprintf(&buf, "Added T%d to queue\n", taskID)
-					return nil
-				},
-			}
-
-			cmd.SetArgs(tt.args)
-			err := cmd.Execute()
-
-			if (err != nil) != tt.wantErr {
-				t.Errorf("Execute() error = %v, wantErr %v", err, tt.wantErr)
-				return
-			}
-
-			if !tt.wantErr && !strings.Contains(buf.String(), tt.wantOut) {
-				t.Errorf("Output = %v, want output containing %v", buf.String(), tt.wantOut)
-			}
-		})
-	}
-}
-
 func TestNextCommand(t *testing.T) {
 	_, db, cleanup := setupTestCLI(t)
 	defer cleanup()
@@ -451,21 +378,18 @@ func TestNextCommand(t *testing.T) {
 		wantErr bool
 	}{
 		{
-			name:    "Empty queue",
+			name:    "No ready tasks",
 			setup:   func() error { return nil },
-			wantOut: "No tasks found",
+			wantOut: "No tasks ready for work",
 			wantErr: false,
 		},
 		{
-			name: "Queue with task",
+			name: "Task ready for work",
 			setup: func() error {
-				taskID, err := tasks.AddTask(db, "Test Task", nil)
-				if err != nil {
-					return err
-				}
-				return tasks.AddToQueue(db, taskID)
+				_, err := tasks.AddTask(db, "Test Task", nil)
+				return err
 			},
-			wantOut: "T1: Test Task",
+			wantOut: "Task T1: Test Task",
 			wantErr: false,
 		},
 	}
@@ -481,20 +405,18 @@ func TestNextCommand(t *testing.T) {
 			cmd := &cobra.Command{
 				Use: "next",
 				RunE: func(cmd *cobra.Command, args []string) error {
-					taskList, err := tasks.ListTasks(db)
+					task, err := tasks.GetNextTask(db)
 					if err != nil {
-						return fmt.Errorf("failed to list tasks: %w", err)
+						return fmt.Errorf("failed to get next task: %w", err)
 					}
 
-					if len(taskList) == 0 {
-						fmt.Fprintln(&buf, "No tasks found")
+					if task == nil {
+						fmt.Fprintln(&buf, "No tasks ready for work")
 						return nil
 					}
 
-					for _, task := range taskList {
-						fmt.Fprintf(&buf, "T%d: %s [%s]\n", task.ID, task.Title, task.Status)
-					}
-
+					fmt.Fprintf(&buf, "Task T%d: %s\n", task.ID, task.Title)
+					fmt.Fprintf(&buf, "Status: %s\n", task.Status)
 					return nil
 				},
 			}

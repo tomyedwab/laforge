@@ -187,21 +187,9 @@ Delete a task.
 
 ### Task Queue Management
 
-#### POST /tasks/{task_id}/queue
-Add a task to the work queue.
-
-**Path Parameters:**
-- `task_id` (required) - Task ID
-
-**Response:**
-```json
-{
-  "message": "Task added to queue successfully"
-}
-```
-
-#### GET /queue/next
-Retrieve the next task from the work queue.
+#### GET /tasks/next
+Retrieve the next task that is ready for work. Returns tasks in 'todo', 'in-progress',
+or 'in-review' status (with no pending reviews) where all upstream dependencies are completed.
 
 **Response:**
 ```json
@@ -210,10 +198,18 @@ Retrieve the next task from the work queue.
     "id": 1,
     "title": "Design API for tracking task status",
     "parent_id": null,
-    "status": "in-review",
+    "status": "todo",
     "created_at": "2025-10-10T02:30:06Z",
     "updated_at": "2025-10-10T02:30:49Z"
   }
+}
+```
+
+**Response (no tasks ready):**
+```json
+{
+  "task": null,
+  "message": "No tasks ready for work"
 }
 ```
 
@@ -386,6 +382,6 @@ Recommended approach: WebSocket for bidirectional communication, allowing the UI
 1. **Database Transactions**: All status updates should use database transactions to ensure consistency
 2. **Validation**: Implement proper validation for all input parameters
 3. **Pagination**: Add pagination for list endpoints when dealing with large datasets
-4. **Caching**: Consider caching frequently accessed data (task lists, current queue)
+4. **Caching**: Consider caching frequently accessed data (task lists, next ready task)
 5. **Rate Limiting**: Implement rate limiting to prevent abuse
 6. **Audit Logging**: Log all API operations for debugging and audit purposes

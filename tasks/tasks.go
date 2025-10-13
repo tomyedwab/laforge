@@ -102,12 +102,6 @@ func createSchema(db *sql.DB) error {
 		updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
 		FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE CASCADE,
 		CHECK (status IN ('pending', 'approved', 'rejected'))
-	);
-
-	CREATE TABLE IF NOT EXISTS work_queue (
-		task_id INTEGER PRIMARY KEY,
-		queued_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-		FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE CASCADE
 	);`
 
 	_, err := db.Exec(schema)
@@ -251,30 +245,20 @@ func UpdateTaskStatus(db *sql.DB, taskID int, status string) error {
 		return fmt.Errorf("failed to update task status: %w", err)
 	}
 
-	if status == "completed" {
-		_, err = db.Exec("DELETE FROM work_queue WHERE task_id = ?", taskID)
-		if err != nil {
-			return fmt.Errorf("failed to remove from queue: %w", err)
-		}
-	}
-
 	return nil
 }
 
-func AddToQueue(db *sql.DB, taskID int) error {
-	_, err := db.Exec("INSERT OR REPLACE INTO work_queue (task_id) VALUES (?)", taskID)
-	return err
-}
-
 func GetNextTask(db *sql.DB) (*Task, error) {
-	// First, get all candidate tasks from the queue
+	// Get all candidate tasks that are ready for work based on their status
+	// A task is ready if:
+	// - Status is 'todo', 'in-progress', or 'in-review' (with no pending reviews)
+	// - All upstream dependencies are completed
 	query := `
 		SELECT t.id, t.title, t.description, t.acceptance_criteria, t.upstream_dependency_id, t.review_required, t.parent_id, t.status, t.created_at, t.updated_at
 		FROM tasks t
-		JOIN work_queue w ON t.id = w.task_id
-		WHERE t.status != 'completed'
+		WHERE t.status IN ('todo', 'in-progress', 'in-review')
 		ORDER BY
-			CASE WHEN t.parent_id IS NULL THEN 1 ELSE 0 END,
+			CASE WHEN t.parent_id IS NULL THEN 0 ELSE 1 END,
 			t.id`
 
 	rows, err := db.Query(query)
@@ -296,8 +280,20 @@ func GetNextTask(db *sql.DB) (*Task, error) {
 		return nil, fmt.Errorf("failed to iterate tasks: %w", err)
 	}
 
-	// Now check upstream dependencies for each candidate task
+	// Now check each candidate task to see if it's ready
 	for _, task := range candidateTasks {
+		// For in-review tasks, check that there are no pending reviews
+		if task.Status == "in-review" {
+			var pendingReviews int
+			err := db.QueryRow("SELECT COUNT(*) FROM task_reviews WHERE task_id = ? AND status = 'pending'", task.ID).Scan(&pendingReviews)
+			if err != nil {
+				continue // Skip this task if we can't check reviews
+			}
+			if pendingReviews > 0 {
+				continue // Skip this task if it has pending reviews
+			}
+		}
+
 		// Check if upstream dependency is completed
 		if task.UpstreamDependencyID != nil {
 			var upstreamStatus string

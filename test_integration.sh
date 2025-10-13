@@ -38,21 +38,19 @@ echo "Test 3: Viewing task T1 details..."
 ./latasks-test view T1
 echo
 
-# Test 4: Add tasks to queue
-echo "Test 4: Adding tasks to work queue..."
-./latasks-test queue T2
-./latasks-test queue T3
-./latasks-test queue T4
-echo
-
-# Test 5: Get next task from queue
-echo "Test 5: Getting next task from queue..."
+# Test 4: Get next task ready for work
+echo "Test 4: Getting next task ready for work..."
 ./latasks-test next
 echo
 
-# Test 6: Update task status
-echo "Test 6: Updating task status..."
+# Test 5: Get next task after updating some statuses
+echo "Test 5: Getting next task after updating some statuses..."
 ./latasks-test update T3 "in-progress"
+./latasks-test next
+echo
+
+# Test 6: Update more task statuses
+echo "Test 6: Updating task status..."
 ./latasks-test update T4 "completed"
 echo
 

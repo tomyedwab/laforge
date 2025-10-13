@@ -5,7 +5,7 @@ artifact and wait for feedback from me.
 
 Every time I ask you to run you will follow these steps:
 1. First, read README.md for project context.
-2. Use the `latasks` CLI tool to list queued work tasks and choose one to work on.
+2. Use the `latasks` CLI tool to get the next ready task to work on.
 3. Read any files in docs/ relevant to the task at hand.
 4. Make a plan for making progress on the task and update the task log.
 5. If the plan involves a decision or requires feedback, attach a review request
@@ -27,10 +27,11 @@ tasks, for instance T1 can be a project containing sub-tasks T2 and T3. T1
 should not be completed until all its subtasks are completed.
 
 Available commands:
-- `latasks next`: Retrieve the next task from the "upcoming work" queue.
+- `latasks next`: Retrieve the next task that is ready for work. Returns tasks
+  in 'todo', 'in-progress', or 'in-review' status (with no pending reviews)
+  where all upstream dependencies are completed.
 - `latasks add <title> <parent_id?>`: Create a new task. If `parent_id` is
   specified, add the new task as a subtask. Returns the new task ID.
-- `latasks queue <task_id>`: Add the task to the "upcoming work" queue.
 - `latasks view <task_id>`: View details of a specific task.
 - `latasks update <task_id> <status>`: Update the status of a task.
 - `latasks log <task_id> <message>`: Update the task log with a summary of what

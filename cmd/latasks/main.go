@@ -12,7 +12,7 @@ import (
 var rootCmd = &cobra.Command{
 	Use:   "latasks",
 	Short: "Task management CLI tool",
-	Long:  `latasks is a command-line tool for managing tasks with hierarchical structure and work queue functionality.`,
+	Long:  `latasks is a command-line tool for managing tasks with hierarchical structure and dependency tracking.`,
 }
 
 func main() {
@@ -31,7 +31,6 @@ func init() {
 
 	rootCmd.AddCommand(nextCmd)
 	rootCmd.AddCommand(addCmd)
-	rootCmd.AddCommand(queueCmd)
 	rootCmd.AddCommand(viewCmd)
 	rootCmd.AddCommand(updateCmd)
 	rootCmd.AddCommand(logCmd)
@@ -103,7 +102,8 @@ func printTask(task *tasks.Task, db *sql.DB) {
 
 var nextCmd = &cobra.Command{
 	Use:   "next",
-	Short: "Retrieve the next task from the upcoming work queue",
+	Short: "Retrieve the next task that is ready for work",
+	Long:  "Returns tasks in 'todo', 'in-progress', or 'in-review' status (with no pending reviews) where all upstream dependencies are completed",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		db, err := tasks.InitDB()
 		if err != nil {
@@ -117,7 +117,7 @@ var nextCmd = &cobra.Command{
 		}
 
 		if task == nil {
-			fmt.Println("No tasks in queue")
+			fmt.Println("No tasks ready for work")
 			return nil
 		}
 
@@ -176,31 +176,6 @@ var addCmd = &cobra.Command{
 		}
 
 		fmt.Printf("Created task T%d\n", taskID)
-		return nil
-	},
-}
-
-var queueCmd = &cobra.Command{
-	Use:   "queue <task_id>",
-	Short: "Add the task to the upcoming work queue",
-	Args:  cobra.ExactArgs(1),
-	RunE: func(cmd *cobra.Command, args []string) error {
-		db, err := tasks.InitDB()
-		if err != nil {
-			return fmt.Errorf("failed to initialize database: %w", err)
-		}
-		defer db.Close()
-
-		var taskID int
-		if _, err := fmt.Sscanf(args[0], "T%d", &taskID); err != nil {
-			return fmt.Errorf("invalid task_id format: %s", args[0])
-		}
-
-		if err := tasks.AddToQueue(db, taskID); err != nil {
-			return fmt.Errorf("failed to add task to queue: %w", err)
-		}
-
-		fmt.Printf("Added T%d to queue\n", taskID)
 		return nil
 	},
 }

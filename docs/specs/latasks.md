@@ -6,10 +6,11 @@ tasks, for instance T1 can be a project containing sub-tasks T2 and T3. T1
 should not be completed until all its subtasks are completed.
 
 Available commands:
-- `latasks next`: Retrieve the next task from the "upcoming work" queue.
+- `latasks next`: Retrieve the next task that is ready for work. Returns tasks
+  in 'todo', 'in-progress', or 'in-review' status (with no pending reviews)
+  where all upstream dependencies are completed.
 - `latasks add <title> <parent_id?>`: Create a new task. If `parent_id` is
   specified, add the new task as a subtask. Returns the new task ID.
-- `latasks queue <task_id>`: Add the task to the "upcoming work" queue.
 - `latasks view <task_id>`: View details of a specific task.
 - `latasks update <task_id> <status>`: Update the status of a task.
 - `latasks log <task_id> <message>`: Update the task log with a summary of what
@@ -75,14 +76,6 @@ CREATE TABLE task_reviews (
 );
 ```
 
-```sql
-CREATE TABLE work_queue (
-    task_id INTEGER PRIMARY KEY,
-    queued_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE CASCADE
-);
-```
-
 ### Runtime behavior
 
 - The database is copied from the host before each agent step and mounted at
@@ -93,17 +86,15 @@ CREATE TABLE work_queue (
   process sends a push notification to the monitoring UI.
 - Task IDs are formatted as `T{id}` when displayed (e.g., task with id=1 is
   shown as T1).
-- The work queue is tracked in the `work_queue` table. Tasks are added to the
-  queue via `latasks queue <task_id>`.
-- When `latasks next` retrieves the next task, it queries tasks from the queue
-  in the following order:
-  1. Subtasks are prioritized before their parent tasks (tasks with a
-     `parent_id` come before tasks that have children).
-  2. Among tasks at the same level, order by task ID ascending.
-- Completed tasks are automatically removed from the work queue when their
-  status is updated to `completed`.
+- When `latasks next` retrieves the next task, it queries tasks that are ready
+  for work based on the following criteria:
+  - Task status is 'todo', 'in-progress', or 'in-review'
+  - For 'in-review' tasks, there are no pending reviews
+  - All upstream dependencies are in 'completed' status
+  - Root tasks (without parent_id) are prioritized over child tasks
+  - Among tasks at the same level, order by task ID ascending
 - Parent tasks should not be marked as `completed` until all child tasks are
-  completed (enforced by the host process or within the Go application logic).
+  completed (enforced within the Go application logic).
 
 ## Development Tasks
 
@@ -118,7 +109,7 @@ CREATE TABLE work_queue (
 **Medium Priority:**
 - ✅ T4: Implement 'latasks list' command to display all tasks
 - ✅ T5: Implement 'latasks view' command to show task details
-- ✅ T7: Implement 'latasks queue' command to add tasks to work queue
+- ✅ T7: Implement automatic task readiness determination (removed manual queue)
 - ✅ T9: Implement 'latasks log' command to add task logs
 - ✅ T10: Implement 'latasks review' command for review requests
 - ✅ T13: Update agents/Dockerfile.opencode to build and install latasks binary

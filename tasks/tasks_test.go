@@ -3,7 +3,6 @@ package tasks
 import (
 	"database/sql"
 	"testing"
-	"time"
 
 	_ "github.com/mattn/go-sqlite3"
 )
@@ -32,7 +31,7 @@ func TestCreateSchema(t *testing.T) {
 	defer db.Close()
 
 	// Test that all tables exist
-	tables := []string{"tasks", "task_logs", "task_reviews", "work_queue"}
+	tables := []string{"tasks", "task_logs", "task_reviews"}
 	for _, table := range tables {
 		var name string
 		err := db.QueryRow("SELECT name FROM sqlite_master WHERE type='table' AND name=?", table).Scan(&name)
@@ -288,30 +287,6 @@ func TestUpdateTaskStatusWithPendingReviews(t *testing.T) {
 	}
 }
 
-func TestAddToQueue(t *testing.T) {
-	db := setupTestDB(t)
-	defer db.Close()
-
-	// Add a test task
-	id, err := AddTask(db, "Test Task", nil)
-	if err != nil {
-		t.Fatalf("Failed to add test task: %v", err)
-	}
-
-	// Add to queue
-	err = AddToQueue(db, id)
-	if err != nil {
-		t.Errorf("AddToQueue() error = %v", err)
-	}
-
-	// Verify task is in queue
-	var queuedAt time.Time
-	err = db.QueryRow("SELECT queued_at FROM work_queue WHERE task_id = ?", id).Scan(&queuedAt)
-	if err != nil {
-		t.Errorf("Task not found in queue: %v", err)
-	}
-}
-
 func TestGetNextTask(t *testing.T) {
 	db := setupTestDB(t)
 	defer db.Close()
@@ -333,12 +308,10 @@ func TestGetNextTask(t *testing.T) {
 		t.Fatalf("Failed to add child task: %v", err)
 	}
 
-	// Add tasks to queue
-	AddToQueue(db, task1ID)
-	AddToQueue(db, task2ID)
-	AddToQueue(db, childID)
+	// No need to add tasks to queue - they are automatically ready for work
 
-	// Get next task - should be child task (prioritized over parent)
+	// Get next task - should be task1 (root task, lowest ID)
+	// Root tasks are prioritized over child tasks
 	nextTask, err := GetNextTask(db)
 	if err != nil {
 		t.Fatalf("GetNextTask() error = %v", err)
@@ -346,24 +319,48 @@ func TestGetNextTask(t *testing.T) {
 	if nextTask == nil {
 		t.Fatal("GetNextTask() returned nil")
 	}
-	if nextTask.ID != childID {
-		t.Errorf("GetNextTask() returned task ID %d, want %d (child task)", nextTask.ID, childID)
+	if nextTask.ID != task1ID {
+		t.Errorf("GetNextTask() returned task ID %d, want %d (root task)", nextTask.ID, task1ID)
 	}
 
-	// Complete child task
-	UpdateTaskStatus(db, childID, "completed")
+	// Complete child task first (parent cannot be completed with incomplete children)
+	err = UpdateTaskStatus(db, childID, "completed")
+	if err != nil {
+		t.Fatalf("Failed to complete child task: %v", err)
+	}
 
-	// Get next task - should be task1 (lower ID than task2)
+	// Now complete task1
+	err = UpdateTaskStatus(db, task1ID, "completed")
+	if err != nil {
+		t.Fatalf("Failed to complete task1: %v", err)
+	}
+
+	// Get next task - should be task2 (only remaining root task)
 	nextTask, err = GetNextTask(db)
 	if err != nil {
 		t.Fatalf("GetNextTask() error = %v", err)
 	}
-	if nextTask.ID != task1ID {
-		t.Errorf("GetNextTask() returned task ID %d, want %d", nextTask.ID, task1ID)
+	if nextTask.ID != task2ID {
+		t.Errorf("GetNextTask() returned task ID %d, want %d", nextTask.ID, task2ID)
+	}
+
+	// Complete task2
+	err = UpdateTaskStatus(db, task2ID, "completed")
+	if err != nil {
+		t.Fatalf("Failed to complete task2: %v", err)
+	}
+
+	// Get next task - should be nil (all tasks completed)
+	nextTask, err = GetNextTask(db)
+	if err != nil {
+		t.Fatalf("GetNextTask() error = %v", err)
+	}
+	if nextTask != nil {
+		t.Errorf("GetNextTask() returned task ID %d, want nil (all tasks completed)", nextTask.ID)
 	}
 }
 
-func TestGetNextTaskEmptyQueue(t *testing.T) {
+func TestGetNextTaskNoReadyTasks(t *testing.T) {
 	db := setupTestDB(t)
 	defer db.Close()
 
@@ -372,7 +369,7 @@ func TestGetNextTaskEmptyQueue(t *testing.T) {
 		t.Fatalf("GetNextTask() error = %v", err)
 	}
 	if nextTask != nil {
-		t.Error("GetNextTask() should return nil for empty queue")
+		t.Error("GetNextTask() should return nil when there are no ready tasks")
 	}
 }
 
@@ -660,12 +657,9 @@ func TestGetNextTaskWithUpstreamDependency(t *testing.T) {
 		t.Fatalf("Failed to add independent task: %v", err)
 	}
 
-	// Add all tasks to queue
-	AddToQueue(db, upstreamID)
-	AddToQueue(db, dependentID)
-	AddToQueue(db, independentID)
+	// No need to add tasks to queue - they are automatically ready for work
 
-	// Get next task - should be upstream task (no dependencies, lowest ID)
+	// Get next task - should be upstream task (no dependencies, lowest ID, root task)
 	nextTask, err := GetNextTask(db)
 	if err != nil {
 		t.Fatalf("GetNextTask() error = %v", err)
@@ -683,10 +677,8 @@ func TestGetNextTaskWithUpstreamDependency(t *testing.T) {
 		t.Fatalf("Failed to complete upstream task: %v", err)
 	}
 
-	// Remove completed task from queue and get next task
-	// Since upstream task is completed, it should be removed from queue automatically
-	// Both dependent and independent tasks should now be available
-	// The ordering should prioritize tasks with lower IDs, so dependent task (ID 2) should come first
+	// Get next task - should be dependent task (upstream is now completed, lowest ID among remaining)
+	// Both dependent and independent tasks are valid, but dependent has lower ID (2 vs 3)
 	nextTask, err = GetNextTask(db)
 	if err != nil {
 		t.Fatalf("GetNextTask() error = %v", err)
@@ -694,28 +686,26 @@ func TestGetNextTaskWithUpstreamDependency(t *testing.T) {
 	if nextTask == nil {
 		t.Fatal("GetNextTask() returned nil when tasks should be available")
 	}
-	// Either dependent or independent task should be returned - both are valid
-	if nextTask.ID != dependentID && nextTask.ID != independentID {
-		t.Errorf("GetNextTask() returned task ID %d, want either %d (dependent) or %d (independent)", nextTask.ID, dependentID, independentID)
+	if nextTask.ID != dependentID {
+		t.Errorf("GetNextTask() returned task ID %d, want %d (dependent task)", nextTask.ID, dependentID)
 	}
 
-	// Complete independent task
-	err = UpdateTaskStatus(db, independentID, "completed")
+	// Complete dependent task
+	err = UpdateTaskStatus(db, dependentID, "completed")
 	if err != nil {
-		t.Fatalf("Failed to complete independent task: %v", err)
+		t.Fatalf("Failed to complete dependent task: %v", err)
 	}
 
-	// Get next task - should now be the remaining task (either dependent or independent)
+	// Get next task - should now be the independent task (only remaining task)
 	nextTask, err = GetNextTask(db)
 	if err != nil {
 		t.Fatalf("GetNextTask() error = %v", err)
 	}
 	if nextTask == nil {
-		t.Fatal("GetNextTask() returned nil when a task should be available")
+		t.Fatal("GetNextTask() returned nil when independent task should be available")
 	}
-	// Should return the remaining task
-	if nextTask.ID != dependentID && nextTask.ID != independentID {
-		t.Errorf("GetNextTask() returned task ID %d, want either %d (dependent) or %d (independent)", nextTask.ID, dependentID, independentID)
+	if nextTask.ID != independentID {
+		t.Errorf("GetNextTask() returned task ID %d, want %d (independent task)", nextTask.ID, independentID)
 	}
 }
 
