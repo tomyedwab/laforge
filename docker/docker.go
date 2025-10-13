@@ -369,17 +369,41 @@ func parseMemoryLimit(limit string) string {
 	return limit + "m"
 }
 
+// ContainerMetrics represents metrics collected during container execution
+type ContainerMetrics struct {
+	StartTime    time.Time
+	EndTime      time.Time
+	ExitCode     int64
+	MemoryUsage  string
+	CPUUsage     string
+	LogSize      int
+	ErrorCount   int
+	WarningCount int
+}
+
 // RunAgentContainer creates, starts, and manages an agent container
 func (c *Client) RunAgentContainer(config *ContainerConfig) (int64, string, error) {
+	return c.RunAgentContainerWithMetrics(config, nil)
+}
+
+// RunAgentContainerWithMetrics creates, starts, and manages an agent container with metrics collection
+func (c *Client) RunAgentContainerWithMetrics(config *ContainerConfig, metrics *ContainerMetrics) (int64, string, error) {
+	if metrics == nil {
+		metrics = &ContainerMetrics{}
+	}
+	metrics.StartTime = time.Now()
+
 	// Create container
 	container, err := c.CreateAgentContainer(config)
 	if err != nil {
+		metrics.EndTime = time.Now()
 		return -1, "", fmt.Errorf("failed to create container: %w", err)
 	}
 
 	// Start container
 	if err := c.StartContainer(container); err != nil {
 		// Clean up on error
+		metrics.EndTime = time.Now()
 		if config.AutoRemove {
 			_ = c.CleanupContainer(container)
 		}
@@ -390,11 +414,16 @@ func (c *Client) RunAgentContainer(config *ContainerConfig) (int64, string, erro
 	exitCode, err := c.WaitForContainer(container)
 	if err != nil {
 		// Clean up on error
+		metrics.EndTime = time.Now()
+		metrics.ExitCode = exitCode
 		if config.AutoRemove {
 			_ = c.CleanupContainer(container)
 		}
 		return -1, "", fmt.Errorf("failed to wait for container: %w", err)
 	}
+
+	metrics.ExitCode = exitCode
+	metrics.EndTime = time.Now()
 
 	// Get logs
 	logs, err := c.GetContainerLogs(container, true, true, false)
@@ -406,6 +435,10 @@ func (c *Client) RunAgentContainer(config *ContainerConfig) (int64, string, erro
 		return exitCode, "", fmt.Errorf("failed to get container logs: %w", err)
 	}
 
+	metrics.LogSize = len(logs)
+	metrics.ErrorCount = c.countErrorsInLogs(logs)
+	metrics.WarningCount = c.countWarningsInLogs(logs)
+
 	// Clean up if auto-remove is enabled
 	if config.AutoRemove {
 		if err := c.CleanupContainer(container); err != nil {
@@ -414,6 +447,32 @@ func (c *Client) RunAgentContainer(config *ContainerConfig) (int64, string, erro
 	}
 
 	return exitCode, logs, nil
+}
+
+// countErrorsInLogs counts error messages in container logs
+func (c *Client) countErrorsInLogs(logs string) int {
+	errorCount := 0
+	lines := strings.Split(logs, "\n")
+	for _, line := range lines {
+		line = strings.ToLower(line)
+		if strings.Contains(line, "error") || strings.Contains(line, "fatal") || strings.Contains(line, "panic") {
+			errorCount++
+		}
+	}
+	return errorCount
+}
+
+// countWarningsInLogs counts warning messages in container logs
+func (c *Client) countWarningsInLogs(logs string) int {
+	warningCount := 0
+	lines := strings.Split(logs, "\n")
+	for _, line := range lines {
+		line = strings.ToLower(line)
+		if strings.Contains(line, "warning") || strings.Contains(line, "warn") {
+			warningCount++
+		}
+	}
+	return warningCount
 }
 
 // CleanupLaForgeContainers removes all LaForge containers

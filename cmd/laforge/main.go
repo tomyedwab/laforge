@@ -12,6 +12,7 @@ import (
 	"github.com/tomyedwab/laforge/docker"
 	"github.com/tomyedwab/laforge/errors"
 	"github.com/tomyedwab/laforge/git"
+	"github.com/tomyedwab/laforge/logging"
 	"github.com/tomyedwab/laforge/projects"
 )
 
@@ -146,6 +147,8 @@ func runStep(cmd *cobra.Command, args []string) error {
 	// Get flags
 	agentImage, _ := cmd.Flags().GetString("agent-image")
 	timeout, _ := cmd.Flags().GetDuration("timeout")
+	verbose, _ := cmd.Flags().GetBool("verbose")
+	quiet, _ := cmd.Flags().GetBool("quiet")
 
 	// Validate agent image
 	if agentImage == "" {
@@ -173,49 +176,86 @@ func runStep(cmd *cobra.Command, args []string) error {
 		return errors.Wrap(errors.ErrUnknown, err, "failed to get project task database path")
 	}
 
-	fmt.Printf("Starting LaForge step for project '%s'\n", projectID)
+	// Set up logging
+	logger := logging.GetLogger()
+	if verbose {
+		// Set debug level for verbose output
+		logger = logging.NewLogger(logging.DEBUG, "")
+	} else if quiet {
+		// Set warn level for quiet output
+		logger = logging.NewLogger(logging.WARN, "")
+	}
+
+	// Generate step ID
+	stepID := logging.GenerateStepID()
+	stepLogger := logging.NewStepLogger(logger, projectID, stepID)
+
+	// Log step start
+	stepLogger.LogStepStart(projectID)
+	stepStartTime := time.Now()
+
+	defer func() {
+		// Log step completion
+		duration := time.Since(stepStartTime)
+		stepLogger.LogStepEnd(err == nil, duration, 0)
+	}()
 
 	// Step 1: Create temporary git worktree
-	fmt.Println("Creating temporary git worktree...")
+	stepLogger.LogStepPhase("worktree", "Creating temporary git worktree")
 	worktree, err := git.CreateTempWorktree(projectDir, "step")
 	if err != nil {
+		stepLogger.LogError("git", "Failed to create temporary worktree", err, map[string]interface{}{
+			"project_dir": projectDir,
+		})
 		return errors.Wrap(errors.ErrUnknown, err, "failed to create temporary worktree")
 	}
+	stepLogger.LogWorktreeCreation(worktree.Path, "step")
 	defer func() {
 		// Clean up worktree
-		fmt.Println("Cleaning up temporary worktree...")
-		if err := git.RemoveWorktree(worktree); err != nil {
-			fmt.Fprintf(os.Stderr, "Warning: failed to remove worktree: %v\n", err)
+		stepLogger.LogWorktreeCleanup(worktree.Path)
+		if cleanupErr := git.RemoveWorktree(worktree); cleanupErr != nil {
+			stepLogger.LogWarning("git", "Failed to remove worktree", map[string]interface{}{
+				"error": cleanupErr.Error(),
+			})
 		}
 	}()
 
 	// Step 2: Copy task database for isolation
-	fmt.Println("Copying task database for isolation...")
+	stepLogger.LogStepPhase("database", "Copying task database for isolation")
 	tempDBPath, err := database.CreateTempDatabaseCopy(taskDBPath, "step")
 	if err != nil {
+		stepLogger.LogError("database", "Failed to create temporary database copy", err, map[string]interface{}{
+			"source_path": taskDBPath,
+		})
 		return errors.Wrap(errors.ErrUnknown, err, "failed to create temporary database copy")
 	}
+	stepLogger.LogDatabaseCopy(taskDBPath, tempDBPath)
 	defer func() {
 		// Clean up temporary database
-		fmt.Println("Cleaning up temporary database...")
-		if err := database.CleanupTempDatabase(tempDBPath); err != nil {
-			fmt.Fprintf(os.Stderr, "Warning: failed to cleanup temporary database: %v\n", err)
+		stepLogger.LogDatabaseCleanup(tempDBPath)
+		if cleanupErr := database.CleanupTempDatabase(tempDBPath); cleanupErr != nil {
+			stepLogger.LogWarning("database", "Failed to cleanup temporary database", map[string]interface{}{
+				"error": cleanupErr.Error(),
+			})
 		}
 	}()
 
 	// Step 3: Create Docker client
-	fmt.Println("Initializing Docker client...")
+	stepLogger.LogStepPhase("docker", "Initializing Docker client")
 	dockerClient, err := docker.NewClient()
 	if err != nil {
+		stepLogger.LogError("docker", "Failed to create Docker client", err, nil)
 		return errors.Wrap(errors.ErrUnknown, err, "failed to create Docker client")
 	}
+	stepLogger.LogDockerClientInit()
 	defer dockerClient.Close()
 
 	// Step 4: Launch agent container
-	fmt.Printf("Launching agent container with image '%s'...\n", agentImage)
+	stepLogger.LogStepPhase("container", "Launching agent container")
+	containerName := fmt.Sprintf("laforge-agent-%s-%d", projectID, time.Now().Unix())
 	containerConfig := &docker.ContainerConfig{
 		Image:      agentImage,
-		Name:       fmt.Sprintf("laforge-agent-%s-%d", projectID, time.Now().Unix()),
+		Name:       containerName,
 		WorkDir:    worktree.Path,
 		TaskDBPath: tempDBPath,
 		Environment: map[string]string{
@@ -226,41 +266,82 @@ func runStep(cmd *cobra.Command, args []string) error {
 		Timeout:    timeout,
 	}
 
+	stepLogger.LogContainerLaunch(agentImage, containerName, map[string]interface{}{
+		"work_dir":     worktree.Path,
+		"task_db_path": tempDBPath,
+		"timeout":      timeout.String(),
+	})
+
 	// Run the agent container and wait for completion
-	exitCode, logs, err := dockerClient.RunAgentContainer(containerConfig)
+	containerMetrics := &docker.ContainerMetrics{}
+	exitCode, logs, err := dockerClient.RunAgentContainerWithMetrics(containerConfig, containerMetrics)
 	if err != nil {
+		stepLogger.LogError("docker", "Failed to run agent container", err, map[string]interface{}{
+			"exit_code": exitCode,
+		})
 		return errors.Wrap(errors.ErrUnknown, err, "failed to run agent container")
 	}
 
-	fmt.Printf("Agent container completed with exit code: %d\n", exitCode)
-	if logs != "" {
-		fmt.Printf("Container logs:\n%s\n", logs)
-	}
+	stepLogger.LogContainerCompletion(exitCode, logs)
+
+	// Log resource usage
+	stepLogger.LogResourceUsage("container", map[string]interface{}{
+		"duration_ms":   containerMetrics.EndTime.Sub(containerMetrics.StartTime).Milliseconds(),
+		"exit_code":     containerMetrics.ExitCode,
+		"log_size":      containerMetrics.LogSize,
+		"error_count":   containerMetrics.ErrorCount,
+		"warning_count": containerMetrics.WarningCount,
+	})
 
 	// Step 5: Check if there are changes to commit
-	fmt.Println("Checking for changes to commit...")
+	stepLogger.LogStepPhase("git", "Checking for changes to commit")
 	hasChanges, err := hasGitChanges(worktree.Path)
 	if err != nil {
+		stepLogger.LogError("git", "Failed to check for git changes", err, map[string]interface{}{
+			"repo_path": worktree.Path,
+		})
 		return errors.Wrap(errors.ErrUnknown, err, "failed to check for git changes")
 	}
 
+	stepLogger.LogGitChanges(hasChanges, worktree.Path)
+
 	if hasChanges {
-		fmt.Println("Changes detected, committing to git...")
-		if err := commitChanges(worktree.Path, fmt.Sprintf("LaForge step S%d - Automated changes", time.Now().Unix())); err != nil {
+		commitMessage := fmt.Sprintf("LaForge step %s - Automated changes", stepID)
+		stepLogger.LogGitCommit(commitMessage, worktree.Path)
+		if err := commitChanges(worktree.Path, commitMessage); err != nil {
+			stepLogger.LogError("git", "Failed to commit changes", err, map[string]interface{}{
+				"repo_path": worktree.Path,
+			})
 			return errors.Wrap(errors.ErrUnknown, err, "failed to commit changes")
 		}
-		fmt.Println("Changes committed successfully")
+		logger.Info("git", "Changes committed successfully", map[string]interface{}{
+			"project_id": projectID,
+			"step_id":    stepID,
+		})
 	} else {
-		fmt.Println("No changes to commit")
+		logger.Info("git", "No changes to commit", map[string]interface{}{
+			"project_id": projectID,
+			"step_id":    stepID,
+		})
 	}
 
 	// Step 6: Copy changes back from temporary database to main database
-	fmt.Println("Updating main task database...")
+	stepLogger.LogStepPhase("database", "Updating main task database")
+	stepLogger.LogDatabaseUpdate(tempDBPath, taskDBPath)
 	if err := database.CopyDatabase(tempDBPath, taskDBPath); err != nil {
+		stepLogger.LogError("database", "Failed to update main task database", err, map[string]interface{}{
+			"source_path": tempDBPath,
+			"dest_path":   taskDBPath,
+		})
 		return errors.Wrap(errors.ErrUnknown, err, "failed to update main task database")
 	}
 
-	fmt.Printf("LaForge step completed successfully for project '%s'\n", projectID)
+	logger.Info("step", fmt.Sprintf("LaForge step completed successfully for project '%s'", projectID), map[string]interface{}{
+		"project_id": projectID,
+		"step_id":    stepID,
+		"duration":   time.Since(stepStartTime).String(),
+	})
+
 	return nil
 }
 
