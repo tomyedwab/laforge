@@ -192,6 +192,10 @@ func UpdateTaskStatus(db *sql.DB, taskID int, status string) error {
 		return fmt.Errorf("task not found: T%d", taskID)
 	}
 
+	if status == "in-review" && task.Status != "in-review" {
+		return fmt.Errorf("cannot set task to in-review directly; add a review request instead")
+	}
+
 	// Check upstream dependency for in-progress and completed statuses
 	if status == "in-progress" || status == "completed" {
 		if task.UpstreamDependencyID != nil {
