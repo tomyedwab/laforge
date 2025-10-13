@@ -5,6 +5,7 @@ import (
 	"os"
 
 	"github.com/spf13/cobra"
+	"github.com/tomyedwab/laforge/errors"
 	"github.com/tomyedwab/laforge/projects"
 )
 
@@ -32,8 +33,15 @@ func init() {
 
 func main() {
 	if err := rootCmd.Execute(); err != nil {
-		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
-		os.Exit(1)
+		// Use LaForge error handling for better error messages
+		fmt.Fprintf(os.Stderr, "Error: %s\n", errors.UserFriendlyMessage(err))
+
+		// Add suggestion if available
+		if suggestion := errors.Suggestion(err); suggestion != "" {
+			fmt.Fprintf(os.Stderr, "Suggestion: %s\n", suggestion)
+		}
+
+		os.Exit(errors.ExitCode(err))
 	}
 }
 
@@ -82,6 +90,11 @@ func init() {
 func runInit(cmd *cobra.Command, args []string) error {
 	projectID := args[0]
 
+	// Validate project ID
+	if projectID == "" {
+		return errors.NewInvalidInputError("project ID cannot be empty")
+	}
+
 	// Get flags
 	name, _ := cmd.Flags().GetString("name")
 	description, _ := cmd.Flags().GetString("description")
@@ -94,13 +107,13 @@ func runInit(cmd *cobra.Command, args []string) error {
 	// Create the project
 	project, err := projects.CreateProject(projectID, name, description)
 	if err != nil {
-		return fmt.Errorf("failed to create project: %w", err)
+		return errors.Wrap(errors.ErrProjectAlreadyExists, err, "failed to create project")
 	}
 
 	// Get project directory for display
 	projectDir, err := projects.GetProjectDir(projectID)
 	if err != nil {
-		return fmt.Errorf("failed to get project directory: %w", err)
+		return errors.Wrap(errors.ErrUnknown, err, "failed to get project directory")
 	}
 
 	fmt.Printf("Successfully created LaForge project '%s'\n", project.ID)
@@ -117,6 +130,36 @@ func runInit(cmd *cobra.Command, args []string) error {
 
 // runStep is the handler for the step command
 func runStep(cmd *cobra.Command, args []string) error {
-	// TODO: Implement step command logic
-	return fmt.Errorf("step command not yet implemented")
+	projectID := args[0]
+
+	// Validate project ID
+	if projectID == "" {
+		return errors.NewInvalidInputError("project ID cannot be empty")
+	}
+
+	// Get flags
+	agentImage, _ := cmd.Flags().GetString("agent-image")
+	timeout, _ := cmd.Flags().GetDuration("timeout")
+
+	// Validate agent image
+	if agentImage == "" {
+		agentImage = "laforge-agent:latest"
+	}
+
+	// Check if project exists
+	exists, err := projects.ProjectExists(projectID)
+	if err != nil {
+		return errors.Wrap(errors.ErrUnknown, err, "failed to check if project exists")
+	}
+	if !exists {
+		return errors.NewProjectNotFoundError(projectID)
+	}
+
+	// TODO: Implement the actual step logic using the git, database, and docker packages
+	// This will be implemented when T10 (Implement laforge step command) is worked on
+
+	fmt.Printf("Step command for project '%s' with agent image '%s' and timeout %v\n", projectID, agentImage, timeout)
+	fmt.Println("Step command implementation is in progress...")
+
+	return errors.New(errors.ErrUnknown, "step command implementation is not yet complete")
 }

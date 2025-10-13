@@ -11,6 +11,7 @@ import (
 	"time"
 
 	_ "github.com/mattn/go-sqlite3"
+	"github.com/tomyedwab/laforge/errors"
 	"github.com/tomyedwab/laforge/tasks"
 )
 
@@ -80,36 +81,36 @@ func ProjectExists(projectID string) (bool, error) {
 func CreateProject(projectID string, name string, description string) (*Project, error) {
 	// Validate project ID
 	if projectID == "" {
-		return nil, fmt.Errorf("project ID cannot be empty")
+		return nil, errors.NewInvalidInputError("project ID cannot be empty")
 	}
 
 	// Check if project already exists
 	exists, err := ProjectExists(projectID)
 	if err != nil {
-		return nil, err
+		return nil, errors.Wrap(errors.ErrUnknown, err, "failed to check if project exists")
 	}
 	if exists {
-		return nil, fmt.Errorf("project '%s' already exists", projectID)
+		return nil, errors.NewProjectAlreadyExistsError(projectID)
 	}
 
 	// Get project directory
 	projectDir, err := GetProjectDir(projectID)
 	if err != nil {
-		return nil, err
+		return nil, errors.Wrap(errors.ErrUnknown, err, "failed to get project directory")
 	}
 
 	// Create projects directory if it doesn't exist
 	projectsDir, err := GetProjectsDir()
 	if err != nil {
-		return nil, err
+		return nil, errors.Wrap(errors.ErrUnknown, err, "failed to get projects directory")
 	}
 	if err := os.MkdirAll(projectsDir, 0755); err != nil {
-		return nil, fmt.Errorf("failed to create projects directory: %w", err)
+		return nil, errors.Wrapf(errors.ErrPermissionDenied, err, "failed to create projects directory '%s'", projectsDir)
 	}
 
 	// Create project directory
 	if err := os.MkdirAll(projectDir, 0755); err != nil {
-		return nil, fmt.Errorf("failed to create project directory: %w", err)
+		return nil, errors.Wrapf(errors.ErrPermissionDenied, err, "failed to create project directory '%s'", projectDir)
 	}
 
 	// Create project metadata
@@ -126,7 +127,7 @@ func CreateProject(projectID string, name string, description string) (*Project,
 	if err := createProjectConfig(projectDir, project); err != nil {
 		// Clean up on error
 		os.RemoveAll(projectDir)
-		return nil, fmt.Errorf("failed to create project configuration: %w", err)
+		return nil, errors.Wrap(errors.ErrUnknown, err, "failed to create project configuration")
 	}
 
 	// Initialize git repository (optional)
@@ -139,7 +140,7 @@ func CreateProject(projectID string, name string, description string) (*Project,
 	if err := createTaskDatabase(projectDir); err != nil {
 		// Clean up on error
 		os.RemoveAll(projectDir)
-		return nil, fmt.Errorf("failed to create task database: %w", err)
+		return nil, errors.Wrap(errors.ErrDatabaseOperationFailed, err, "failed to create task database")
 	}
 
 	return project, nil
@@ -249,41 +250,41 @@ func LoadProject(projectID string) (*Project, error) {
 	// Check if project exists
 	exists, err := ProjectExists(projectID)
 	if err != nil {
-		return nil, err
+		return nil, errors.Wrap(errors.ErrUnknown, err, "failed to check if project exists")
 	}
 	if !exists {
-		return nil, fmt.Errorf("project '%s' does not exist", projectID)
+		return nil, errors.NewProjectNotFoundError(projectID)
 	}
 
 	// Get project directory
 	projectDir, err := GetProjectDir(projectID)
 	if err != nil {
-		return nil, err
+		return nil, errors.Wrap(errors.ErrUnknown, err, "failed to get project directory")
 	}
 
 	// Load project configuration
 	configPath := filepath.Join(projectDir, "project.json")
 	file, err := os.Open(configPath)
 	if err != nil {
-		return nil, fmt.Errorf("failed to open project configuration: %w", err)
+		return nil, errors.Wrap(errors.ErrNotFound, err, "failed to open project configuration")
 	}
 	defer file.Close()
 
 	var config ProjectConfig
 	decoder := json.NewDecoder(file)
 	if err := decoder.Decode(&config); err != nil {
-		return nil, fmt.Errorf("failed to parse project configuration: %w", err)
+		return nil, errors.Wrap(errors.ErrUnknown, err, "failed to parse project configuration")
 	}
 
 	// Parse timestamps
 	createdAt, err := time.Parse(time.RFC3339, config.CreatedAt)
 	if err != nil {
-		return nil, fmt.Errorf("failed to parse created_at timestamp: %w", err)
+		return nil, errors.Wrap(errors.ErrUnknown, err, "failed to parse created_at timestamp")
 	}
 
 	updatedAt, err := time.Parse(time.RFC3339, config.UpdatedAt)
 	if err != nil {
-		return nil, fmt.Errorf("failed to parse updated_at timestamp: %w", err)
+		return nil, errors.Wrap(errors.ErrUnknown, err, "failed to parse updated_at timestamp")
 	}
 
 	project := &Project{
@@ -301,7 +302,7 @@ func LoadProject(projectID string) (*Project, error) {
 func GetProjectTaskDatabase(projectID string) (string, error) {
 	projectDir, err := GetProjectDir(projectID)
 	if err != nil {
-		return "", err
+		return "", errors.Wrap(errors.ErrUnknown, err, "failed to get project directory")
 	}
 	return filepath.Join(projectDir, "tasks.db"), nil
 }
@@ -324,5 +325,10 @@ func OpenProjectTaskDatabase(projectID string) (*sql.DB, error) {
 		}
 	}()
 
-	return tasks.InitDB()
+	db, err := tasks.InitDB()
+	if err != nil {
+		return nil, errors.Wrap(errors.ErrDatabaseConnectionFailed, err, "failed to open project task database")
+	}
+
+	return db, nil
 }
