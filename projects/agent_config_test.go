@@ -1,6 +1,8 @@
 package projects
 
 import (
+	"os"
+	"path/filepath"
 	"testing"
 
 	"gopkg.in/yaml.v3"
@@ -723,6 +725,109 @@ func TestValidateMemoryFormat(t *testing.T) {
 				t.Errorf("validateMemoryFormat() error = %v, wantErr %v", err, tt.wantErr)
 			}
 		})
+	}
+}
+
+// Test file management functions
+func TestSaveAndLoadAgentsConfig(t *testing.T) {
+	// Create a temporary directory for testing
+	tempDir := t.TempDir()
+	configPath := filepath.Join(tempDir, "agents.yml")
+
+	// Test configuration
+	config := &AgentsConfig{
+		Version: "1.0",
+		Default: "test-agent",
+		Agents: map[string]AgentConfig{
+			"test-agent": {
+				Name:  "test-agent",
+				Image: "test:latest",
+			},
+		},
+	}
+
+	// Test saving configuration
+	data, err := yaml.Marshal(config)
+	if err != nil {
+		t.Fatalf("Failed to marshal test config: %v", err)
+	}
+
+	if err := os.WriteFile(configPath, data, 0644); err != nil {
+		t.Fatalf("Failed to write test config file: %v", err)
+	}
+
+	// Test loading configuration
+	loadedData, err := os.ReadFile(configPath)
+	if err != nil {
+		t.Fatalf("Failed to read config file: %v", err)
+	}
+
+	var loadedConfig AgentsConfig
+	if err := yaml.Unmarshal(loadedData, &loadedConfig); err != nil {
+		t.Fatalf("Failed to unmarshal config: %v", err)
+	}
+
+	if err := loadedConfig.Validate(); err != nil {
+		t.Fatalf("Loaded config validation failed: %v", err)
+	}
+
+	if loadedConfig.Version != config.Version {
+		t.Errorf("Loaded config Version = %v, want %v", loadedConfig.Version, config.Version)
+	}
+
+	if loadedConfig.Default != config.Default {
+		t.Errorf("Loaded config Default = %v, want %v", loadedConfig.Default, config.Default)
+	}
+}
+
+func TestCreateDefaultAgentsConfigFile(t *testing.T) {
+	// Create a temporary directory for testing
+	tempDir := t.TempDir()
+	configPath := filepath.Join(tempDir, "agents.yml")
+
+	// Create default configuration
+	config := DefaultAgentsConfig()
+
+	// Save it to file
+	data, err := yaml.Marshal(config)
+	if err != nil {
+		t.Fatalf("Failed to marshal default config: %v", err)
+	}
+
+	if err := os.WriteFile(configPath, data, 0644); err != nil {
+		t.Fatalf("Failed to write default config file: %v", err)
+	}
+
+	// Load and verify
+	loadedData, err := os.ReadFile(configPath)
+	if err != nil {
+		t.Fatalf("Failed to read config file: %v", err)
+	}
+
+	var loadedConfig AgentsConfig
+	if err := yaml.Unmarshal(loadedData, &loadedConfig); err != nil {
+		t.Fatalf("Failed to unmarshal config: %v", err)
+	}
+
+	if err := loadedConfig.Validate(); err != nil {
+		t.Fatalf("Loaded default config validation failed: %v", err)
+	}
+
+	if loadedConfig.Version != "1.0" {
+		t.Errorf("Default config Version = %v, want %v", loadedConfig.Version, "1.0")
+	}
+
+	if loadedConfig.Default != "default" {
+		t.Errorf("Default config Default = %v, want %v", loadedConfig.Default, "default")
+	}
+
+	defaultAgent, exists := loadedConfig.Agents["default"]
+	if !exists {
+		t.Error("Default agent not found in loaded config")
+	}
+
+	if defaultAgent.Image != "laforge-agent:latest" {
+		t.Errorf("Default agent Image = %v, want %v", defaultAgent.Image, "laforge-agent:latest")
 	}
 }
 

@@ -2,6 +2,8 @@ package projects
 
 import (
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -251,6 +253,132 @@ func (c *AgentsConfig) UnmarshalYAML(node *yaml.Node) error {
 
 	*c = AgentsConfig(alias)
 	return nil
+}
+
+// GetAgentsConfigPath returns the path to the agents.yml file for a project
+func GetAgentsConfigPath(projectID string) (string, error) {
+	projectDir, err := GetProjectDir(projectID)
+	if err != nil {
+		return "", fmt.Errorf("failed to get project directory: %w", err)
+	}
+	return filepath.Join(projectDir, "agents.yml"), nil
+}
+
+// LoadAgentsConfig loads the agents configuration from the agents.yml file
+func LoadAgentsConfig(projectID string) (*AgentsConfig, error) {
+	configPath, err := GetAgentsConfigPath(projectID)
+	if err != nil {
+		return nil, err
+	}
+
+	// Check if file exists
+	if _, err := os.Stat(configPath); os.IsNotExist(err) {
+		return nil, fmt.Errorf("agents.yml file not found: %w", err)
+	}
+
+	// Read the file
+	data, err := os.ReadFile(configPath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read agents.yml file: %w", err)
+	}
+
+	// Parse YAML
+	var config AgentsConfig
+	if err := yaml.Unmarshal(data, &config); err != nil {
+		return nil, fmt.Errorf("failed to parse agents.yml file: %w", err)
+	}
+
+	// Validate the configuration
+	if err := config.Validate(); err != nil {
+		return nil, fmt.Errorf("invalid agents configuration: %w", err)
+	}
+
+	return &config, nil
+}
+
+// SaveAgentsConfig saves the agents configuration to the agents.yml file
+func SaveAgentsConfig(projectID string, config *AgentsConfig) error {
+	if config == nil {
+		return fmt.Errorf("configuration cannot be nil")
+	}
+
+	// Validate the configuration before saving
+	if err := config.Validate(); err != nil {
+		return fmt.Errorf("invalid agents configuration: %w", err)
+	}
+
+	configPath, err := GetAgentsConfigPath(projectID)
+	if err != nil {
+		return err
+	}
+
+	// Marshal to YAML
+	data, err := yaml.Marshal(config)
+	if err != nil {
+		return fmt.Errorf("failed to marshal agents configuration: %w", err)
+	}
+
+	// Write to file
+	if err := os.WriteFile(configPath, data, 0644); err != nil {
+		return fmt.Errorf("failed to write agents.yml file: %w", err)
+	}
+
+	return nil
+}
+
+// CreateDefaultAgentsConfig creates a default agents.yml file for the project
+func CreateDefaultAgentsConfig(projectID string) error {
+	config := DefaultAgentsConfig()
+	return SaveAgentsConfig(projectID, config)
+}
+
+// AgentsConfigExists checks if the agents.yml file exists for the project
+func AgentsConfigExists(projectID string) (bool, error) {
+	configPath, err := GetAgentsConfigPath(projectID)
+	if err != nil {
+		return false, err
+	}
+
+	_, err = os.Stat(configPath)
+	if err == nil {
+		return true, nil
+	}
+	if os.IsNotExist(err) {
+		return false, nil
+	}
+	return false, fmt.Errorf("failed to check agents.yml file: %w", err)
+}
+
+// UpdateAgentsConfig updates the agents configuration by merging the provided updates
+func UpdateAgentsConfig(projectID string, updates *AgentsConfig) error {
+	// Load existing configuration
+	existing, err := LoadAgentsConfig(projectID)
+	if err != nil {
+		// If file doesn't exist, create it with the updates
+		if os.IsNotExist(err) {
+			return SaveAgentsConfig(projectID, updates)
+		}
+		return err
+	}
+
+	// Merge the configurations
+	if updates.Version != "" {
+		existing.Version = updates.Version
+	}
+	if updates.Default != "" {
+		existing.Default = updates.Default
+	}
+
+	// Merge or replace agents
+	if existing.Agents == nil {
+		existing.Agents = make(map[string]AgentConfig)
+	}
+	for name, agent := range updates.Agents {
+		existing.Agents[name] = agent
+	}
+
+	// Save the updated configuration
+	return SaveAgentsConfig(projectID, existing)
 }
 
 // Helper functions
