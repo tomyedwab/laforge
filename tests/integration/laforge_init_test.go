@@ -184,15 +184,6 @@ func validateBasicProjectStructure(t *testing.T, projectID string) {
 	if _, err := os.Stat(dbPath); os.IsNotExist(err) {
 		t.Errorf("Task database does not exist: %s", dbPath)
 	}
-
-	// Check git repository (should be initialized if git is available)
-	gitPath := filepath.Join(projectDir, ".git")
-	if _, err := os.Stat(gitPath); os.IsNotExist(err) {
-		// Git repository initialization is optional, so we only warn if git is available
-		if isGitAvailable() {
-			t.Errorf("Git repository not initialized: %s", gitPath)
-		}
-	}
 }
 
 func validateProjectWithMetadata(t *testing.T, projectID string) {
@@ -298,10 +289,4 @@ func cleanupTestProject(projectID string) {
 	if _, err := os.Stat(projectDir); err == nil {
 		os.RemoveAll(projectDir)
 	}
-}
-
-func isGitAvailable() bool {
-	cmd := exec.Command("git", "--version")
-	err := cmd.Run()
-	return err == nil
 }

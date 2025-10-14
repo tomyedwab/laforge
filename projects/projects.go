@@ -5,9 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
-	"strings"
 	"time"
 
 	_ "github.com/mattn/go-sqlite3"
@@ -130,12 +128,6 @@ func CreateProject(projectID string, name string, description string) (*Project,
 		return nil, errors.Wrap(errors.ErrUnknown, err, "failed to create project configuration")
 	}
 
-	// Initialize git repository (optional)
-	if err := initGitRepository(projectDir); err != nil {
-		// Log warning but don't fail - git is optional for basic functionality
-		fmt.Fprintf(os.Stderr, "Warning: %v\n", err)
-	}
-
 	// Create task database
 	if err := createTaskDatabase(projectDir); err != nil {
 		// Clean up on error
@@ -169,52 +161,6 @@ func createProjectConfig(projectDir string, project *Project) error {
 	encoder.SetIndent("", "  ")
 	if err := encoder.Encode(config); err != nil {
 		return fmt.Errorf("failed to write config file: %w", err)
-	}
-
-	return nil
-}
-
-// initGitRepository initializes a git repository in the project directory
-func initGitRepository(projectDir string) error {
-	// Check if git is available
-	if err := exec.Command("git", "--version").Run(); err != nil {
-		return fmt.Errorf("git is not available: %w", err)
-	}
-
-	// Initialize git repository
-	cmd := exec.Command("git", "init")
-	cmd.Dir = projectDir
-	if output, err := cmd.CombinedOutput(); err != nil {
-		return fmt.Errorf("failed to initialize git repository: %w\nOutput: %s", err, string(output))
-	}
-
-	// Configure git user (required for commits)
-	cmd = exec.Command("git", "config", "user.name", "LaForge")
-	cmd.Dir = projectDir
-	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("failed to configure git user.name: %w", err)
-	}
-
-	cmd = exec.Command("git", "config", "user.email", "laforge@localhost")
-	cmd.Dir = projectDir
-	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("failed to configure git user.email: %w", err)
-	}
-
-	// Create initial commit
-	cmd = exec.Command("git", "add", ".")
-	cmd.Dir = projectDir
-	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("failed to add files to git: %w", err)
-	}
-
-	cmd = exec.Command("git", "commit", "-m", "Initial LaForge project setup")
-	cmd.Dir = projectDir
-	if output, err := cmd.CombinedOutput(); err != nil {
-		// It's okay if there's nothing to commit
-		if !strings.Contains(string(output), "nothing to commit") {
-			return fmt.Errorf("failed to create initial commit: %w\nOutput: %s", err, string(output))
-		}
 	}
 
 	return nil

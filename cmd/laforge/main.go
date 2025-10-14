@@ -63,9 +63,9 @@ var initCmd = &cobra.Command{
 	Use:   "init [project-id]",
 	Short: "Initialize a new LaForge project",
 	Long: `Initialize a new LaForge project with the specified ID.
-	
-This command creates the project directory structure, initializes a git repository,
-creates a task database, and generates the project configuration file.`,
+
+This command creates the project directory structure, creates a task database,
+and generates the project configuration file.`,
 	Args: cobra.ExactArgs(1),
 	RunE: runInit,
 }
