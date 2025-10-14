@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/tomyedwab/laforge/projects"
 )
 
 // ContainerConfig represents configuration for creating a container
@@ -53,6 +55,68 @@ func NewClient() (*Client, error) {
 	}
 
 	return &Client{}, nil
+}
+
+// convertAgentConfigToContainerConfig converts AgentConfig to ContainerConfig
+func (c *Client) convertAgentConfigToContainerConfig(agentConfig *projects.AgentConfig, workDir, taskDBPath string) (*ContainerConfig, error) {
+	if agentConfig == nil {
+		return nil, fmt.Errorf("agent configuration cannot be nil")
+	}
+
+	// Parse timeout duration
+	timeoutDuration := time.Duration(0)
+	if agentConfig.Runtime.Timeout != "" {
+		var err error
+		timeoutDuration, err = time.ParseDuration(agentConfig.Runtime.Timeout)
+		if err != nil {
+			return nil, fmt.Errorf("invalid timeout format: %w", err)
+		}
+	}
+
+	// Build environment variables (merge default and custom)
+	env := make(map[string]string)
+	for k, v := range agentConfig.Environment {
+		env[k] = v
+	}
+	// Add required environment variables
+	env["TASKS_DB_PATH"] = taskDBPath
+	env["LAFORGE_AGENT"] = "true"
+
+	// Build command
+	var cmd []string
+	if len(agentConfig.Command) > 0 {
+		cmd = agentConfig.Command
+	}
+
+	containerConfig := &ContainerConfig{
+		Image:       agentConfig.Image,
+		Name:        agentConfig.Name,
+		WorkDir:     workDir,
+		TaskDBPath:  taskDBPath,
+		Environment: env,
+		Cmd:         cmd,
+		MemoryLimit: agentConfig.Resources.Memory,
+		CPUShares:   agentConfig.Resources.CPUShares,
+		AutoRemove:  agentConfig.Runtime.AutoRemove,
+		Timeout:     timeoutDuration,
+	}
+
+	return containerConfig, nil
+}
+
+// CreateAgentContainerFromConfig creates a container from AgentConfig
+func (c *Client) CreateAgentContainerFromConfig(agentConfig *projects.AgentConfig, workDir, taskDBPath string) (*Container, error) {
+	if agentConfig == nil {
+		return nil, fmt.Errorf("agent configuration cannot be nil")
+	}
+
+	// Convert AgentConfig to ContainerConfig
+	containerConfig, err := c.convertAgentConfigToContainerConfig(agentConfig, workDir, taskDBPath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to convert agent config: %w", err)
+	}
+
+	return c.CreateAgentContainer(containerConfig)
 }
 
 // Close closes the Docker client (no-op for CLI-based implementation)
@@ -189,12 +253,10 @@ func (c *Client) GetContainerLogs(container *Container, stdout, stderr, timestam
 
 	args := []string{"logs"}
 
-	if stdout {
-		args = append(args, "--stdout")
-	}
-	if stderr {
-		args = append(args, "--stderr")
-	}
+	// Note: docker logs returns both stdout and stderr by default
+	// The stdout and stderr parameters are kept for API compatibility but not used
+	// as the Docker CLI doesn't support filtering by stream
+
 	if timestamps {
 		args = append(args, "-t")
 	}
@@ -449,6 +511,67 @@ func (c *Client) RunAgentContainerWithMetrics(config *ContainerConfig, metrics *
 	return exitCode, logs, nil
 }
 
+// RunAgentContainerFromConfig creates, starts, and manages an agent container from AgentConfig with metrics collection
+func (c *Client) RunAgentContainerFromConfig(agentConfig *projects.AgentConfig, workDir, taskDBPath string, metrics *ContainerMetrics) (int64, string, error) {
+	if metrics == nil {
+		metrics = &ContainerMetrics{}
+	}
+	metrics.StartTime = time.Now()
+
+	// Create container from AgentConfig
+	container, err := c.CreateAgentContainerFromConfig(agentConfig, workDir, taskDBPath)
+	if err != nil {
+		metrics.EndTime = time.Now()
+		return -1, "", fmt.Errorf("failed to create container from config: %w", err)
+	}
+
+	// Create a copy of agent config with AutoRemove disabled
+	// We need to get logs before removing the container
+	configCopy := *agentConfig
+	configCopy.Runtime.AutoRemove = false
+
+	// Start container with AgentConfig (without AutoRemove)
+	if err := c.startContainerWithAgentConfig(container, &configCopy); err != nil {
+		// Clean up on error
+		metrics.EndTime = time.Now()
+		_ = c.CleanupContainer(container)
+		return -1, "", fmt.Errorf("failed to start container: %w", err)
+	}
+
+	// Wait for container to finish
+	exitCode, err := c.WaitForContainer(container)
+	if err != nil {
+		// Clean up on error
+		metrics.EndTime = time.Now()
+		metrics.ExitCode = exitCode
+		_ = c.CleanupContainer(container)
+		return -1, "", fmt.Errorf("failed to wait for container: %w", err)
+	}
+
+	metrics.ExitCode = exitCode
+	metrics.EndTime = time.Now()
+
+	// Get logs (container still exists because we disabled AutoRemove)
+	logs, err := c.GetContainerLogs(container, true, true, false)
+	if err != nil {
+		// Clean up on error
+		_ = c.CleanupContainer(container)
+		return exitCode, "", fmt.Errorf("failed to get container logs: %w", err)
+	}
+
+	metrics.LogSize = len(logs)
+	metrics.ErrorCount = c.countErrorsInLogs(logs)
+	metrics.WarningCount = c.countWarningsInLogs(logs)
+
+	// Always clean up the container manually since we disabled AutoRemove
+	// to be able to collect logs
+	if err := c.CleanupContainer(container); err != nil {
+		return exitCode, logs, fmt.Errorf("failed to cleanup container: %w", err)
+	}
+
+	return exitCode, logs, nil
+}
+
 // countErrorsInLogs counts error messages in container logs
 func (c *Client) countErrorsInLogs(logs string) int {
 	errorCount := 0
@@ -475,38 +598,142 @@ func (c *Client) countWarningsInLogs(logs string) int {
 	return warningCount
 }
 
-// CleanupLaForgeContainers removes all LaForge containers
-func (c *Client) CleanupLaForgeContainers() error {
-	ctx := context.Background()
-
-	// List all containers
-	containers, err := c.ListContainers(true, nil)
+// StartContainerFromConfig starts a container from AgentConfig
+func (c *Client) StartContainerFromConfig(agentConfig *projects.AgentConfig, workDir, taskDBPath string) (*Container, error) {
+	// Create container from AgentConfig
+	container, err := c.CreateAgentContainerFromConfig(agentConfig, workDir, taskDBPath)
 	if err != nil {
-		return fmt.Errorf("failed to list containers: %w", err)
+		return nil, fmt.Errorf("failed to create container from config: %w", err)
 	}
 
-	var lastErr error
-	for _, container := range containers {
-		// Check if this is a LaForge container by name
-		if name, ok := container["Name"].(string); ok && strings.HasPrefix(name, "laforge-") {
-			if id, ok := container["ID"].(string); ok {
-				// Stop and remove the container
-				stopCmd := exec.CommandContext(ctx, "docker", "stop", id)
-				if err := stopCmd.Run(); err != nil {
-					lastErr = fmt.Errorf("failed to stop container %s: %w", id, err)
-					continue
-				}
+	// Start the container with additional configuration from AgentConfig
+	if err := c.startContainerWithAgentConfig(container, agentConfig); err != nil {
+		return nil, fmt.Errorf("failed to start container with agent config: %w", err)
+	}
 
-				rmCmd := exec.CommandContext(ctx, "docker", "rm", "-f", id)
-				if err := rmCmd.Run(); err != nil {
-					lastErr = fmt.Errorf("failed to remove container %s: %w", id, err)
-				}
-			}
+	return container, nil
+}
+
+// startContainerWithAgentConfig starts a container with additional AgentConfig options
+func (c *Client) startContainerWithAgentConfig(container *Container, agentConfig *projects.AgentConfig) error {
+	ctx := context.Background()
+
+	// Build docker run command
+	args := []string{"run", "-d", "--name", container.Name}
+
+	// Add environment variables
+	args = append(args, "-e", fmt.Sprintf("TASKS_DB_PATH=%s", container.Config.TaskDBPath))
+	args = append(args, "-e", "LAFORGE_AGENT=true")
+
+	for key, value := range agentConfig.Environment {
+		args = append(args, "-e", fmt.Sprintf("%s=%s", key, value))
+	}
+
+	// Add volume mounts from AgentConfig
+	for _, volume := range agentConfig.Volumes {
+		args = append(args, "-v", volume)
+	}
+
+	// Add main volume mounts if not already specified
+	hasWorkspaceVolume := false
+	hasDataVolume := false
+	for _, volume := range agentConfig.Volumes {
+		if strings.HasSuffix(volume, ":/src") {
+			hasWorkspaceVolume = true
+		}
+		if strings.HasSuffix(volume, ":/state") {
+			hasDataVolume = true
 		}
 	}
 
-	return lastErr
+	if !hasWorkspaceVolume {
+		args = append(args, "-v", fmt.Sprintf("%s:/src", container.Config.WorkDir))
+	}
+
+	// Mount task database if it's in a different location
+	taskDBDir := filepath.Dir(container.Config.TaskDBPath)
+	if taskDBDir != container.Config.WorkDir && !hasDataVolume {
+		args = append(args, "-v", fmt.Sprintf("%s:/state", taskDBDir))
+	}
+
+	// Set working directory
+	if agentConfig.WorkingDir != "" {
+		args = append(args, "-w", agentConfig.WorkingDir)
+	} else {
+		args = append(args, "-w", "/src")
+	}
+
+	// Set memory limit if specified
+	if agentConfig.Resources.Memory != "" {
+		args = append(args, "-m", agentConfig.Resources.Memory)
+	}
+
+	// Set CPU shares if specified
+	if agentConfig.Resources.CPUShares > 0 {
+		args = append(args, "-c", fmt.Sprintf("%d", agentConfig.Resources.CPUShares))
+	}
+
+	// Set CPU limit if specified
+	if agentConfig.Resources.CPULimit != "" {
+		args = append(args, "--cpus", agentConfig.Resources.CPULimit)
+	}
+
+	// Set PID limit if specified
+	if agentConfig.Resources.PidsLimit > 0 {
+		args = append(args, "--pids-limit", fmt.Sprintf("%d", agentConfig.Resources.PidsLimit))
+	}
+
+	// Set network mode if specified
+	if agentConfig.Runtime.NetworkMode != "" {
+		args = append(args, "--network", agentConfig.Runtime.NetworkMode)
+	}
+
+	// Set privileged mode if specified
+	if agentConfig.Runtime.Privileged {
+		args = append(args, "--privileged")
+	}
+
+	// Add capabilities if specified
+	for _, cap := range agentConfig.Runtime.Capabilities {
+		args = append(args, "--cap-add", cap)
+	}
+
+	// Add devices if specified
+	for _, device := range agentConfig.Runtime.Devices {
+		args = append(args, "--device", device)
+	}
+
+	// Auto-remove if specified
+	if agentConfig.Runtime.AutoRemove {
+		args = append(args, "--rm")
+	}
+
+	// Add image and command
+	args = append(args, container.Config.Image)
+	if len(agentConfig.Command) > 0 {
+		args = append(args, agentConfig.Command...)
+	} else if len(container.Config.Cmd) > 0 {
+		args = append(args, container.Config.Cmd...)
+	}
+
+	// Run the container
+	cmd := exec.CommandContext(ctx, "docker", args...)
+	output, err := cmd.Output()
+	if err != nil {
+		if exitErr, ok := err.(*exec.ExitError); ok {
+			return fmt.Errorf("failed to start container: %w\nOutput: %s", err, string(exitErr.Stderr))
+		}
+		return fmt.Errorf("failed to start container: %w", err)
+	}
+
+	// Extract container ID from output
+	container.ID = strings.TrimSpace(string(output))
+	container.StartTime = time.Now()
+
+	return nil
 }
+
+// CleanupLaForgeContainers removes all LaForge containers
 
 // isTempFile checks if a path appears to be a temporary file
 func isTempFile(path string) bool {
