@@ -235,7 +235,7 @@ Examples:
 				}
 
 				if action == "s" || action == "skip" {
-					fmt.Println("Skipped.\n")
+					fmt.Println("Skipped.")
 					break
 				}
 

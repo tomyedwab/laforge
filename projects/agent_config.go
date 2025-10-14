@@ -447,3 +447,53 @@ func validateVolumeMount(volume string) error {
 
 	return nil
 }
+
+// LoadCustomAgentsConfig loads a custom agents configuration from a file and saves it to the project
+func LoadCustomAgentsConfig(projectID string, configFilePath string) error {
+	// Read the custom configuration file
+	data, err := os.ReadFile(configFilePath)
+	if err != nil {
+		return fmt.Errorf("failed to read custom agents configuration file: %w", err)
+	}
+
+	// Parse YAML
+	var config AgentsConfig
+	if err := yaml.Unmarshal(data, &config); err != nil {
+		return fmt.Errorf("failed to parse custom agents configuration: %w", err)
+	}
+
+	// Validate the configuration
+	if err := config.Validate(); err != nil {
+		return fmt.Errorf("invalid custom agents configuration: %w", err)
+	}
+
+	// Save the configuration to the project
+	return SaveAgentsConfig(projectID, &config)
+}
+
+// UpdateDefaultAgentImage updates the image for the default agent configuration
+func UpdateDefaultAgentImage(projectID string, image string) error {
+	// Load existing configuration
+	config, err := LoadAgentsConfig(projectID)
+	if err != nil {
+		return fmt.Errorf("failed to load existing agents configuration: %w", err)
+	}
+
+	// Update the default agent's image
+	if config.Default != "" {
+		if agent, exists := config.Agents[config.Default]; exists {
+			agent.Image = image
+			config.Agents[config.Default] = agent
+		}
+	} else {
+		// If no default is specified, update the first agent
+		for name, agent := range config.Agents {
+			agent.Image = image
+			config.Agents[name] = agent
+			break
+		}
+	}
+
+	// Save the updated configuration
+	return SaveAgentsConfig(projectID, config)
+}

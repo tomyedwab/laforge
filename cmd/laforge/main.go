@@ -87,9 +87,12 @@ func init() {
 	// Add flags for init command
 	initCmd.Flags().String("name", "", "project name")
 	initCmd.Flags().String("description", "", "project description")
+	initCmd.Flags().String("agent-image", "", "default Docker image for the agent container")
+	initCmd.Flags().String("agent-config-file", "", "path to custom agents.yml configuration file")
 
 	// Add flags for step command
 	stepCmd.Flags().String("agent-image", "laforge-agent:latest", "Docker image for the agent container")
+	stepCmd.Flags().String("agent-config", "", "agent configuration name from agents.yml (overrides --agent-image)")
 	stepCmd.Flags().Duration("timeout", 0, "timeout for step execution (0 means no timeout)")
 }
 
@@ -105,6 +108,8 @@ func runInit(cmd *cobra.Command, args []string) error {
 	// Get flags
 	name, _ := cmd.Flags().GetString("name")
 	description, _ := cmd.Flags().GetString("description")
+	agentImage, _ := cmd.Flags().GetString("agent-image")
+	agentConfigFile, _ := cmd.Flags().GetString("agent-config-file")
 
 	// Use project ID as name if name is not provided
 	if name == "" {
@@ -115,6 +120,19 @@ func runInit(cmd *cobra.Command, args []string) error {
 	project, err := projects.CreateProject(projectID, name, description)
 	if err != nil {
 		return errors.Wrap(errors.ErrProjectAlreadyExists, err, "failed to create project")
+	}
+
+	// Handle custom agent configuration if provided
+	if agentConfigFile != "" {
+		// Load custom configuration from file
+		if err := projects.LoadCustomAgentsConfig(projectID, agentConfigFile); err != nil {
+			return errors.Wrap(errors.ErrUnknown, err, "failed to load custom agents configuration")
+		}
+	} else if agentImage != "" {
+		// Update default agent image if specified
+		if err := projects.UpdateDefaultAgentImage(projectID, agentImage); err != nil {
+			return errors.Wrap(errors.ErrUnknown, err, "failed to update default agent image")
+		}
 	}
 
 	// Get project directory for display
@@ -146,13 +164,37 @@ func runStep(cmd *cobra.Command, args []string) error {
 
 	// Get flags
 	agentImage, _ := cmd.Flags().GetString("agent-image")
+	agentConfigName, _ := cmd.Flags().GetString("agent-config")
 	timeout, _ := cmd.Flags().GetDuration("timeout")
 	verbose, _ := cmd.Flags().GetBool("verbose")
 	quiet, _ := cmd.Flags().GetBool("quiet")
 
-	// Validate agent image
-	if agentImage == "" {
-		agentImage = "laforge-agent:latest"
+	// Load agent configuration if specified, otherwise use agent image
+	var agentConfig *projects.AgentConfig
+	if agentConfigName != "" {
+		// Load agents configuration from file
+		agentsConfig, err := projects.LoadAgentsConfig(projectID)
+		if err != nil {
+			return errors.Wrap(errors.ErrUnknown, err, "failed to load agents configuration")
+		}
+
+		// Get the specified agent configuration
+		agent, exists := agentsConfig.GetAgent(agentConfigName)
+		if !exists {
+			return errors.NewInvalidInputError(fmt.Sprintf("agent configuration '%s' not found", agentConfigName))
+		}
+
+		agentConfig = &agent
+
+		// Override timeout if provided via flag
+		if timeout > 0 {
+			agentConfig.Runtime.Timeout = timeout.String()
+		}
+	} else {
+		// Validate agent image fallback
+		if agentImage == "" {
+			agentImage = "laforge-agent:latest"
+		}
 	}
 
 	// Check if project exists
@@ -252,29 +294,47 @@ func runStep(cmd *cobra.Command, args []string) error {
 
 	// Step 4: Launch agent container
 	stepLogger.LogStepPhase("container", "Launching agent container")
-	containerName := fmt.Sprintf("laforge-agent-%s-%d", projectID, time.Now().Unix())
-	containerConfig := &docker.ContainerConfig{
-		Image:      agentImage,
-		Name:       containerName,
-		WorkDir:    worktree.Path,
-		TaskDBPath: tempDBPath,
-		Environment: map[string]string{
-			"LAFORGE_PROJECT_ID": projectID,
-			"LAFORGE_STEP":       "true",
-		},
-		AutoRemove: true,
-		Timeout:    timeout,
-	}
-
-	stepLogger.LogContainerLaunch(agentImage, containerName, map[string]interface{}{
-		"work_dir":     worktree.Path,
-		"task_db_path": tempDBPath,
-		"timeout":      timeout.String(),
-	})
-
-	// Run the agent container and wait for completion
 	containerMetrics := &docker.ContainerMetrics{}
-	exitCode, logs, err := dockerClient.RunAgentContainerWithMetrics(containerConfig, containerMetrics)
+
+	var exitCode int64
+	var logs string
+
+	if agentConfig != nil {
+		// Use agent configuration from agents.yml
+		stepLogger.LogContainerLaunch(agentConfig.Image, fmt.Sprintf("laforge-agent-%s-%s-%d", projectID, agentConfig.Name, time.Now().Unix()), map[string]interface{}{
+			"work_dir":     worktree.Path,
+			"task_db_path": tempDBPath,
+			"agent_config": agentConfigName,
+			"timeout":      agentConfig.Runtime.Timeout,
+		})
+
+		// Run container using AgentConfig
+		exitCode, logs, err = dockerClient.RunAgentContainerFromConfig(agentConfig, worktree.Path, tempDBPath, containerMetrics)
+	} else {
+		// Fallback to using agent image directly
+		containerName := fmt.Sprintf("laforge-agent-%s-%d", projectID, time.Now().Unix())
+		containerConfig := &docker.ContainerConfig{
+			Image:      agentImage,
+			Name:       containerName,
+			WorkDir:    worktree.Path,
+			TaskDBPath: tempDBPath,
+			Environment: map[string]string{
+				"LAFORGE_PROJECT_ID": projectID,
+				"LAFORGE_STEP":       "true",
+			},
+			AutoRemove: true,
+			Timeout:    timeout,
+		}
+
+		stepLogger.LogContainerLaunch(agentImage, containerName, map[string]interface{}{
+			"work_dir":     worktree.Path,
+			"task_db_path": tempDBPath,
+			"timeout":      timeout.String(),
+		})
+
+		// Run container using ContainerConfig
+		exitCode, logs, err = dockerClient.RunAgentContainerWithMetrics(containerConfig, containerMetrics)
+	}
 	if err != nil {
 		stepLogger.LogError("docker", "Failed to run agent container", err, map[string]interface{}{
 			"exit_code": exitCode,

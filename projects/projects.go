@@ -135,6 +135,13 @@ func CreateProject(projectID string, name string, description string) (*Project,
 		return nil, errors.Wrap(errors.ErrDatabaseOperationFailed, err, "failed to create task database")
 	}
 
+	// Create default agents.yml configuration file
+	if err := CreateDefaultAgentsConfig(projectID); err != nil {
+		// Clean up on error
+		os.RemoveAll(projectDir)
+		return nil, errors.Wrap(errors.ErrUnknown, err, "failed to create default agents configuration")
+	}
+
 	return project, nil
 }
 

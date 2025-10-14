@@ -112,6 +112,24 @@ func TestLaForgeStepFlags(t *testing.T) {
 			args:    []string{"--agent-image", "test-agent:latest"},
 			wantErr: false, // Should fail due to Docker not being available, but flag parsing should work
 		},
+		{
+			name:    "Step with agent config flag",
+			args:    []string{"--agent-config", "default"},
+			wantErr: false, // Should fail due to Docker not being available, but flag parsing should work
+		},
+		{
+			name:    "Step with invalid agent config",
+			args:    []string{"--agent-config", "nonexistent"},
+			wantErr: true,
+			errCheck: func(output string) bool {
+				return strings.Contains(output, "agent configuration 'nonexistent' not found")
+			},
+		},
+		{
+			name:    "Step with both agent-config and agent-image (config should take precedence)",
+			args:    []string{"--agent-config", "default", "--agent-image", "should-be-ignored:latest"},
+			wantErr: false, // Should fail due to Docker not being available, but flag parsing should work
+		},
 	}
 
 	for _, tt := range tests {

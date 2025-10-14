@@ -844,3 +844,124 @@ func containsAt(s, substr string) bool {
 	}
 	return false
 }
+
+func TestLoadCustomAgentsConfig(t *testing.T) {
+	// Create a temporary directory for testing
+	tempDir := t.TempDir()
+	projectID := "test-project"
+
+	// Create a mock project directory structure
+	projectDir := filepath.Join(tempDir, ".laforge", "projects", projectID)
+	if err := os.MkdirAll(projectDir, 0755); err != nil {
+		t.Fatalf("Failed to create project directory: %v", err)
+	}
+
+	// Create a custom agents configuration file
+	customConfigContent := `version: "1.0"
+default: custom
+agents:
+  custom:
+    name: custom
+    image: custom-agent:1.0.0
+    description: Custom agent configuration
+    environment:
+      CUSTOM_VAR: "custom_value"
+    resources:
+      memory: 1g
+      cpu_shares: 1024
+    runtime:
+      auto_remove: true
+      timeout: 45m
+      network_mode: bridge
+    working_dir: /workspace
+`
+
+	customConfigFile := filepath.Join(tempDir, "custom-agents.yml")
+	if err := os.WriteFile(customConfigFile, []byte(customConfigContent), 0644); err != nil {
+		t.Fatalf("Failed to create custom config file: %v", err)
+	}
+
+	// Temporarily override the home directory for testing
+	originalHome := os.Getenv("HOME")
+	os.Setenv("HOME", tempDir)
+	defer os.Setenv("HOME", originalHome)
+
+	// Test loading custom agents config
+	err := LoadCustomAgentsConfig(projectID, customConfigFile)
+	if err != nil {
+		t.Fatalf("LoadCustomAgentsConfig failed: %v", err)
+	}
+
+	// Verify the configuration was loaded and saved correctly
+	config, err := LoadAgentsConfig(projectID)
+	if err != nil {
+		t.Fatalf("Failed to load created configuration: %v", err)
+	}
+
+	// Verify the configuration matches the custom config
+	if config.Version != "1.0" {
+		t.Errorf("Expected version 1.0, got %s", config.Version)
+	}
+	if config.Default != "custom" {
+		t.Errorf("Expected default 'custom', got %s", config.Default)
+	}
+	if len(config.Agents) != 1 {
+		t.Errorf("Expected 1 agent, got %d", len(config.Agents))
+	}
+
+	customAgent, exists := config.Agents["custom"]
+	if !exists {
+		t.Errorf("Custom agent 'custom' not found")
+	}
+	if customAgent.Image != "custom-agent:1.0.0" {
+		t.Errorf("Expected image 'custom-agent:1.0.0', got %s", customAgent.Image)
+	}
+	if customAgent.Environment["CUSTOM_VAR"] != "custom_value" {
+		t.Errorf("Expected CUSTOM_VAR to be 'custom_value', got %s", customAgent.Environment["CUSTOM_VAR"])
+	}
+}
+
+func TestUpdateDefaultAgentImage(t *testing.T) {
+	// Create a temporary directory for testing
+	tempDir := t.TempDir()
+	projectID := "test-project"
+
+	// Create a mock project directory structure
+	projectDir := filepath.Join(tempDir, ".laforge", "projects", projectID)
+	if err := os.MkdirAll(projectDir, 0755); err != nil {
+		t.Fatalf("Failed to create project directory: %v", err)
+	}
+
+	// Temporarily override the home directory for testing
+	originalHome := os.Getenv("HOME")
+	os.Setenv("HOME", tempDir)
+	defer os.Setenv("HOME", originalHome)
+
+	// Create a default agents configuration
+	err := CreateDefaultAgentsConfig(projectID)
+	if err != nil {
+		t.Fatalf("CreateDefaultAgentsConfig failed: %v", err)
+	}
+
+	// Test updating the default agent image
+	newImage := "updated-agent:latest"
+	err = UpdateDefaultAgentImage(projectID, newImage)
+	if err != nil {
+		t.Fatalf("UpdateDefaultAgentImage failed: %v", err)
+	}
+
+	// Verify the configuration was updated correctly
+	config, err := LoadAgentsConfig(projectID)
+	if err != nil {
+		t.Fatalf("Failed to load updated configuration: %v", err)
+	}
+
+	// Get the default agent and verify its image was updated
+	defaultAgent, exists := config.GetDefaultAgent()
+	if !exists {
+		t.Errorf("Default agent not found")
+	}
+	if defaultAgent.Image != newImage {
+		t.Errorf("Expected image '%s', got '%s'", newImage, defaultAgent.Image)
+	}
+}

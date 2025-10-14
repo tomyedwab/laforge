@@ -140,6 +140,12 @@ func TestLaForgeInitFlags(t *testing.T) {
 			args:      []string{"--name", "Full Test Project", "--description", "Project with both name and description"},
 			validate:  validateProjectFullMetadata,
 		},
+		{
+			name:      "Init with agent-image flag",
+			projectID: "test-agent-image",
+			args:      []string{"--agent-image", "custom-agent:latest"},
+			validate:  validateAgentImage,
+		},
 	}
 
 	for _, tt := range tests {
@@ -183,6 +189,12 @@ func validateBasicProjectStructure(t *testing.T, projectID string) {
 	dbPath := filepath.Join(projectDir, "tasks.db")
 	if _, err := os.Stat(dbPath); os.IsNotExist(err) {
 		t.Errorf("Task database does not exist: %s", dbPath)
+	}
+
+	// Check agents.yml configuration file
+	agentsConfigPath := filepath.Join(projectDir, "agents.yml")
+	if _, err := os.Stat(agentsConfigPath); os.IsNotExist(err) {
+		t.Errorf("Agents configuration file does not exist: %s", agentsConfigPath)
 	}
 }
 
@@ -274,6 +286,28 @@ func validateProjectFullMetadata(t *testing.T, projectID string) {
 	}
 	if !strings.Contains(configStr, "Project with both name and description") {
 		t.Errorf("Project configuration does not contain expected description")
+	}
+}
+
+func validateAgentImage(t *testing.T, projectID string) {
+	validateBasicProjectStructure(t, projectID)
+
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		t.Fatalf("Failed to get home directory: %v", err)
+	}
+	projectDir := filepath.Join(homeDir, ".laforge", "projects", projectID)
+	agentsConfigPath := filepath.Join(projectDir, "agents.yml")
+
+	// Read and validate agents configuration
+	configData, err := os.ReadFile(agentsConfigPath)
+	if err != nil {
+		t.Fatalf("Failed to read agents configuration: %v", err)
+	}
+
+	configStr := string(configData)
+	if !strings.Contains(configStr, "custom-agent:latest") {
+		t.Errorf("Agents configuration does not contain expected custom agent image")
 	}
 }
 
