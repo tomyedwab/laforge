@@ -389,6 +389,84 @@ func GetTaskReviews(db *sql.DB, taskID int) ([]TaskReview, error) {
 	return reviews, nil
 }
 
+func GetPendingReviews(db *sql.DB) ([]TaskReview, error) {
+	rows, err := db.Query("SELECT id, task_id, message, attachment, status, feedback, created_at, updated_at FROM task_reviews WHERE status = 'pending' ORDER BY created_at ASC")
+	if err != nil {
+		return nil, fmt.Errorf("failed to query pending reviews: %w", err)
+	}
+	defer rows.Close()
+
+	var reviews []TaskReview
+	for rows.Next() {
+		var review TaskReview
+		if err := rows.Scan(&review.ID, &review.TaskID, &review.Message, &review.Attachment, &review.Status, &review.Feedback, &review.CreatedAt, &review.UpdatedAt); err != nil {
+			return nil, fmt.Errorf("failed to scan task review: %w", err)
+		}
+		reviews = append(reviews, review)
+	}
+
+	return reviews, nil
+}
+
+func UpdateReview(db *sql.DB, reviewID int, status string, feedback *string) error {
+	validStatuses := map[string]bool{
+		"pending":  true,
+		"approved": true,
+		"rejected": true,
+	}
+
+	if !validStatuses[status] {
+		return fmt.Errorf("invalid review status: %s", status)
+	}
+
+	tx, err := db.Begin()
+	if err != nil {
+		return fmt.Errorf("failed to begin transaction: %w", err)
+	}
+	defer tx.Rollback()
+
+	// Update the review
+	_, err = tx.Exec("UPDATE task_reviews SET status = ?, feedback = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?", status, feedback, reviewID)
+	if err != nil {
+		return fmt.Errorf("failed to update review: %w", err)
+	}
+
+	// If this was the last pending review for a task that's in-review status,
+	// we might need to update the task status
+	// Get the task_id for this review
+	var taskID int
+	err = tx.QueryRow("SELECT task_id FROM task_reviews WHERE id = ?", reviewID).Scan(&taskID)
+	if err != nil {
+		return fmt.Errorf("failed to get task_id for review: %w", err)
+	}
+
+	// Check if there are any remaining pending reviews for this task
+	var pendingCount int
+	err = tx.QueryRow("SELECT COUNT(*) FROM task_reviews WHERE task_id = ? AND status = 'pending'", taskID).Scan(&pendingCount)
+	if err != nil {
+		return fmt.Errorf("failed to count pending reviews: %w", err)
+	}
+
+	// If no more pending reviews and task is in-review, update task status to in-progress
+	// so it can be worked on again
+	if pendingCount == 0 {
+		var taskStatus string
+		err = tx.QueryRow("SELECT status FROM tasks WHERE id = ?", taskID).Scan(&taskStatus)
+		if err != nil {
+			return fmt.Errorf("failed to get task status: %w", err)
+		}
+
+		if taskStatus == "in-review" {
+			_, err = tx.Exec("UPDATE tasks SET status = 'in-progress', updated_at = CURRENT_TIMESTAMP WHERE id = ?", taskID)
+			if err != nil {
+				return fmt.Errorf("failed to update task status: %w", err)
+			}
+		}
+	}
+
+	return tx.Commit()
+}
+
 func GetChildTasks(db *sql.DB, parentID int) ([]Task, error) {
 	rows, err := db.Query("SELECT id, title, description, acceptance_criteria, upstream_dependency_id, review_required, parent_id, status, created_at, updated_at FROM tasks WHERE parent_id = ? ORDER BY id", parentID)
 	if err != nil {
