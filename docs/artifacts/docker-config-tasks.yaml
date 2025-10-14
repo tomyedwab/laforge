@@ -1,0 +1,109 @@
+tasks:
+  - id: new-T15
+    title: "Create Agent Configuration Models"
+    description: "Define Go structs for agent configuration with YAML marshaling/unmarshaling"
+    acceptance_criteria: |
+      - Go structs defined for AgentConfig with all required fields
+      - YAML marshaling/unmarshaling functions implemented
+      - Configuration validation functions created
+      - Unit tests for configuration models
+    upstream_dependency_id: null
+    review_required: true
+    parent_id: T3
+    status: "todo"
+
+  - id: new-T16
+    title: "Implement agents.yml File Management"
+    description: "Create functions to read/write agents.yml files with default configuration generation"
+    acceptance_criteria: |
+      - Functions to read agents.yml files implemented
+      - Functions to write agents.yml files implemented
+      - Default configuration generation working
+      - Configuration validation on load/save
+      - Error handling for file operations
+    upstream_dependency_id: new-T15
+    review_required: true
+    parent_id: T3
+    status: "todo"
+
+  - id: new-T17
+    title: "Update Project Creation (init command)"
+    description: "Generate default agents.yml during project initialization with custom configuration support"
+    acceptance_criteria: |
+      - Default agents.yml generated during laforge init
+      - Support for custom agent configurations via flags
+      - Backward compatibility maintained
+      - Integration tests updated
+    upstream_dependency_id: new-T16
+    review_required: true
+    parent_id: T3
+    status: "todo"
+
+  - id: new-T18
+    title: "Refactor Docker Client to Use Configuration"
+    description: "Update Docker client to accept agent configuration and handle volume mounts and environment variables"
+    acceptance_criteria: |
+      - Docker client accepts AgentConfig parameter
+      - Volume mount parsing and validation implemented
+      - Environment variable substitution working
+      - Resource limits (memory, CPU) applied
+      - Container cleanup handled properly
+    upstream_dependency_id: new-T15
+    review_required: true
+    parent_id: T3
+    status: "todo"
+
+  - id: new-T19
+    title: "Update Step Command Implementation"
+    description: "Modify step command to load agent configuration and pass it to Docker client"
+    acceptance_criteria: |
+      - Step command accepts --agent-config parameter
+      - Configuration loaded from agents.yml
+      - Configuration overrides (timeout) handled
+      - Fallback to --agent-image flag maintained
+      - Error handling for invalid configurations
+    upstream_dependency_id: new-T18
+    review_required: true
+    parent_id: T3
+    status: "todo"
+
+  - id: new-T20
+    title: "Add Configuration Management Commands"
+    description: "Add commands to list, view, and update agent configurations"
+    acceptance_criteria: |
+      - laforge agent list command implemented
+      - laforge agent view <config> command implemented
+      - Configuration validation in commands
+      - Help documentation for new commands
+    upstream_dependency_id: new-T16
+    review_required: true
+    parent_id: T3
+    status: "todo"
+
+  - id: new-T21
+    title: "Update Integration Tests"
+    description: "Modify existing tests to use new configuration system and add tests for configuration loading"
+    acceptance_criteria: |
+      - Existing tests updated to work with new system
+      - New tests for configuration loading and validation
+      - Tests for multiple agent configurations
+      - Tests for configuration overrides
+      - All tests passing
+    upstream_dependency_id: new-T19
+    review_required: true
+    parent_id: T3
+    status: "todo"
+
+  - id: new-T22
+    title: "Update Documentation"
+    description: "Document the agents.yml file format and update command reference"
+    acceptance_criteria: |
+      - agents.yml file format documented
+      - Command reference updated with new flags
+      - Configuration examples provided
+      - Migration guide for existing projects
+      - README updated if needed
+    upstream_dependency_id: new-T19
+    review_required: true
+    parent_id: T3
+    status: "todo"
