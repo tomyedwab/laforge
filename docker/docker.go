@@ -1,8 +1,11 @@
 package docker
 
 import (
+	"bufio"
+	"bytes"
 	"context"
 	"fmt"
+	"io"
 	"os/exec"
 	"path/filepath"
 	"strings"
@@ -558,6 +561,130 @@ func (c *Client) RunAgentContainerFromConfig(agentConfig *projects.AgentConfig, 
 		_ = c.CleanupContainer(container)
 		return exitCode, "", fmt.Errorf("failed to get container logs: %w", err)
 	}
+
+	metrics.LogSize = len(logs)
+	metrics.ErrorCount = c.countErrorsInLogs(logs)
+	metrics.WarningCount = c.countWarningsInLogs(logs)
+
+	// Always clean up the container manually since we disabled AutoRemove
+	// to be able to collect logs
+	if err := c.CleanupContainer(container); err != nil {
+		return exitCode, logs, fmt.Errorf("failed to cleanup container: %w", err)
+	}
+
+	return exitCode, logs, nil
+}
+
+// RunAgentContainerFromConfigWithStreamingLogs creates, starts, and manages an agent container from AgentConfig
+// with real-time log streaming to the provided writer, and returns logs and metrics
+func (c *Client) RunAgentContainerFromConfigWithStreamingLogs(agentConfig *projects.AgentConfig, workDir, taskDBPath string, logWriter io.Writer, metrics *ContainerMetrics) (int64, string, error) {
+	if metrics == nil {
+		metrics = &ContainerMetrics{}
+	}
+	metrics.StartTime = time.Now()
+
+	// Create container from AgentConfig
+	container, err := c.CreateAgentContainerFromConfig(agentConfig, workDir, taskDBPath)
+	if err != nil {
+		metrics.EndTime = time.Now()
+		return -1, "", fmt.Errorf("failed to create container from config: %w", err)
+	}
+
+	// Create a copy of agent config with AutoRemove disabled
+	// We need to get logs before removing the container
+	configCopy := *agentConfig
+	configCopy.Runtime.AutoRemove = false
+
+	// Start container with AgentConfig (without AutoRemove)
+	if err := c.startContainerWithAgentConfig(container, &configCopy); err != nil {
+		// Clean up on error
+		metrics.EndTime = time.Now()
+		_ = c.CleanupContainer(container)
+		return -1, "", fmt.Errorf("failed to start container: %w", err)
+	}
+
+	// Start streaming logs in the background
+	logBuffer := &bytes.Buffer{}
+	var multiWriter io.Writer
+	if logWriter != nil {
+		multiWriter = io.MultiWriter(logWriter, logBuffer)
+	} else {
+		multiWriter = logBuffer
+	}
+
+	// Stream logs using docker logs -f
+	ctx := context.Background()
+	logsCmd := exec.CommandContext(ctx, "docker", "logs", "-f", container.ID)
+
+	// Create pipes for stdout and stderr
+	stdout, err := logsCmd.StdoutPipe()
+	if err != nil {
+		_ = c.CleanupContainer(container)
+		return -1, "", fmt.Errorf("failed to create stdout pipe: %w", err)
+	}
+
+	stderr, err := logsCmd.StderrPipe()
+	if err != nil {
+		_ = c.CleanupContainer(container)
+		return -1, "", fmt.Errorf("failed to create stderr pipe: %w", err)
+	}
+
+	// Start the logs command
+	if err := logsCmd.Start(); err != nil {
+		_ = c.CleanupContainer(container)
+		return -1, "", fmt.Errorf("failed to start logs command: %w", err)
+	}
+
+	// Stream stdout and stderr to the multi-writer in goroutines
+	logsDone := make(chan error, 2)
+
+	go func() {
+		scanner := bufio.NewScanner(stdout)
+		for scanner.Scan() {
+			line := scanner.Text() + "\n"
+			multiWriter.Write([]byte(line))
+		}
+		logsDone <- scanner.Err()
+	}()
+
+	go func() {
+		scanner := bufio.NewScanner(stderr)
+		for scanner.Scan() {
+			line := scanner.Text() + "\n"
+			multiWriter.Write([]byte(line))
+		}
+		logsDone <- scanner.Err()
+	}()
+
+	// Wait for container to finish
+	exitCode, err := c.WaitForContainer(container)
+	if err != nil {
+		// Clean up on error
+		metrics.EndTime = time.Now()
+		metrics.ExitCode = exitCode
+		logsCmd.Process.Kill()
+		_ = c.CleanupContainer(container)
+		return -1, "", fmt.Errorf("failed to wait for container: %w", err)
+	}
+
+	metrics.ExitCode = exitCode
+	metrics.EndTime = time.Now()
+
+	// Wait for log streaming to complete (with timeout)
+	logTimeout := time.After(5 * time.Second)
+	for i := 0; i < 2; i++ {
+		select {
+		case <-logsDone:
+		case <-logTimeout:
+			logsCmd.Process.Kill()
+		}
+	}
+
+	// Wait for the logs command to finish
+	logsCmd.Wait()
+
+	// Get the captured logs
+	logs := logBuffer.String()
 
 	metrics.LogSize = len(logs)
 	metrics.ErrorCount = c.countErrorsInLogs(logs)

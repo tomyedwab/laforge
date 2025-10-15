@@ -2,8 +2,10 @@ package main
 
 import (
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -286,7 +288,45 @@ func runStep(cmd *cobra.Command, args []string) error {
 	stepLogger.LogDockerClientInit()
 	defer dockerClient.Close()
 
-	// Step 4: Launch agent container
+	// Step 4: Create log file for streaming container output
+	stepLogger.LogStepPhase("logs", "Setting up log file")
+	projectDir, err := projects.GetProjectDir(projectID)
+	if err != nil {
+		stepLogger.LogError("logs", "Failed to get project directory", err, nil)
+		return errors.Wrap(errors.ErrUnknown, err, "failed to get project directory")
+	}
+
+	// Create logs directory if it doesn't exist
+	logsDir := filepath.Join(projectDir, "logs")
+	if err := os.MkdirAll(logsDir, 0755); err != nil {
+		stepLogger.LogError("logs", "Failed to create logs directory", err, map[string]interface{}{
+			"logs_dir": logsDir,
+		})
+		return errors.Wrap(errors.ErrUnknown, err, "failed to create logs directory")
+	}
+
+	// Create log file with step ID and timestamp
+	logFileName := fmt.Sprintf("step-%s-%s.log", stepID, time.Now().Format("20060102-150405"))
+	logFilePath := filepath.Join(logsDir, logFileName)
+	logFile, err := os.Create(logFilePath)
+	if err != nil {
+		stepLogger.LogError("logs", "Failed to create log file", err, map[string]interface{}{
+			"log_file_path": logFilePath,
+		})
+		return errors.Wrap(errors.ErrUnknown, err, "failed to create log file")
+	}
+	defer logFile.Close()
+
+	logger.Info("logs", "Log file created", map[string]interface{}{
+		"log_file_path": logFilePath,
+		"project_id":    projectID,
+		"step_id":       stepID,
+	})
+
+	// Create multi-writer to stream to both stdout and file
+	multiWriter := io.MultiWriter(os.Stdout, logFile)
+
+	// Step 5: Launch agent container
 	stepLogger.LogStepPhase("container", "Launching agent container")
 	containerMetrics := &docker.ContainerMetrics{}
 
@@ -299,10 +339,11 @@ func runStep(cmd *cobra.Command, args []string) error {
 		"task_db_path": tempDBPath,
 		"agent_config": agentConfigName,
 		"timeout":      agentConfig.Runtime.Timeout,
+		"log_file":     logFilePath,
 	})
 
-	// Run container using AgentConfig
-	exitCode, logs, err = dockerClient.RunAgentContainerFromConfig(agentConfig, worktree.Path, tempDBPath, containerMetrics)
+	// Run container using AgentConfig with streaming logs
+	exitCode, logs, err = dockerClient.RunAgentContainerFromConfigWithStreamingLogs(agentConfig, worktree.Path, tempDBPath, multiWriter, containerMetrics)
 	if err != nil {
 		stepLogger.LogError("docker", "Failed to run agent container", err, map[string]interface{}{
 			"exit_code": exitCode,
@@ -321,7 +362,7 @@ func runStep(cmd *cobra.Command, args []string) error {
 		"warning_count": containerMetrics.WarningCount,
 	})
 
-	// Step 5: Check if there are changes to commit
+	// Step 6: Check if there are changes to commit
 	stepLogger.LogStepPhase("git", "Checking for changes to commit")
 	hasChanges, err := hasGitChanges(worktree.Path)
 	if err != nil {
@@ -353,9 +394,10 @@ func runStep(cmd *cobra.Command, args []string) error {
 		})
 	}
 
-	// Step 6: Copy changes back from temporary database to main database
+	// Step 7: Copy changes back from temporary database to main database
 	stepLogger.LogStepPhase("database", "Updating main task database")
 	stepLogger.LogDatabaseUpdate(tempDBPath, taskDBPath)
+	_ = os.Remove(taskDBPath)
 	if err := database.CopyDatabase(tempDBPath, taskDBPath); err != nil {
 		stepLogger.LogError("database", "Failed to update main task database", err, map[string]interface{}{
 			"source_path": tempDBPath,
