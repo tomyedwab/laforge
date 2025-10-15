@@ -5,12 +5,12 @@ build:
 	docker build -t laforge-self-agent -f Dockerfile.laforge .
 
 run-opencode:
-	mkdir -p /tmp/laforge/log /tmp/laforge/state
+	mkdir -p /tmp/laforge/log
 	docker run -it --rm \
 		-v $(HOME)/.config/opencode:/home/laforge/.config/opencode \
 		-v $(HOME)/.local/share/opencode/auth.json:/home/laforge/.local/share/opencode/auth.json \
 		-v /tmp/laforge/log:/home/laforge/.local/share/opencode/log \
-		-v /tmp/laforge/state:/state \
+		-v $(HOME)/.laforge/projects/laforge:/state \
 		-v $(PWD):/src \
 		laforge-self-agent
 

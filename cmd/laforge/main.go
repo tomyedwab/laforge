@@ -75,7 +75,7 @@ var stepCmd = &cobra.Command{
 	Use:   "step [project-id]",
 	Short: "Run a single LaForge step cycle",
 	Long: `Run a single step in the LaForge process.
-	
+
 This command creates a temporary git worktree, copies the task database for isolation,
 launches an agent container with proper mounts, captures and commits changes, and
 cleans up resources.`,
@@ -91,7 +91,6 @@ func init() {
 	initCmd.Flags().String("agent-config-file", "", "path to custom agents.yml configuration file")
 
 	// Add flags for step command
-	stepCmd.Flags().String("agent-image", "laforge-agent:latest", "Docker image for the agent container")
 	stepCmd.Flags().String("agent-config", "", "agent configuration name from agents.yml (overrides --agent-image)")
 	stepCmd.Flags().Duration("timeout", 0, "timeout for step execution (0 means no timeout)")
 }
@@ -163,39 +162,12 @@ func runStep(cmd *cobra.Command, args []string) error {
 	}
 
 	// Get flags
-	agentImage, _ := cmd.Flags().GetString("agent-image")
 	agentConfigName, _ := cmd.Flags().GetString("agent-config")
 	timeout, _ := cmd.Flags().GetDuration("timeout")
 	verbose, _ := cmd.Flags().GetBool("verbose")
 	quiet, _ := cmd.Flags().GetBool("quiet")
 
-	// Load agent configuration if specified, otherwise use agent image
-	var agentConfig *projects.AgentConfig
-	if agentConfigName != "" {
-		// Load agents configuration from file
-		agentsConfig, err := projects.LoadAgentsConfig(projectID)
-		if err != nil {
-			return errors.Wrap(errors.ErrUnknown, err, "failed to load agents configuration")
-		}
-
-		// Get the specified agent configuration
-		agent, exists := agentsConfig.GetAgent(agentConfigName)
-		if !exists {
-			return errors.NewInvalidInputError(fmt.Sprintf("agent configuration '%s' not found", agentConfigName))
-		}
-
-		agentConfig = &agent
-
-		// Override timeout if provided via flag
-		if timeout > 0 {
-			agentConfig.Runtime.Timeout = timeout.String()
-		}
-	} else {
-		// Validate agent image fallback
-		if agentImage == "" {
-			agentImage = "laforge-agent:latest"
-		}
-	}
+	sourceDir, _ := os.Getwd()
 
 	// Check if project exists
 	exists, err := projects.ProjectExists(projectID)
@@ -206,16 +178,38 @@ func runStep(cmd *cobra.Command, args []string) error {
 		return errors.NewProjectNotFoundError(projectID)
 	}
 
-	// Get project directory
-	projectDir, err := projects.GetProjectDir(projectID)
-	if err != nil {
-		return errors.Wrap(errors.ErrUnknown, err, "failed to get project directory")
-	}
-
 	// Get task database path
 	taskDBPath, err := projects.GetProjectTaskDatabase(projectID)
 	if err != nil {
 		return errors.Wrap(errors.ErrUnknown, err, "failed to get project task database path")
+	}
+
+	// Load agents configuration from file
+	agentsConfig, err := projects.LoadAgentsConfig(projectID)
+	if err != nil {
+		return errors.Wrap(errors.ErrUnknown, err, "failed to load agents configuration")
+	}
+
+	var agentConfig *projects.AgentConfig
+	if agentConfigName != "" {
+		// Get the specified agent configuration
+		agent, exists := agentsConfig.GetAgent(agentConfigName)
+		if !exists {
+			return errors.NewInvalidInputError(fmt.Sprintf("agent configuration '%s' not found", agentConfigName))
+		}
+		agentConfig = &agent
+	} else {
+		// Get the specified agent configuration
+		agent, exists := agentsConfig.GetDefaultAgent()
+		if !exists {
+			return errors.NewInvalidInputError(fmt.Sprintf("agent configuration '%s' not found", agentConfigName))
+		}
+		agentConfig = &agent
+	}
+
+	// Override timeout if provided via flag
+	if timeout > 0 {
+		agentConfig.Runtime.Timeout = timeout.String()
 	}
 
 	// Set up logging
@@ -244,10 +238,10 @@ func runStep(cmd *cobra.Command, args []string) error {
 
 	// Step 1: Create temporary git worktree
 	stepLogger.LogStepPhase("worktree", "Creating temporary git worktree")
-	worktree, err := git.CreateTempWorktree(projectDir, "step")
+	worktree, err := git.CreateTempWorktree(sourceDir, "step")
 	if err != nil {
 		stepLogger.LogError("git", "Failed to create temporary worktree", err, map[string]interface{}{
-			"project_dir": projectDir,
+			"source_dir": sourceDir,
 		})
 		return errors.Wrap(errors.ErrUnknown, err, "failed to create temporary worktree")
 	}
@@ -299,42 +293,16 @@ func runStep(cmd *cobra.Command, args []string) error {
 	var exitCode int64
 	var logs string
 
-	if agentConfig != nil {
-		// Use agent configuration from agents.yml
-		stepLogger.LogContainerLaunch(agentConfig.Image, fmt.Sprintf("laforge-agent-%s-%s-%d", projectID, agentConfig.Name, time.Now().Unix()), map[string]interface{}{
-			"work_dir":     worktree.Path,
-			"task_db_path": tempDBPath,
-			"agent_config": agentConfigName,
-			"timeout":      agentConfig.Runtime.Timeout,
-		})
+	// Use agent configuration from agents.yml
+	stepLogger.LogContainerLaunch(agentConfig.Image, fmt.Sprintf("laforge-agent-%s-%s-%d", projectID, agentConfig.Name, time.Now().Unix()), map[string]interface{}{
+		"work_dir":     worktree.Path,
+		"task_db_path": tempDBPath,
+		"agent_config": agentConfigName,
+		"timeout":      agentConfig.Runtime.Timeout,
+	})
 
-		// Run container using AgentConfig
-		exitCode, logs, err = dockerClient.RunAgentContainerFromConfig(agentConfig, worktree.Path, tempDBPath, containerMetrics)
-	} else {
-		// Fallback to using agent image directly
-		containerName := fmt.Sprintf("laforge-agent-%s-%d", projectID, time.Now().Unix())
-		containerConfig := &docker.ContainerConfig{
-			Image:      agentImage,
-			Name:       containerName,
-			WorkDir:    worktree.Path,
-			TaskDBPath: tempDBPath,
-			Environment: map[string]string{
-				"LAFORGE_PROJECT_ID": projectID,
-				"LAFORGE_STEP":       "true",
-			},
-			AutoRemove: true,
-			Timeout:    timeout,
-		}
-
-		stepLogger.LogContainerLaunch(agentImage, containerName, map[string]interface{}{
-			"work_dir":     worktree.Path,
-			"task_db_path": tempDBPath,
-			"timeout":      timeout.String(),
-		})
-
-		// Run container using ContainerConfig
-		exitCode, logs, err = dockerClient.RunAgentContainerWithMetrics(containerConfig, containerMetrics)
-	}
+	// Run container using AgentConfig
+	exitCode, logs, err = dockerClient.RunAgentContainerFromConfig(agentConfig, worktree.Path, tempDBPath, containerMetrics)
 	if err != nil {
 		stepLogger.LogError("docker", "Failed to run agent container", err, map[string]interface{}{
 			"exit_code": exitCode,

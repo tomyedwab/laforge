@@ -110,7 +110,7 @@ func DefaultAgentsConfig() *AgentsConfig {
 					Timeout:     "30m",
 					NetworkMode: "bridge",
 				},
-				WorkingDir: "/workspace",
+				WorkingDir: "/src",
 			},
 		},
 	}
