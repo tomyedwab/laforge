@@ -263,12 +263,11 @@ func GetDatabaseInfo(dbPath string) (map[string]interface{}, error) {
 // CreateTempDatabaseCopy creates a temporary copy of the database
 func CreateTempDatabaseCopy(sourcePath string, prefix string) (string, error) {
 	// Create temporary file with laforge prefix for safety
-	tempFile, err := os.CreateTemp("", "laforge-"+prefix+"-*.db")
+	tempDir, err := os.MkdirTemp("", "laforge-workstree-state-")
 	if err != nil {
-		return "", fmt.Errorf("failed to create temporary file: %w", err)
+		return "", fmt.Errorf("failed to create temporary directory: %w", err)
 	}
-	tempPath := tempFile.Name()
-	tempFile.Close() // Close it so we can use it as a database
+	tempPath := filepath.Join(tempDir, "tasks.db")
 
 	// Copy database to temporary location
 	if err := CopyDatabase(sourcePath, tempPath); err != nil {

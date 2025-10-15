@@ -423,7 +423,7 @@ func TestRunAgentContainerFromConfig(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			exitCode, logs, err := client.RunAgentContainerFromConfig(tt.agentConfig, tt.workDir, tt.taskDBPath, nil)
+			exitCode, logs, err := client.RunAgentContainerFromConfigWithStreamingLogs(tt.agentConfig, tt.workDir, tt.taskDBPath, nil)
 			if (err != nil) != tt.wantErr {
 				t.Errorf("RunAgentContainerFromConfig() error = %v, wantErr %v", err, tt.wantErr)
 			}
