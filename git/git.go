@@ -64,6 +64,7 @@ func RemoveWorktree(worktree *Worktree) error {
 		}
 	}
 
+	/* TODO this needs to be done _after_ the changes are merged to main
 	// Prune the branch (if it exists and is not the current branch)
 	if !isCurrentBranch(worktree.OriginalDir, worktree.Branch) {
 		cmd = exec.Command("git", "branch", "-D", worktree.Branch)
@@ -75,6 +76,7 @@ func RemoveWorktree(worktree *Worktree) error {
 			}
 		}
 	}
+	*/
 
 	return nil
 }

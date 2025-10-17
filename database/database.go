@@ -263,7 +263,7 @@ func GetDatabaseInfo(dbPath string) (map[string]interface{}, error) {
 // CreateTempDatabaseCopy creates a temporary copy of the database
 func CreateTempDatabaseCopy(sourcePath string, prefix string) (string, error) {
 	// Create temporary file with laforge prefix for safety
-	tempDir, err := os.MkdirTemp("", "laforge-workstree-state-")
+	tempDir, err := os.MkdirTemp("", "laforge-worktree-state-")
 	if err != nil {
 		return "", fmt.Errorf("failed to create temporary directory: %w", err)
 	}

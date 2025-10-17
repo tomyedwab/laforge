@@ -19,3 +19,20 @@ Commands:
   step            Run a single step for the given project ID and exit
   run             Run all projects and API server
 ```
+
+## Step database
+
+Each step that is run using either the "step" or "run" command is recorded
+locally in the project directory in a SQLite database. This database is accessed
+only by the laforge CLI and is not exposed to the Docker containers running the
+agent in each step.
+
+A step stores the following information:
+- The step ID (incrementing integer starting at 1)
+- Active flag (boolean) to identify steps that have been rolled back
+- The parent step ID (most recent active ID preceding this step)
+- The commit shas before and after the step
+- The agent configuration used to run the step
+- Metadata for tracking start/end times and token usage
+
+The step ID is used when creating the temporary worktree, state, and logs directories.
