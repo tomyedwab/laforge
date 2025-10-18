@@ -427,7 +427,19 @@ func runStep(cmd *cobra.Command, args []string) error {
 		}
 	}()
 
-	// Step 2: Copy task database for isolation
+	// Step 2: Create backup of task database before starting step
+	stepLogger.LogStepPhase("database", "Creating task database backup")
+	backupDBPath, err := createTaskDatabaseBackup(taskDBPath, dbStepID)
+	if err != nil {
+		stepLogger.LogError("database", "Failed to create task database backup", err, map[string]interface{}{
+			"source_path": taskDBPath,
+			"step_id":     dbStepID,
+		})
+		return errors.Wrap(errors.ErrUnknown, err, "failed to create task database backup")
+	}
+	stepLogger.LogDatabaseBackup(taskDBPath, backupDBPath)
+
+	// Step 3: Copy task database for isolation
 	stepLogger.LogStepPhase("database", "Copying task database for isolation")
 	tempDBPath, err := database.CreateTempDatabaseCopy(taskDBPath, "step")
 	if err != nil {
@@ -1022,4 +1034,21 @@ func runStepRollback(cmd *cobra.Command, args []string) error {
 	fmt.Printf("All steps from S%d onwards have been deactivated.\n", stepID)
 
 	return nil
+}
+
+// createTaskDatabaseBackup creates a backup of the task database with the step name in the filename
+func createTaskDatabaseBackup(sourcePath string, stepID string) (string, error) {
+	// Get the directory of the source database
+	sourceDir := filepath.Dir(sourcePath)
+
+	// Create backup filename with step ID (e.g., tasks-S1.db)
+	backupFileName := fmt.Sprintf("tasks-%s.db", stepID)
+	backupPath := filepath.Join(sourceDir, backupFileName)
+
+	// Use the existing CopyDatabase function to create the backup
+	if err := database.CopyDatabase(sourcePath, backupPath); err != nil {
+		return "", fmt.Errorf("failed to copy database: %w", err)
+	}
+
+	return backupPath, nil
 }

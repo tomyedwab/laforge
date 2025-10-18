@@ -298,12 +298,18 @@ func CleanupTempDatabase(tempPath string) error {
 func isTempFile(path string) bool {
 	// Check if the filename contains typical temporary file patterns
 	base := filepath.Base(path)
-	return len(base) > 0 && base[0] == '.' ||
+	if len(base) > 0 && base[0] == '.' ||
 		contains(base, "-tmp-") ||
 		contains(base, "-temp-") ||
 		contains(base, ".tmp") ||
-		contains(base, "_tmp_") ||
-		contains(base, "laforge-")
+		contains(base, "_tmp_") {
+		return true
+	}
+
+	// Also check if the directory path contains specific temp patterns
+	dir := filepath.Dir(path)
+	// Only consider it a temp file if it's in a laforge worktree temp directory
+	return contains(dir, "laforge-worktree-state-")
 }
 
 // contains checks if a string contains a substring

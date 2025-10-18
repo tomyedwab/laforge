@@ -96,6 +96,16 @@ func (sl *StepLogger) LogDatabaseCleanup(dbPath string) {
 	})
 }
 
+// LogDatabaseBackup logs database backup creation
+func (sl *StepLogger) LogDatabaseBackup(sourcePath, backupPath string) {
+	sl.logger.Info("database", "Creating task database backup", map[string]interface{}{
+		"source_path": sourcePath,
+		"backup_path": backupPath,
+		"project_id":  sl.projectID,
+		"step_id":     sl.stepID,
+	})
+}
+
 // LogDatabaseUpdate logs main database update
 func (sl *StepLogger) LogDatabaseUpdate(sourcePath, destPath string) {
 	sl.logger.Info("database", "Updating main task database", map[string]interface{}{
