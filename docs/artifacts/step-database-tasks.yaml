@@ -1,0 +1,99 @@
+tasks:
+  - id: 3
+    title: "[FEAT] Create Step Database Schema and Core Package"
+    description: "Implement the core step database functionality with SQLite schema and basic CRUD operations"
+    acceptance_criteria: |
+      - Step database schema is created with all required fields
+      - Step model struct is defined with proper JSON serialization
+      - Database operations (Create, Read, Update, List) are implemented
+      - Comprehensive unit tests cover all database operations
+      - Error handling is robust and user-friendly
+    upstream_dependency_id: null
+    review_required: true
+    parent_id: 2
+    status: "todo"
+
+  - id: 4
+    title: "[FEAT] Integrate Step Recording into Step Execution"
+    description: "Modify the runStep function to record step lifecycle events in the step database"
+    acceptance_criteria: |
+      - Step record is created at the beginning of step execution
+      - Commit SHA before step is captured and stored
+      - Agent configuration is serialized and stored
+      - Step record is updated with completion data (commit SHA after, timing, exit code)
+      - Step ID generation uses sequential integers from database
+      - Original timestamp-based step IDs are replaced with database-generated IDs
+    upstream_dependency_id: 3
+    review_required: true
+    parent_id: 2
+    status: "todo"
+
+  - id: 5
+    title: "[FEAT] Add Step Management Commands to CLI"
+    description: "Implement new CLI commands for viewing and managing step history"
+    acceptance_criteria: |
+      - 'laforge steps [project-id]' command lists all steps for a project
+      - 'laforge step info [project-id] [step-id]' shows detailed step information
+      - Commands provide formatted output with relevant step metadata
+      - Error handling for invalid project IDs and step IDs
+      - Commands integrate properly with existing CLI structure
+    upstream_dependency_id: 4
+    review_required: true
+    parent_id: 2
+    status: "todo"
+
+  - id: 6
+    title: "[FEAT] Add Token Usage Tracking to Step Database"
+    description: "Extend the step database to capture and store token usage metrics from container execution"
+    acceptance_criteria: |
+      - Step database schema includes token usage fields
+      - Container metrics are extended to capture token usage data
+      - Token usage is recorded during step execution
+      - Step info commands display token usage information
+      - Token usage data is properly serialized/deserialized
+    upstream_dependency_id: 4
+    review_required: true
+    parent_id: 2
+    status: "todo"
+
+  - id: 7
+    title: "[FEAT] Implement Step Rollback Functionality"
+    description: "Add the ability to rollback to a previous step by deactivating subsequent steps"
+    acceptance_criteria: |
+      - Step deactivation mechanism is implemented in the database
+      - 'laforge step rollback [project-id] [step-id]' command is added
+      - Rollback properly handles git operations to revert changes
+      - Parent step relationships are maintained during rollback
+      - Rollback operations are logged and tracked
+    upstream_dependency_id: 5
+    review_required: true
+    parent_id: 2
+    status: "todo"
+
+  - id: 8
+    title: "[TEST] Add Comprehensive Integration Tests"
+    description: "Create integration tests to verify step database functionality works end-to-end"
+    acceptance_criteria: |
+      - Integration tests cover step recording during actual step execution
+      - Tests verify step database isolation during step execution
+      - Step command functionality is tested with real data
+      - Error scenarios are properly tested
+      - Performance impact is measured and documented
+    upstream_dependency_id: 5
+    review_required: true
+    parent_id: 2
+    status: "todo"
+
+  - id: 9
+    title: "[DOC] Update Documentation for Step Database Features"
+    description: "Update project documentation to include step database functionality"
+    acceptance_criteria: |
+      - README.md is updated with step database information
+      - CLI help text includes new step commands
+      - Architecture documentation is updated
+      - API documentation includes step database schema
+      - Examples are provided for using step commands
+    upstream_dependency_id: 5
+    review_required: true
+    parent_id: 2
+    status: "todo"
