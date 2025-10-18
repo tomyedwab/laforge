@@ -1,6 +1,7 @@
 import { ApiResponse, ApiError, Task, TaskLog, TaskReview, Step } from '../types';
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8080/api/v1';
+const PROJECT_ID = import.meta.env.VITE_PROJECT_ID || 'laforge-main';
 
 class ApiService {
   private async request<T>(
@@ -53,7 +54,7 @@ class ApiService {
     
     const queryString = searchParams.toString();
     return this.request<{ tasks: Task[]; pagination: any }>(
-      `/tasks${queryString ? `?${queryString}` : ''}`
+      `/projects/${PROJECT_ID}/tasks${queryString ? `?${queryString}` : ''}`
     );
   }
 
@@ -69,39 +70,39 @@ class ApiService {
     
     const queryString = searchParams.toString();
     return this.request<{ task: Task }>(
-      `/tasks/${id}${queryString ? `?${queryString}` : ''}`
+      `/projects/${PROJECT_ID}/tasks/${id}${queryString ? `?${queryString}` : ''}`
     );
   }
 
   async createTask(task: Partial<Task>): Promise<{ task: Task }> {
-    return this.request<{ task: Task }>('/tasks', {
+    return this.request<{ task: Task }>(`/projects/${PROJECT_ID}/tasks`, {
       method: 'POST',
       body: JSON.stringify(task),
     });
   }
 
   async updateTask(id: number, task: Partial<Task>): Promise<{ task: Task }> {
-    return this.request<{ task: Task }>(`/tasks/${id}`, {
+    return this.request<{ task: Task }>(`/projects/${PROJECT_ID}/tasks/${id}`, {
       method: 'PUT',
       body: JSON.stringify(task),
     });
   }
 
   async updateTaskStatus(id: number, status: string): Promise<{ task: Task }> {
-    return this.request<{ task: Task }>(`/tasks/${id}/status`, {
+    return this.request<{ task: Task }>(`/projects/${PROJECT_ID}/tasks/${id}/status`, {
       method: 'PUT',
       body: JSON.stringify({ status }),
     });
   }
 
   async deleteTask(id: number): Promise<void> {
-    return this.request<void>(`/tasks/${id}`, {
+    return this.request<void>(`/projects/${PROJECT_ID}/tasks/${id}`, {
       method: 'DELETE',
     });
   }
 
   async getNextTask(): Promise<{ task: Task | null; message?: string }> {
-    return this.request<{ task: Task | null; message?: string }>('/tasks/next');
+    return this.request<{ task: Task | null; message?: string }>(`/projects/${PROJECT_ID}/tasks/next`);
   }
 
   // Task logs
@@ -112,12 +113,12 @@ class ApiService {
     
     const queryString = searchParams.toString();
     return this.request<{ logs: TaskLog[]; pagination: any }>(
-      `/tasks/${taskId}/logs${queryString ? `?${queryString}` : ''}`
+      `/projects/${PROJECT_ID}/tasks/${taskId}/logs${queryString ? `?${queryString}` : ''}`
     );
   }
 
   async addTaskLog(taskId: number, message: string): Promise<{ log: TaskLog }> {
-    return this.request<{ log: TaskLog }>(`/tasks/${taskId}/logs`, {
+    return this.request<{ log: TaskLog }>(`/projects/${PROJECT_ID}/tasks/${taskId}/logs`, {
       method: 'POST',
       body: JSON.stringify({ message }),
     });
@@ -125,14 +126,14 @@ class ApiService {
 
   // Task reviews
   async getTaskReviews(taskId: number): Promise<{ reviews: TaskReview[] }> {
-    return this.request<{ reviews: TaskReview[] }>(`/tasks/${taskId}/reviews`);
+    return this.request<{ reviews: TaskReview[] }>(`/projects/${PROJECT_ID}/tasks/${taskId}/reviews`);
   }
 
   async createTaskReview(taskId: number, review: {
     message: string;
     attachment?: string;
   }): Promise<{ review: TaskReview }> {
-    return this.request<{ review: TaskReview }>(`/tasks/${taskId}/reviews`, {
+    return this.request<{ review: TaskReview }>(`/projects/${PROJECT_ID}/tasks/${taskId}/reviews`, {
       method: 'POST',
       body: JSON.stringify(review),
     });
@@ -142,7 +143,7 @@ class ApiService {
     status: 'approved' | 'rejected';
     feedback?: string;
   }): Promise<{ review: TaskReview }> {
-    return this.request<{ review: TaskReview }>(`/reviews/${reviewId}/feedback`, {
+    return this.request<{ review: TaskReview }>(`/projects/${PROJECT_ID}/reviews/${reviewId}/feedback`, {
       method: 'PUT',
       body: JSON.stringify(feedback),
     });
@@ -163,12 +164,12 @@ class ApiService {
     
     const queryString = searchParams.toString();
     return this.request<{ steps: Step[]; pagination: any }>(
-      `/steps${queryString ? `?${queryString}` : ''}`
+      `/projects/${PROJECT_ID}/steps${queryString ? `?${queryString}` : ''}`
     );
   }
 
   async getStep(id: number): Promise<{ step: Step }> {
-    return this.request<{ step: Step }>(`/steps/${id}`);
+    return this.request<{ step: Step }>(`/projects/${PROJECT_ID}/steps/${id}`);
   }
 }
 

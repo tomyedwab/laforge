@@ -106,4 +106,5 @@ export class WebSocketService {
 
 // Create singleton instance
 const WS_URL = import.meta.env.VITE_WS_URL || 'ws://localhost:8080/api/v1';
-export const websocketService = new WebSocketService(`${WS_URL}/ws`);
+const PROJECT_ID = import.meta.env.VITE_PROJECT_ID || 'laforge-main';
+export const websocketService = new WebSocketService(`${WS_URL}/projects/${PROJECT_ID}/ws`);
