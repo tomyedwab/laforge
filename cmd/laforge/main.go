@@ -547,28 +547,45 @@ func runStep(cmd *cobra.Command, args []string) error {
 	stepLogger.LogGitChanges(hasChanges, worktree.Path)
 
 	if hasChanges {
-		commitMessage := fmt.Sprintf("LaForge step %s - Automated changes", dbStepID)
-
-		// Check for COMMIT.md and use its contents if it exists
-		if customMessage, err := getCommitMessageFromFile(worktree.Path); err != nil {
-			stepLogger.LogWarning("git", "Failed to read COMMIT.md", map[string]interface{}{
+		// Check if there are actual changes besides COMMIT.md
+		hasActualChanges, err := hasGitChangesExcludingCommitMD(worktree.Path)
+		if err != nil {
+			stepLogger.LogWarning("git", "Failed to check for git changes excluding COMMIT.md", map[string]interface{}{
 				"error": err.Error(),
 			})
-		} else if customMessage != "" {
-			commitMessage = customMessage
+			// Continue anyway - try to commit
+			hasActualChanges = true
 		}
 
-		stepLogger.LogGitCommit(commitMessage, worktree.Path)
-		if err := commitChanges(worktree.Path, commitMessage); err != nil {
-			stepLogger.LogError("git", "Failed to commit changes", err, map[string]interface{}{
-				"repo_path": worktree.Path,
+		if hasActualChanges {
+			commitMessage := fmt.Sprintf("LaForge step %s - Automated changes", dbStepID)
+
+			// Check for COMMIT.md and use its contents if it exists
+			if customMessage, err := getCommitMessageFromFile(worktree.Path); err != nil {
+				stepLogger.LogWarning("git", "Failed to read COMMIT.md", map[string]interface{}{
+					"error": err.Error(),
+				})
+			} else if customMessage != "" {
+				commitMessage = customMessage
+			}
+
+			stepLogger.LogGitCommit(commitMessage, worktree.Path)
+			if err := commitChanges(worktree.Path, commitMessage); err != nil {
+				stepLogger.LogError("git", "Failed to commit changes", err, map[string]interface{}{
+					"repo_path": worktree.Path,
+				})
+				return errors.Wrap(errors.ErrUnknown, err, "failed to commit changes")
+			}
+			logger.Info("git", "Changes committed successfully", map[string]interface{}{
+				"project_id": projectID,
+				"step_id":    stepID,
 			})
-			return errors.Wrap(errors.ErrUnknown, err, "failed to commit changes")
+		} else {
+			logger.Info("git", "No changes to commit (only COMMIT.md was modified)", map[string]interface{}{
+				"project_id": projectID,
+				"step_id":    stepID,
+			})
 		}
-		logger.Info("git", "Changes committed successfully", map[string]interface{}{
-			"project_id": projectID,
-			"step_id":    stepID,
-		})
 	} else {
 		logger.Info("git", "No changes to commit", map[string]interface{}{
 			"project_id": projectID,
@@ -622,6 +639,26 @@ func hasGitChanges(repoDir string) (bool, error) {
 
 	// If there's any output, there are changes
 	return len(strings.TrimSpace(string(output))) > 0, nil
+}
+
+// hasGitChangesExcludingCommitMD checks if there are uncommitted changes excluding COMMIT.md
+func hasGitChangesExcludingCommitMD(repoDir string) (bool, error) {
+	cmd := exec.Command("git", "status", "--porcelain")
+	cmd.Dir = repoDir
+	output, err := cmd.Output()
+	if err != nil {
+		return false, fmt.Errorf("failed to check git status: %w", err)
+	}
+
+	// Filter out COMMIT.md from the output
+	lines := strings.Split(strings.TrimSpace(string(output)), "\n")
+	for _, line := range lines {
+		if line != "" && !strings.HasSuffix(line, "COMMIT.md") {
+			return true, nil
+		}
+	}
+
+	return false, nil
 }
 
 // commitChanges commits all changes in the repository with the given message,
