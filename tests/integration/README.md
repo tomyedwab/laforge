@@ -78,6 +78,16 @@ go test -v project_validation_test.go
 - ✅ Git repository initialization (when available)
 - ✅ Repository state verification
 
+### Step Database Integration Tests
+- ✅ Step database creation during project initialization
+- ✅ Step recording during step execution (with Docker)
+- ✅ Step database isolation from task database
+- ✅ Step command functionality with real data
+- ✅ Step info command with detailed step information
+- ✅ Error handling for invalid project IDs and step IDs
+- ✅ Performance impact measurement and optimization
+- ✅ Database schema validation and index verification
+
 ## Environment Requirements
 
 ### Minimum Requirements
