@@ -1,0 +1,296 @@
+tasks:
+  - id: T16
+    title: "[EPIC] Implement laserve backend API server"
+    description: "Create a Go-based API server (laserve) that implements the comprehensive REST API for task management, reviews, and real-time updates"
+    acceptance_criteria: |
+      - Complete REST API implementation following the approved API specification
+      - WebSocket support for real-time updates
+      - JWT-based authentication system
+      - SQLite database integration with existing task schema
+      - Comprehensive error handling and validation
+      - Unit and integration test coverage >80%
+      - Performance requirements met (<200ms response time)
+      - Proper logging and monitoring capabilities
+    upstream_dependency_id: T15
+    review_required: false
+    parent_id: null
+    status: "todo"
+
+  - id: T17
+    title: "[FEAT] Set up laserve project structure and dependencies"
+    description: "Initialize Go project structure, add required dependencies, and set up basic HTTP server"
+    acceptance_criteria: |
+      - Go module initialized with proper module name
+      - Required dependencies added (gorilla/mux, gorilla/websocket, JWT, validator)
+      - Basic HTTP server listening on configured port
+      - Environment-based configuration system
+      - Structured logging setup
+      - Health check endpoint implemented
+    upstream_dependency_id: T16
+    review_required: false
+    parent_id: T16
+    status: "todo"
+
+  - id: T18
+    title: "[FEAT] Implement database layer and models"
+    description: "Create database connection layer, ORM models, and repository pattern for data access"
+    acceptance_criteria: |
+      - SQLite database connection with connection pooling
+      - Database models for tasks, logs, reviews, and steps
+      - Repository pattern implementation for each entity
+      - Database migration system
+      - Transaction support for data consistency
+      - Proper error handling for database operations
+    upstream_dependency_id: T17
+    review_required: false
+    parent_id: T16
+    status: "todo"
+
+  - id: T19
+    title: "[FEAT] Implement JWT authentication middleware"
+    description: "Create JWT-based authentication system with middleware for protecting API endpoints"
+    acceptance_criteria: |
+      - JWT token generation and validation
+      - Authentication middleware for protected routes
+      - Token refresh mechanism
+      - User context injection into request context
+      - Proper error responses for unauthorized requests
+      - Rate limiting per user
+    upstream_dependency_id: T18
+    review_required: false
+    parent_id: T16
+    status: "todo"
+
+  - id: T20
+    title: "[FEAT] Implement task management endpoints"
+    description: "Create REST endpoints for task CRUD operations, status updates, and task queue management"
+    acceptance_criteria: |
+      - GET /tasks with filtering and pagination
+      - GET /tasks/{task_id} with optional includes
+      - POST /tasks for task creation
+      - PUT /tasks/{task_id} for task updates
+      - PUT /tasks/{task_id}/status for status changes
+      - DELETE /tasks/{task_id} for task deletion
+      - GET /tasks/next for next ready task
+      - Proper validation for all endpoints
+      - Comprehensive error handling
+    upstream_dependency_id: T19
+    review_required: false
+    parent_id: T16
+    status: "todo"
+
+  - id: T21
+    title: "[FEAT] Implement task logs and reviews endpoints"
+    description: "Create endpoints for managing task logs and review workflows"
+    acceptance_criteria: |
+      - GET /tasks/{task_id}/logs with pagination
+      - POST /tasks/{task_id}/logs for adding log entries
+      - GET /tasks/{task_id}/reviews
+      - POST /tasks/{task_id}/reviews for creating reviews
+      - GET /reviews/{review_id} for retrieving reviews
+      - PUT /reviews/{review_id}/feedback for submitting feedback
+      - Proper validation and error handling
+    upstream_dependency_id: T20
+    review_required: false
+    parent_id: T16
+    status: "todo"
+
+  - id: T22
+    title: "[FEAT] Implement step history endpoints"
+    description: "Create endpoints for retrieving step history and step details"
+    acceptance_criteria: |
+      - GET /steps with filtering and pagination
+      - GET /steps/{step_id} for individual step details
+      - Support for filtering by active status
+      - Proper pagination metadata
+      - Integration with existing step database schema
+      - Performance optimization for large datasets
+    upstream_dependency_id: T21
+    review_required: false
+    parent_id: T16
+    status: "todo"
+
+  - id: T23
+    title: "[FEAT] Implement WebSocket real-time updates"
+    description: "Create WebSocket endpoint for real-time task, review, and step updates"
+    acceptance_criteria: |
+      - WebSocket endpoint at /ws with authentication
+      - Channel-based subscription system
+      - Real-time updates for task status changes
+      - Real-time updates for review status changes
+      - Real-time updates for step completion
+      - Proper connection management and cleanup
+      - Support for 100+ concurrent connections
+    upstream_dependency_id: T22
+    review_required: false
+    parent_id: T16
+    status: "todo"
+
+  - id: T24
+    title: "[TEST] Write comprehensive tests for laserve"
+    description: "Create unit and integration tests for all API endpoints and WebSocket functionality"
+    acceptance_criteria: |
+      - Unit tests for all handlers with >80% coverage
+      - Integration tests for database operations
+      - WebSocket connection and message tests
+      - Authentication and authorization tests
+      - Error handling and edge case tests
+      - Load testing for concurrent user scenarios
+      - API documentation validation tests
+    upstream_dependency_id: T23
+    review_required: false
+    parent_id: T16
+    status: "todo"
+
+  - id: T25
+    title: "[EPIC] Implement Preact/TypeScript web UI frontend"
+    description: "Create a modern web UI using Preact and TypeScript that consumes the laserve API and provides intuitive task management and review interfaces"
+    acceptance_criteria: |
+      - Modern, responsive web interface using Preact and TypeScript
+      - Real-time updates through WebSocket integration
+      - Comprehensive task management interface
+      - Review workflow with file attachment viewing
+      - Step history visualization
+      - Mobile-responsive design
+      - Accessibility compliance (WCAG 2.1 AA)
+      - Performance optimization (<3s initial load)
+      - Cross-browser compatibility
+    upstream_dependency_id: T15
+    review_required: false
+    parent_id: null
+    status: "todo"
+
+  - id: T26
+    title: "[FEAT] Set up Preact/TypeScript project structure"
+    description: "Initialize frontend project with Preact, TypeScript, build tools, and development environment"
+    acceptance_criteria: |
+      - Preact + TypeScript project initialized
+      - Vite or similar build tool configured
+      - ESLint and Prettier configuration
+      - Jest/testing library setup
+      - Development server with hot reload
+      - Production build optimization
+      - Environment configuration system
+      - Basic folder structure and conventions
+    upstream_dependency_id: T25
+    review_required: false
+    parent_id: T25
+    status: "todo"
+
+  - id: T27
+    title: "[FEAT] Implement API client and WebSocket connection"
+    description: "Create API client library for laserve backend and WebSocket connection management"
+    acceptance_criteria: |
+      - TypeScript API client with full type definitions
+      - Authentication token management
+      - Request/response interceptors for error handling
+      - WebSocket connection with automatic reconnection
+      - Real-time message handling and state updates
+      - Request retry logic and exponential backoff
+      - Proper error handling and user feedback
+    upstream_dependency_id: T26
+    review_required: false
+    parent_id: T25
+    status: "todo"
+
+  - id: T28
+    title: "[FEAT] Create task list and detail views"
+    description: "Implement main task list interface and detailed task view components"
+    acceptance_criteria: |
+      - Task list with filtering and sorting capabilities
+      - Pagination or infinite scroll for large datasets
+      - Task detail view with all properties
+      - Task status update functionality
+      - Task creation and editing forms
+      - Hierarchical display of parent/child tasks
+      - Responsive design for mobile and desktop
+      - Loading states and error handling
+    upstream_dependency_id: T27
+    review_required: false
+    parent_id: T25
+    status: "todo"
+
+  - id: T29
+    title: "[FEAT] Implement review workflow interface"
+    description: "Create UI components for review requests, feedback submission, and attachment viewing"
+    acceptance_criteria: |
+      - Review request creation with attachment upload
+      - Review list display with status indicators
+      - Review detail view with attachment preview
+      - Feedback submission interface
+      - File attachment viewing (markdown, images)
+      - Review status management
+      - Integration with task detail views
+      - Proper validation and user feedback
+    upstream_dependency_id: T28
+    review_required: false
+    parent_id: T25
+    status: "todo"
+
+  - id: T30
+    title: "[FEAT] Create step history visualization"
+    description: "Implement step history view with timeline visualization and step details"
+    acceptance_criteria: |
+      - Step history timeline with chronological display
+      - Step detail view with all metadata
+      - Token usage and cost visualization
+      - Step duration and performance metrics
+      - Filtering by date range and status
+      - Pagination for large step histories
+      - Interactive timeline with step selection
+      - Export functionality for step data
+    upstream_dependency_id: T29
+    review_required: false
+    parent_id: T25
+    status: "todo"
+
+  - id: T31
+    title: "[FEAT] Implement real-time notifications and updates"
+    description: "Create notification system for real-time updates and user alerts"
+    acceptance_criteria: |
+      - Toast notifications for task updates
+      - Real-time task status changes in lists
+      - Review status update notifications
+      - WebSocket connection status indicator
+      - Notification preferences and settings
+      - Sound/visual alerts for important updates
+      - Notification history and dismissal
+      - Accessibility-compliant notifications
+    upstream_dependency_id: T30
+    review_required: false
+    parent_id: T25
+    status: "todo"
+
+  - id: T32
+    title: "[FEAT] Add responsive design and mobile optimization"
+    description: "Ensure the web UI works well on mobile devices and various screen sizes"
+    acceptance_criteria: |
+      - Mobile-first responsive design
+      - Touch-friendly interface elements
+      - Optimized layouts for different screen sizes
+      - Mobile navigation patterns
+      - Performance optimization for mobile networks
+      - Offline capability with service workers
+      - Progressive Web App (PWA) features
+      - Cross-device synchronization
+    upstream_dependency_id: T31
+    review_required: false
+    parent_id: T25
+    status: "todo"
+
+  - id: T33
+    title: "[TEST] Write frontend tests and perform accessibility audit"
+    description: "Create comprehensive tests for frontend components and ensure accessibility compliance"
+    acceptance_criteria: |
+      - Unit tests for all components with >80% coverage
+      - Integration tests for user workflows
+      - End-to-end tests for critical paths
+      - Accessibility audit with WCAG 2.1 AA compliance
+      - Cross-browser testing (Chrome, Firefox, Safari, Edge)
+      - Mobile device testing
+      - Performance testing and optimization
+      - Security testing for XSS and CSRF vulnerabilities
+    upstream_dependency_id: T32
+    review_required: false
+    parent_id: T25
+    status: "todo"
