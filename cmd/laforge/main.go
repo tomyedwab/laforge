@@ -486,6 +486,16 @@ func runStep(cmd *cobra.Command, args []string) error {
 
 	if hasChanges {
 		commitMessage := fmt.Sprintf("LaForge step %s - Automated changes", dbStepID)
+
+		// Check for COMMIT.md and use its contents if it exists
+		if customMessage, err := getCommitMessageFromFile(worktree.Path); err != nil {
+			stepLogger.LogWarning("git", "Failed to read COMMIT.md", map[string]interface{}{
+				"error": err.Error(),
+			})
+		} else if customMessage != "" {
+			commitMessage = customMessage
+		}
+
 		stepLogger.LogGitCommit(commitMessage, worktree.Path)
 		if err := commitChanges(worktree.Path, commitMessage); err != nil {
 			stepLogger.LogError("git", "Failed to commit changes", err, map[string]interface{}{
@@ -525,6 +535,20 @@ func runStep(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
+// getCommitMessageFromFile checks for COMMIT.md in the repository and returns its contents
+// If COMMIT.md doesn't exist, returns an empty string
+func getCommitMessageFromFile(repoDir string) (string, error) {
+	commitMDPath := filepath.Join(repoDir, "COMMIT.md")
+	data, err := os.ReadFile(commitMDPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return "", nil
+		}
+		return "", fmt.Errorf("failed to read COMMIT.md: %w", err)
+	}
+	return strings.TrimSpace(string(data)), nil
+}
+
 // hasGitChanges checks if there are uncommitted changes in the git repository
 func hasGitChanges(repoDir string) (bool, error) {
 	cmd := exec.Command("git", "status", "--porcelain")
@@ -538,14 +562,21 @@ func hasGitChanges(repoDir string) (bool, error) {
 	return len(strings.TrimSpace(string(output))) > 0, nil
 }
 
-// commitChanges commits all changes in the repository with the given message
+// commitChanges commits all changes in the repository with the given message,
+// excluding COMMIT.md if it exists
 func commitChanges(repoDir string, message string) error {
 	// Add all changes
-	cmd := exec.Command("git", "add", ".")
+	cmd := exec.Command("git", "add", "-A")
 	cmd.Dir = repoDir
 	if err := cmd.Run(); err != nil {
 		return fmt.Errorf("failed to add changes: %w", err)
 	}
+
+	// Unstage COMMIT.md if it exists and was staged
+	cmd = exec.Command("git", "reset", "COMMIT.md")
+	cmd.Dir = repoDir
+	// Ignore error if COMMIT.md doesn't exist
+	_ = cmd.Run()
 
 	// Commit changes
 	cmd = exec.Command("git", "commit", "-m", message)
