@@ -417,13 +417,16 @@ func runStep(cmd *cobra.Command, args []string) error {
 		return errors.Wrap(errors.ErrUnknown, err, "failed to create temporary worktree")
 	}
 	stepLogger.LogWorktreeCreation(worktree.Path, fmt.Sprintf("step-S%d", stepID))
+	worktreeRemoved := false
 	defer func() {
-		// Clean up worktree
-		stepLogger.LogWorktreeCleanup(worktree.Path)
-		if cleanupErr := git.RemoveWorktree(worktree); cleanupErr != nil {
-			stepLogger.LogWarning("git", "Failed to remove worktree", map[string]interface{}{
-				"error": cleanupErr.Error(),
-			})
+		// Clean up worktree only if it hasn't been removed yet
+		if !worktreeRemoved {
+			stepLogger.LogWorktreeCleanup(worktree.Path)
+			if cleanupErr := git.RemoveWorktree(worktree); cleanupErr != nil {
+				stepLogger.LogWarning("git", "Failed to remove worktree", map[string]interface{}{
+					"error": cleanupErr.Error(),
+				})
+			}
 		}
 	}()
 
@@ -652,8 +655,20 @@ func runStep(cmd *cobra.Command, args []string) error {
 				})
 			}
 		} else {
-			// Merge successful, delete step branch
-			stepLogger.LogStepPhase("git", "Merge successful, cleaning up step branch")
+			// Merge successful, clean up worktree first, then delete step branch
+			stepLogger.LogStepPhase("git", "Merge successful, cleaning up worktree and step branch")
+
+			// Remove worktree before attempting branch deletion
+			stepLogger.LogWorktreeCleanup(worktree.Path)
+			if cleanupErr := git.RemoveWorktree(worktree); cleanupErr != nil {
+				stepLogger.LogWarning("git", "Failed to remove worktree after successful merge", map[string]interface{}{
+					"error": cleanupErr.Error(),
+				})
+			} else {
+				worktreeRemoved = true // Mark worktree as removed to prevent double cleanup in defer
+			}
+
+			// Now delete the step branch
 			if deleteErr := git.DeleteBranch(sourceDir, stepBranch); deleteErr != nil {
 				stepLogger.LogWarning("git", "Failed to delete step branch after successful merge", map[string]interface{}{
 					"step_branch": stepBranch,
