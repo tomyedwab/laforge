@@ -148,6 +148,18 @@ func isCurrentBranch(repoDir string, branchName string) bool {
 	return currentBranch == branchName
 }
 
+// GetCurrentCommitSHA returns the current commit SHA for the given repository
+func GetCurrentCommitSHA(repoDir string) (string, error) {
+	cmd := exec.Command("git", "rev-parse", "HEAD")
+	cmd.Dir = repoDir
+	output, err := cmd.Output()
+	if err != nil {
+		return "", fmt.Errorf("failed to get current commit SHA: %w", err)
+	}
+
+	return strings.TrimSpace(string(output)), nil
+}
+
 // parseWorktreeList parses the output of 'git worktree list --porcelain'
 func parseWorktreeList(output string, repoDir string) []*Worktree {
 	var worktrees []*Worktree

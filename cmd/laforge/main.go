@@ -16,6 +16,7 @@ import (
 	"github.com/tomyedwab/laforge/git"
 	"github.com/tomyedwab/laforge/logging"
 	"github.com/tomyedwab/laforge/projects"
+	"github.com/tomyedwab/laforge/steps"
 )
 
 var (
@@ -224,23 +225,106 @@ func runStep(cmd *cobra.Command, args []string) error {
 		logger = logging.NewLogger(logging.WARN, "")
 	}
 
-	// Generate step ID
-	stepID := logging.GenerateStepID()
-	stepLogger := logging.NewStepLogger(logger, projectID, stepID)
+	// Open step database for recording
+	stepDB, err := projects.OpenProjectStepDatabase(projectID)
+	if err != nil {
+		return errors.Wrap(errors.ErrDatabaseConnectionFailed, err, "failed to open project step database")
+	}
+	defer stepDB.Close()
+
+	// Get the next step ID from database
+	stepID, err := stepDB.GetNextStepID()
+	if err != nil {
+		return errors.Wrap(errors.ErrDatabaseOperationFailed, err, "failed to get next step ID")
+	}
+
+	// Get current commit SHA before step execution
+	commitSHABefore, err := git.GetCurrentCommitSHA(sourceDir)
+	if err != nil {
+		return errors.Wrap(errors.ErrUnknown, err, "failed to get current commit SHA")
+	}
+
+	// Create step record in database
+	step := &steps.Step{
+		Active:          true,
+		ParentStepID:    nil, // Will be set if this is a child step
+		CommitSHABefore: commitSHABefore,
+		CommitSHAAfter:  "", // Will be updated after step completion
+		AgentConfig: steps.AgentConfig{
+			Model:        "default", // Basic model info since projects.AgentConfig doesn't have these fields
+			MaxTokens:    0,
+			Temperature:  0.7,
+			SystemPrompt: "", // Will be populated from agent config if available
+			Tools:        []string{},
+			Metadata: map[string]string{
+				"agent_name": agentConfig.Name,
+				"image":      agentConfig.Image,
+			},
+		},
+		StartTime:  time.Now(),
+		EndTime:    nil, // Will be updated after step completion
+		DurationMs: nil, // Will be updated after step completion
+		TokenUsage: steps.TokenUsage{
+			PromptTokens:     0, // Will be updated after step completion
+			CompletionTokens: 0, // Will be updated after step completion
+			TotalTokens:      0, // Will be updated after step completion
+			Cost:             0, // Will be updated after step completion
+		},
+		ExitCode:  nil, // Will be updated after step completion
+		ProjectID: projectID,
+		CreatedAt: time.Now(),
+	}
+
+	if err := stepDB.CreateStep(step); err != nil {
+		return errors.Wrap(errors.ErrDatabaseOperationFailed, err, "failed to create step record")
+	}
+
+	// Use database-generated step ID instead of timestamp-based ID
+	dbStepID := fmt.Sprintf("S%d", step.ID)
+	stepLogger := logging.NewStepLogger(logger, projectID, dbStepID)
 
 	// Log step start
 	stepLogger.LogStepStart(projectID)
 	stepStartTime := time.Now()
 
+	// Declare worktree variable for use in defer
+	var worktree *git.Worktree
+
 	defer func() {
-		// Log step completion
+		// Calculate duration and update step record
 		duration := time.Since(stepStartTime)
-		stepLogger.LogStepEnd(err == nil, duration, 0)
+		durationMs := int(duration.Milliseconds())
+		endTime := time.Now()
+
+		// Update step record with completion data
+		exitCode := int64(0)
+		if err != nil {
+			exitCode = 1
+		}
+
+		// Get commit SHA after step execution (if there were changes and worktree exists)
+		commitSHAAfter := commitSHABefore
+		if worktree != nil {
+			if hasChanges, _ := hasGitChanges(worktree.Path); hasChanges {
+				if sha, err := git.GetCurrentCommitSHA(worktree.Path); err == nil {
+					commitSHAAfter = sha
+				}
+			}
+		}
+
+		if updateErr := stepDB.UpdateStep(step.ID, commitSHAAfter, endTime, durationMs, int(exitCode), step.TokenUsage); updateErr != nil {
+			stepLogger.LogError("database", "Failed to update step record", updateErr, map[string]interface{}{
+				"step_id": step.ID,
+			})
+		}
+
+		// Log step completion
+		stepLogger.LogStepEnd(err == nil, duration, exitCode)
 	}()
 
 	// Step 1: Create temporary git worktree
 	stepLogger.LogStepPhase("worktree", "Creating temporary git worktree")
-	worktree, err := git.CreateTempWorktree(sourceDir, "step")
+	worktree, err = git.CreateTempWorktree(sourceDir, "step")
 	if err != nil {
 		stepLogger.LogError("git", "Failed to create temporary worktree", err, map[string]interface{}{
 			"source_dir": sourceDir,
@@ -306,7 +390,7 @@ func runStep(cmd *cobra.Command, args []string) error {
 	}
 
 	// Create log file with step ID and timestamp
-	logFileName := fmt.Sprintf("step-%s-%s.log", stepID, time.Now().Format("20060102-150405"))
+	logFileName := fmt.Sprintf("step-%s-%s.log", dbStepID, time.Now().Format("20060102-150405"))
 	logFilePath := filepath.Join(logsDir, logFileName)
 	logFile, err := os.Create(logFilePath)
 	if err != nil {
@@ -375,7 +459,7 @@ func runStep(cmd *cobra.Command, args []string) error {
 	stepLogger.LogGitChanges(hasChanges, worktree.Path)
 
 	if hasChanges {
-		commitMessage := fmt.Sprintf("LaForge step %s - Automated changes", stepID)
+		commitMessage := fmt.Sprintf("LaForge step %s - Automated changes", dbStepID)
 		stepLogger.LogGitCommit(commitMessage, worktree.Path)
 		if err := commitChanges(worktree.Path, commitMessage); err != nil {
 			stepLogger.LogError("git", "Failed to commit changes", err, map[string]interface{}{
