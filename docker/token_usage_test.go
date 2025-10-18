@@ -209,7 +209,7 @@ TOKEN_USAGE: prompt_tokens=invalid, completion_tokens=abc, total_tokens=xyz, cos
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := client.extractTokenUsageFromLogs(tt.logs)
+			result := client.ExtractTokenUsageFromLogs(tt.logs)
 			if result.PromptTokens != tt.expected.PromptTokens {
 				t.Errorf("PromptTokens = %v, want %v", result.PromptTokens, tt.expected.PromptTokens)
 			}

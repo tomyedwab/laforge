@@ -31,6 +31,42 @@ logs from the step. A file in the project root specifies the current committed
 step as well as any currently running steps. The metadata also includes the log
 of steps tracking time and tokens spent on each step.
 
+### Step Database
+
+Each step is recorded in a SQLite database that tracks:
+- **Step ID**: Sequential integer starting at 1
+- **Active Status**: Whether the step is active (can be deactivated during rollback)
+- **Parent Step ID**: Links to previous step for maintaining execution history
+- **Commit SHAs**: Git commit before and after step execution
+- **Agent Configuration**: Complete agent settings used for the step
+- **Timing Information**: Start time, end time, and duration in milliseconds
+- **Token Usage**: Prompt tokens, completion tokens, total tokens, and cost
+- **Exit Code**: Container exit status for debugging
+
+### Step Management Commands
+
+LaForge provides several commands for managing step history:
+
+```bash
+# List all steps for a project
+laforge steps [project-id]
+
+# Show detailed information about a specific step
+laforge step info [project-id] [step-id]
+
+# Rollback to a previous step (deactivates subsequent steps and reverts git changes)
+laforge step rollback [project-id] [step-id]
+```
+
+### Step Rollback Functionality
+
+The rollback feature allows you to revert your project to any previous step:
+1. **Step Deactivation**: All steps after the target step are marked as inactive
+2. **Git Repository Reset**: The repository is reset to the commit before the target step
+3. **Safety Confirmation**: User confirmation is required before performing rollback
+
+This provides a safe way to explore different approaches and easily revert changes if needed.
+
 If LaForge chooses to run multiple steps in parallel, it will have to create
 separate branches for each step and run a separate step to merge them together.
 

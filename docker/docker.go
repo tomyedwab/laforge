@@ -458,10 +458,16 @@ func (c *Client) countWarningsInLogs(logs string) int {
 // ExtractTokenUsageFromLogs extracts token usage information from container logs
 func (c *Client) ExtractTokenUsageFromLogs(logs string) steps.TokenUsage {
 	tokenUsage := steps.TokenUsage{}
+	tokenUsageFound := false
 
 	lines := strings.Split(logs, "\n")
 	for _, line := range lines {
 		line = strings.TrimSpace(line)
+
+		// Skip if we already found token usage data (first occurrence wins)
+		if tokenUsageFound {
+			continue
+		}
 
 		// Look for JSON token usage patterns
 		if strings.Contains(line, "token_usage") {
@@ -471,15 +477,19 @@ func (c *Client) ExtractTokenUsageFromLogs(logs string) steps.TokenUsage {
 				if tokenData, ok := jsonData["token_usage"].(map[string]interface{}); ok {
 					if promptTokens, ok := tokenData["prompt_tokens"].(float64); ok {
 						tokenUsage.PromptTokens = int(promptTokens)
+						tokenUsageFound = true
 					}
 					if completionTokens, ok := tokenData["completion_tokens"].(float64); ok {
 						tokenUsage.CompletionTokens = int(completionTokens)
+						tokenUsageFound = true
 					}
 					if totalTokens, ok := tokenData["total_tokens"].(float64); ok {
 						tokenUsage.TotalTokens = int(totalTokens)
+						tokenUsageFound = true
 					}
 					if cost, ok := tokenData["cost"].(float64); ok {
 						tokenUsage.Cost = cost
+						tokenUsageFound = true
 					}
 				}
 			}
@@ -488,61 +498,68 @@ func (c *Client) ExtractTokenUsageFromLogs(logs string) steps.TokenUsage {
 		// Look for structured log lines with TOKEN_USAGE prefix
 		if strings.HasPrefix(strings.ToUpper(line), "TOKEN_USAGE:") {
 			// Parse key-value pairs after TOKEN_USAGE:
-			usagePart := strings.TrimPrefix(strings.ToUpper(line), "TOKEN_USAGE:")
-			usagePart = strings.TrimSpace(usagePart)
+			content := strings.TrimPrefix(strings.ToUpper(line), "TOKEN_USAGE:")
+			content = strings.TrimSpace(content)
 
 			// Parse comma-separated key=value pairs
-			pairs := strings.Split(usagePart, ",")
+			pairs := strings.Split(content, ",")
 			for _, pair := range pairs {
 				pair = strings.TrimSpace(pair)
-				keyValue := strings.SplitN(pair, "=", 2)
-				if len(keyValue) == 2 {
-					key := strings.TrimSpace(strings.ToLower(keyValue[0]))
-					value := strings.TrimSpace(keyValue[1])
+				parts := strings.Split(pair, "=")
+				if len(parts) == 2 {
+					key := strings.TrimSpace(parts[0])
+					value := strings.TrimSpace(parts[1])
 
 					switch key {
-					case "prompt_tokens":
+					case "PROMPT_TOKENS":
 						if val, err := strconv.Atoi(value); err == nil {
 							tokenUsage.PromptTokens = val
+							tokenUsageFound = true
 						}
-					case "completion_tokens":
+					case "COMPLETION_TOKENS":
 						if val, err := strconv.Atoi(value); err == nil {
 							tokenUsage.CompletionTokens = val
+							tokenUsageFound = true
 						}
-					case "total_tokens":
+					case "TOTAL_TOKENS":
 						if val, err := strconv.Atoi(value); err == nil {
 							tokenUsage.TotalTokens = val
+							tokenUsageFound = true
 						}
-					case "cost":
+					case "COST":
 						if val, err := strconv.ParseFloat(value, 64); err == nil {
 							tokenUsage.Cost = val
+							tokenUsageFound = true
 						}
 					}
 				}
 			}
 		}
 
-		// Look for resource usage logging pattern
-		if strings.Contains(strings.ToLower(line), "resource usage:") && strings.Contains(strings.ToLower(line), "tokens") {
-			// Try to extract token data from resource usage log
-			// This handles the pattern: "Resource usage: tokens {"prompt_tokens": 150, ...}"
-			if startIdx := strings.Index(line, "{"); startIdx != -1 {
-				if endIdx := strings.LastIndex(line, "}"); endIdx != -1 {
-					jsonStr := line[startIdx : endIdx+1]
-					var tokenData map[string]interface{}
-					if err := json.Unmarshal([]byte(jsonStr), &tokenData); err == nil {
-						if promptTokens, ok := tokenData["prompt_tokens"].(float64); ok {
-							tokenUsage.PromptTokens = int(promptTokens)
-						}
-						if completionTokens, ok := tokenData["completion_tokens"].(float64); ok {
-							tokenUsage.CompletionTokens = int(completionTokens)
-						}
-						if totalTokens, ok := tokenData["total_tokens"].(float64); ok {
-							tokenUsage.TotalTokens = int(totalTokens)
-						}
-						if cost, ok := tokenData["cost"].(float64); ok {
-							tokenUsage.Cost = cost
-						}
+		// Look for resource usage logging patterns
+		if strings.Contains(strings.ToLower(line), "resource usage") && strings.Contains(line, "tokens") {
+			// Try to extract JSON object from the line
+			startIdx := strings.Index(line, "{")
+			endIdx := strings.LastIndex(line, "}")
+			if startIdx != -1 && endIdx != -1 && startIdx < endIdx {
+				jsonStr := line[startIdx : endIdx+1]
+				var jsonData map[string]interface{}
+				if err := json.Unmarshal([]byte(jsonStr), &jsonData); err == nil {
+					if promptTokens, ok := jsonData["prompt_tokens"].(float64); ok {
+						tokenUsage.PromptTokens = int(promptTokens)
+						tokenUsageFound = true
+					}
+					if completionTokens, ok := jsonData["completion_tokens"].(float64); ok {
+						tokenUsage.CompletionTokens = int(completionTokens)
+						tokenUsageFound = true
+					}
+					if totalTokens, ok := jsonData["total_tokens"].(float64); ok {
+						tokenUsage.TotalTokens = int(totalTokens)
+						tokenUsageFound = true
+					}
+					if cost, ok := jsonData["cost"].(float64); ok {
+						tokenUsage.Cost = cost
+						tokenUsageFound = true
 					}
 				}
 			}
@@ -564,6 +581,7 @@ func (c *Client) startContainerWithAgentConfig(container *Container, agentConfig
 	// Build docker run command
 	args := []string{"run", "-d", "--name", container.Name}
 
+	// Add environment variables from AgentConfig
 	for key, value := range agentConfig.Environment {
 		args = append(args, "-e", fmt.Sprintf("%s=%s", key, value))
 	}
@@ -572,11 +590,6 @@ func (c *Client) startContainerWithAgentConfig(container *Container, agentConfig
 	for _, volume := range agentConfig.Volumes {
 		args = append(args, "-v", volume)
 	}
-
-	args = append(args, "-v", fmt.Sprintf("%s:/src", container.WorkDir))
-
-	taskDBDir := filepath.Dir(container.TaskDBPath)
-	args = append(args, "-v", fmt.Sprintf("%s:/state", taskDBDir))
 
 	// Set working directory
 	if agentConfig.WorkingDir != "" {
@@ -595,19 +608,24 @@ func (c *Client) startContainerWithAgentConfig(container *Container, agentConfig
 		args = append(args, "-c", fmt.Sprintf("%d", agentConfig.Resources.CPUShares))
 	}
 
-	// Set CPU limit if specified
-	if agentConfig.Resources.CPULimit != "" {
-		args = append(args, "--cpus", agentConfig.Resources.CPULimit)
-	}
-
-	// Set PID limit if specified
-	if agentConfig.Resources.PidsLimit > 0 {
-		args = append(args, "--pids-limit", fmt.Sprintf("%d", agentConfig.Resources.PidsLimit))
-	}
-
 	// Set network mode if specified
 	if agentConfig.Runtime.NetworkMode != "" {
 		args = append(args, "--network", agentConfig.Runtime.NetworkMode)
+	}
+
+	// Set capabilities if specified
+	for _, cap := range agentConfig.Runtime.Capabilities {
+		args = append(args, "--cap-add", cap)
+	}
+
+	// Set devices if specified
+	for _, device := range agentConfig.Runtime.Devices {
+		args = append(args, "--device", device)
+	}
+
+	// Set AutoRemove option
+	if agentConfig.Runtime.AutoRemove {
+		args = append(args, "--rm")
 	}
 
 	// Set privileged mode if specified
@@ -615,49 +633,38 @@ func (c *Client) startContainerWithAgentConfig(container *Container, agentConfig
 		args = append(args, "--privileged")
 	}
 
-	// Add capabilities if specified
-	for _, cap := range agentConfig.Runtime.Capabilities {
-		args = append(args, "--cap-add", cap)
-	}
+	// Add volume mounts for work directory and task database
+	args = append(args, "-v", fmt.Sprintf("%s:/src", container.WorkDir))
+	taskDBDir := filepath.Dir(container.TaskDBPath)
+	args = append(args, "-v", fmt.Sprintf("%s:/state", taskDBDir))
 
-	// Add devices if specified
-	for _, device := range agentConfig.Runtime.Devices {
-		args = append(args, "--device", device)
-	}
+	// Set the image
+	args = append(args, agentConfig.Image)
 
-	// Auto-remove if specified
-	if agentConfig.Runtime.AutoRemove {
-		args = append(args, "--rm")
-	}
-
-	// Add image and command
-	args = append(args, container.Config.Image)
+	// Add command if specified
 	if len(agentConfig.Command) > 0 {
 		args = append(args, agentConfig.Command...)
 	}
 
-	fmt.Printf("Running docker with args: %v\n", args) // donotcheckin
-
-	// Run the container
+	// Execute docker run command
 	cmd := exec.CommandContext(ctx, "docker", args...)
-	output, err := cmd.Output()
+	output, err := cmd.CombinedOutput()
 	if err != nil {
-		if exitErr, ok := err.(*exec.ExitError); ok {
-			return fmt.Errorf("failed to start container: %w\nOutput: %s", err, string(exitErr.Stderr))
-		}
-		return fmt.Errorf("failed to start container: %w", err)
+		return fmt.Errorf("failed to start container: %w\nOutput: %s", err, string(output))
 	}
 
-	// Extract container ID from output
-	container.ID = strings.TrimSpace(string(output))
+	// Parse container ID from output
+	containerID := strings.TrimSpace(string(output))
+	if containerID == "" {
+		return fmt.Errorf("failed to get container ID from docker run output")
+	}
+
+	container.ID = containerID
 	container.StartTime = time.Now()
 
 	return nil
 }
 
-// CleanupLaForgeContainers removes all LaForge containers
-
-// isTempFile checks if a path appears to be a temporary file
 func isTempFile(path string) bool {
 	// Check if the filename contains typical temporary file patterns
 	base := filepath.Base(path)

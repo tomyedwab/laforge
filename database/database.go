@@ -267,7 +267,10 @@ func CreateTempDatabaseCopy(sourcePath string, prefix string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("failed to create temporary directory: %w", err)
 	}
-	tempPath := filepath.Join(tempDir, "tasks.db")
+
+	// Include the prefix in the filename to make it recognizable as a temp file
+	tempFileName := fmt.Sprintf("laforge-%s-tasks.db", prefix)
+	tempPath := filepath.Join(tempDir, tempFileName)
 
 	// Copy database to temporary location
 	if err := CopyDatabase(sourcePath, tempPath); err != nil {

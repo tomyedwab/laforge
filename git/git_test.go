@@ -185,6 +185,104 @@ func TestCreateTempWorktree(t *testing.T) {
 	}
 }
 
+func TestCreateTempWorktreeWithStep(t *testing.T) {
+	// Skip if git is not available
+	if err := exec.Command("git", "--version").Run(); err != nil {
+		t.Skip("git is not available")
+	}
+
+	// Create a temporary directory for the test repository
+	tempDir, err := os.MkdirTemp("", "laforge-git-test-")
+	if err != nil {
+		t.Fatalf("Failed to create temp directory: %v", err)
+	}
+	defer os.RemoveAll(tempDir)
+
+	repoDir := filepath.Join(tempDir, "repo")
+	if err := os.MkdirAll(repoDir, 0755); err != nil {
+		t.Fatalf("Failed to create repo directory: %v", err)
+	}
+
+	// Initialize git repository
+	cmd := exec.Command("git", "init")
+	cmd.Dir = repoDir
+	if err := cmd.Run(); err != nil {
+		t.Fatalf("Failed to initialize git repository: %v", err)
+	}
+
+	// Configure git user (required for commits)
+	cmd = exec.Command("git", "config", "user.name", "Test User")
+	cmd.Dir = repoDir
+	if err := cmd.Run(); err != nil {
+		t.Fatalf("Failed to configure git user.name: %v", err)
+	}
+
+	cmd = exec.Command("git", "config", "user.email", "test@example.com")
+	cmd.Dir = repoDir
+	if err := cmd.Run(); err != nil {
+		t.Fatalf("Failed to configure git user.email: %v", err)
+	}
+
+	// Create a test file and commit it
+	testFile := filepath.Join(repoDir, "test.txt")
+	if err := os.WriteFile(testFile, []byte("test content"), 0644); err != nil {
+		t.Fatalf("Failed to create test file: %v", err)
+	}
+
+	cmd = exec.Command("git", "add", ".")
+	cmd.Dir = repoDir
+	if err := cmd.Run(); err != nil {
+		t.Fatalf("Failed to add files to git: %v", err)
+	}
+
+	cmd = exec.Command("git", "commit", "-m", "Initial commit")
+	cmd.Dir = repoDir
+	if err := cmd.Run(); err != nil {
+		t.Fatalf("Failed to create initial commit: %v", err)
+	}
+
+	// Test with different step numbers
+	testCases := []int{1, 5, 10, 999}
+
+	for _, stepNum := range testCases {
+		t.Run(fmt.Sprintf("step_S%d", stepNum), func(t *testing.T) {
+			// Create temporary worktree with step number
+			worktree, err := CreateTempWorktreeWithStep(repoDir, stepNum)
+			if err != nil {
+				t.Fatalf("Failed to create temporary worktree with step S%d: %v", stepNum, err)
+			}
+			defer func() {
+				// Clean up worktree
+				if err := RemoveWorktree(worktree); err != nil {
+					t.Errorf("Failed to remove temporary worktree: %v", err)
+				}
+			}()
+
+			// Verify worktree was created with proper step-based branch name
+			expectedBranch := fmt.Sprintf("step-S%d", stepNum)
+			if worktree.Branch != expectedBranch {
+				t.Errorf("Expected branch name %s, got %s", expectedBranch, worktree.Branch)
+			}
+
+			// Verify worktree directory contains expected pattern
+			expectedDirPattern := fmt.Sprintf("laforge-worktree-step-S%d-", stepNum)
+			if !strings.Contains(worktree.Path, expectedDirPattern) {
+				t.Errorf("Worktree path %s does not contain expected pattern %s", worktree.Path, expectedDirPattern)
+			}
+
+			// Verify worktree was actually created by checking if directory exists
+			if _, err := os.Stat(worktree.Path); os.IsNotExist(err) {
+				t.Errorf("Worktree directory does not exist: %s", worktree.Path)
+			}
+
+			// Verify it's a valid git repository
+			if !IsGitRepository(worktree.Path) {
+				t.Errorf("Worktree path is not a git repository: %s", worktree.Path)
+			}
+		})
+	}
+}
+
 func TestIsGitRepository(t *testing.T) {
 	// Create a temporary directory
 	tempDir, err := os.MkdirTemp("", "laforge-git-test-")

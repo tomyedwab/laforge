@@ -119,6 +119,27 @@ func CreateTempWorktree(projectDir string, branchPrefix string) (*Worktree, erro
 	return worktree, nil
 }
 
+// CreateTempWorktreeWithStep creates a temporary worktree with a step-based branch name
+func CreateTempWorktreeWithStep(projectDir string, stepNumber int) (*Worktree, error) {
+	// Generate a branch name based on step number
+	branchName := fmt.Sprintf("step-S%d", stepNumber)
+
+	// Create a temporary directory for the worktree
+	tempDir, err := os.MkdirTemp("", fmt.Sprintf("laforge-worktree-step-S%d-", stepNumber))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create temporary directory: %w", err)
+	}
+
+	worktree, err := CreateWorktree(projectDir, tempDir, branchName)
+	if err != nil {
+		// Clean up temp directory on error
+		os.RemoveAll(tempDir)
+		return nil, err
+	}
+
+	return worktree, nil
+}
+
 // IsGitRepository checks if the given directory is a git repository
 func IsGitRepository(dir string) bool {
 	gitDir := filepath.Join(dir, ".git")

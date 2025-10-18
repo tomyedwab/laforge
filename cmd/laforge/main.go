@@ -98,7 +98,19 @@ var stepsCmd = &cobra.Command{
 	Long: `List all steps for a LaForge project.
 
 This command displays a formatted list of all steps recorded for the specified project,
-including step ID, status, duration, and commit information.`,
+including step ID, status, duration, and commit information.
+
+Examples:
+  laforge steps my-project
+  laforge steps my-project | grep -E "S[0-9]+" | head -10
+
+Output includes:
+  - Step ID (S1, S2, etc.)
+  - Active status (active/inactive)
+  - Start and end times
+  - Duration in milliseconds
+  - Git commit SHAs before and after
+  - Exit code and token usage summary`,
 	Args: cobra.ExactArgs(1),
 	RunE: runSteps,
 }
@@ -110,7 +122,21 @@ var stepInfoCmd = &cobra.Command{
 	Long: `Show detailed information about a specific step.
 
 This command displays comprehensive information about a step, including timing,
-commit SHAs, agent configuration, token usage, and exit status.`,
+commit SHAs, agent configuration, token usage, and exit status.
+
+Examples:
+  laforge step info my-project S1
+  laforge step info my-project 5
+
+Information displayed:
+  - Step ID and active status
+  - Parent step ID (for tracking execution history)
+  - Start and end times with duration
+  - Git commit SHAs before and after execution
+  - Complete agent configuration (model, temperature, tools, etc.)
+  - Token usage statistics (prompt, completion, total, cost)
+  - Exit code and any error information
+  - Project ID and creation timestamp`,
 	Args: cobra.ExactArgs(2),
 	RunE: runStepInfo,
 }
@@ -122,10 +148,25 @@ var stepRollbackCmd = &cobra.Command{
 	Long: `Rollback to a previous step by deactivating subsequent steps and reverting git changes.
 
 This command allows you to revert your project to the state at a specific step by:
-1. Deactivating all steps after the target step
+1. Deactivating all steps after the target step in the database
 2. Resetting the git repository to the commit before the target step
 
-Use with caution as this will permanently deactivate subsequent steps and discard changes.`,
+Examples:
+  laforge step rollback my-project S3    # Rollback to step 3
+  laforge step rollback my-project 1     # Rollback to step 1
+
+Safety features:
+  - User confirmation required before rollback
+  - Git repository must be clean (no uncommitted changes)
+  - All steps >= target step ID are deactivated
+  - Git reset to commit before target step
+
+Use with caution as this will permanently deactivate subsequent steps and discard changes.
+
+Common use cases:
+  - Revert to a known good state after problematic changes
+  - Explore alternative approaches by rolling back and trying again
+  - Recover from agent errors or unexpected behavior`,
 	Args: cobra.ExactArgs(2),
 	RunE: runStepRollback,
 }
@@ -368,14 +409,14 @@ func runStep(cmd *cobra.Command, args []string) error {
 
 	// Step 1: Create temporary git worktree
 	stepLogger.LogStepPhase("worktree", "Creating temporary git worktree")
-	worktree, err = git.CreateTempWorktree(sourceDir, "step")
+	worktree, err = git.CreateTempWorktreeWithStep(sourceDir, stepID)
 	if err != nil {
 		stepLogger.LogError("git", "Failed to create temporary worktree", err, map[string]interface{}{
 			"source_dir": sourceDir,
 		})
 		return errors.Wrap(errors.ErrUnknown, err, "failed to create temporary worktree")
 	}
-	stepLogger.LogWorktreeCreation(worktree.Path, "step")
+	stepLogger.LogWorktreeCreation(worktree.Path, fmt.Sprintf("step-S%d", stepID))
 	defer func() {
 		// Clean up worktree
 		stepLogger.LogWorktreeCleanup(worktree.Path)
