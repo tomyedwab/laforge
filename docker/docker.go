@@ -4,14 +4,17 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
 	"github.com/tomyedwab/laforge/projects"
+	"github.com/tomyedwab/laforge/steps"
 )
 
 // Container represents a running Docker container
@@ -298,6 +301,7 @@ type ContainerMetrics struct {
 	LogSize      int
 	ErrorCount   int
 	WarningCount int
+	TokenUsage   steps.TokenUsage
 }
 
 // RunAgentContainerFromConfigWithStreamingLogs creates, starts, and manages an agent container from AgentConfig
@@ -414,6 +418,7 @@ func (c *Client) RunAgentContainerFromConfigWithStreamingLogs(agentConfig *proje
 	metrics.LogSize = len(logs)
 	metrics.ErrorCount = c.countErrorsInLogs(logs)
 	metrics.WarningCount = c.countWarningsInLogs(logs)
+	metrics.TokenUsage = c.ExtractTokenUsageFromLogs(logs)
 
 	// Always clean up the container manually since we disabled AutoRemove
 	// to be able to collect logs
@@ -448,6 +453,108 @@ func (c *Client) countWarningsInLogs(logs string) int {
 		}
 	}
 	return warningCount
+}
+
+// ExtractTokenUsageFromLogs extracts token usage information from container logs
+func (c *Client) ExtractTokenUsageFromLogs(logs string) steps.TokenUsage {
+	tokenUsage := steps.TokenUsage{}
+
+	lines := strings.Split(logs, "\n")
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+
+		// Look for JSON token usage patterns
+		if strings.Contains(line, "token_usage") {
+			// Try to parse JSON object containing token_usage
+			var jsonData map[string]interface{}
+			if err := json.Unmarshal([]byte(line), &jsonData); err == nil {
+				if tokenData, ok := jsonData["token_usage"].(map[string]interface{}); ok {
+					if promptTokens, ok := tokenData["prompt_tokens"].(float64); ok {
+						tokenUsage.PromptTokens = int(promptTokens)
+					}
+					if completionTokens, ok := tokenData["completion_tokens"].(float64); ok {
+						tokenUsage.CompletionTokens = int(completionTokens)
+					}
+					if totalTokens, ok := tokenData["total_tokens"].(float64); ok {
+						tokenUsage.TotalTokens = int(totalTokens)
+					}
+					if cost, ok := tokenData["cost"].(float64); ok {
+						tokenUsage.Cost = cost
+					}
+				}
+			}
+		}
+
+		// Look for structured log lines with TOKEN_USAGE prefix
+		if strings.HasPrefix(strings.ToUpper(line), "TOKEN_USAGE:") {
+			// Parse key-value pairs after TOKEN_USAGE:
+			usagePart := strings.TrimPrefix(strings.ToUpper(line), "TOKEN_USAGE:")
+			usagePart = strings.TrimSpace(usagePart)
+
+			// Parse comma-separated key=value pairs
+			pairs := strings.Split(usagePart, ",")
+			for _, pair := range pairs {
+				pair = strings.TrimSpace(pair)
+				keyValue := strings.SplitN(pair, "=", 2)
+				if len(keyValue) == 2 {
+					key := strings.TrimSpace(strings.ToLower(keyValue[0]))
+					value := strings.TrimSpace(keyValue[1])
+
+					switch key {
+					case "prompt_tokens":
+						if val, err := strconv.Atoi(value); err == nil {
+							tokenUsage.PromptTokens = val
+						}
+					case "completion_tokens":
+						if val, err := strconv.Atoi(value); err == nil {
+							tokenUsage.CompletionTokens = val
+						}
+					case "total_tokens":
+						if val, err := strconv.Atoi(value); err == nil {
+							tokenUsage.TotalTokens = val
+						}
+					case "cost":
+						if val, err := strconv.ParseFloat(value, 64); err == nil {
+							tokenUsage.Cost = val
+						}
+					}
+				}
+			}
+		}
+
+		// Look for resource usage logging pattern
+		if strings.Contains(strings.ToLower(line), "resource usage:") && strings.Contains(strings.ToLower(line), "tokens") {
+			// Try to extract token data from resource usage log
+			// This handles the pattern: "Resource usage: tokens {"prompt_tokens": 150, ...}"
+			if startIdx := strings.Index(line, "{"); startIdx != -1 {
+				if endIdx := strings.LastIndex(line, "}"); endIdx != -1 {
+					jsonStr := line[startIdx : endIdx+1]
+					var tokenData map[string]interface{}
+					if err := json.Unmarshal([]byte(jsonStr), &tokenData); err == nil {
+						if promptTokens, ok := tokenData["prompt_tokens"].(float64); ok {
+							tokenUsage.PromptTokens = int(promptTokens)
+						}
+						if completionTokens, ok := tokenData["completion_tokens"].(float64); ok {
+							tokenUsage.CompletionTokens = int(completionTokens)
+						}
+						if totalTokens, ok := tokenData["total_tokens"].(float64); ok {
+							tokenUsage.TotalTokens = int(totalTokens)
+						}
+						if cost, ok := tokenData["cost"].(float64); ok {
+							tokenUsage.Cost = cost
+						}
+					}
+				}
+			}
+		}
+	}
+
+	// Calculate total tokens if not explicitly provided
+	if tokenUsage.TotalTokens == 0 && (tokenUsage.PromptTokens > 0 || tokenUsage.CompletionTokens > 0) {
+		tokenUsage.TotalTokens = tokenUsage.PromptTokens + tokenUsage.CompletionTokens
+	}
+
+	return tokenUsage
 }
 
 // startContainerWithAgentConfig starts a container with additional AgentConfig options

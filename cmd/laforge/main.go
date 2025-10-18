@@ -472,6 +472,9 @@ func runStep(cmd *cobra.Command, args []string) error {
 		"warning_count": containerMetrics.WarningCount,
 	})
 
+	// Update step with token usage from container metrics
+	step.TokenUsage = containerMetrics.TokenUsage
+
 	// Step 6: Check if there are changes to commit
 	stepLogger.LogStepPhase("git", "Checking for changes to commit")
 	hasChanges, err := hasGitChanges(worktree.Path)
