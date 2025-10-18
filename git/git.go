@@ -23,7 +23,7 @@ func CreateWorktree(projectDir string, worktreeDir string, branchName string) (*
 	}
 
 	// Verify the project directory is a git repository
-	if !isGitRepository(projectDir) {
+	if !IsGitRepository(projectDir) {
 		return nil, fmt.Errorf("project directory is not a git repository: %s", projectDir)
 	}
 
@@ -119,8 +119,8 @@ func CreateTempWorktree(projectDir string, branchPrefix string) (*Worktree, erro
 	return worktree, nil
 }
 
-// isGitRepository checks if the given directory is a git repository
-func isGitRepository(dir string) bool {
+// IsGitRepository checks if the given directory is a git repository
+func IsGitRepository(dir string) bool {
 	gitDir := filepath.Join(dir, ".git")
 	if _, err := os.Stat(gitDir); err == nil {
 		return true
@@ -217,4 +217,33 @@ func CleanupWorktrees(repoDir string, prefix string) error {
 	}
 
 	return lastErr
+}
+
+// ResetToCommit resets the repository to the specified commit SHA
+func ResetToCommit(repoDir string, commitSHA string) error {
+	// Check if git is available
+	if err := exec.Command("git", "--version").Run(); err != nil {
+		return fmt.Errorf("git is not available: %w", err)
+	}
+
+	// Verify the repository directory is a git repository
+	if !IsGitRepository(repoDir) {
+		return fmt.Errorf("directory is not a git repository: %s", repoDir)
+	}
+
+	// Verify the commit SHA exists
+	cmd := exec.Command("git", "rev-parse", "--verify", commitSHA+"^{commit}")
+	cmd.Dir = repoDir
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("commit SHA %s does not exist: %w", commitSHA, err)
+	}
+
+	// Reset to the specified commit
+	cmd = exec.Command("git", "reset", "--hard", commitSHA)
+	cmd.Dir = repoDir
+	if output, err := cmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("failed to reset to commit %s: %w\nOutput: %s", commitSHA, err, string(output))
+	}
+
+	return nil
 }

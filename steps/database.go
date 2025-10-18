@@ -194,6 +194,15 @@ func (sdb *StepDatabase) DeactivateStep(stepID int) error {
 	return nil
 }
 
+// DeactivateStepsFromID deactivates all steps with ID >= given stepID (for rollback functionality)
+func (sdb *StepDatabase) DeactivateStepsFromID(stepID int) error {
+	_, err := sdb.db.Exec(`UPDATE steps SET active = FALSE WHERE id >= ?`, stepID)
+	if err != nil {
+		return fmt.Errorf("failed to deactivate steps from ID %d: %w", stepID, err)
+	}
+	return nil
+}
+
 // ListSteps returns all steps for a project, optionally filtered by active status
 func (sdb *StepDatabase) ListSteps(projectID string, activeOnly bool) ([]*Step, error) {
 	query := `

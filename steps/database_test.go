@@ -1,6 +1,7 @@
 package steps
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
@@ -668,5 +669,124 @@ func TestParentStepRelationship(t *testing.T) {
 
 	if *retrievedChild.ParentStepID != parentStep.ID {
 		t.Errorf("Parent step ID mismatch: got %d, want %d", *retrievedChild.ParentStepID, parentStep.ID)
+	}
+}
+
+func TestDeactivateStepsFromID(t *testing.T) {
+	sdb, cleanup := setupTestDB(t)
+	defer cleanup()
+
+	// Create multiple steps
+	steps := make([]*Step, 5)
+	for i := 0; i < 5; i++ {
+		step := &Step{
+			Active:          true,
+			ParentStepID:    nil,
+			CommitSHABefore: fmt.Sprintf("commit%d", i),
+			CommitSHAAfter:  "",
+			AgentConfig: AgentConfig{
+				Model:        "test-model",
+				MaxTokens:    1000,
+				Temperature:  0.7,
+				SystemPrompt: "test prompt",
+			},
+			StartTime:  time.Now(),
+			EndTime:    nil,
+			DurationMs: nil,
+			TokenUsage: TokenUsage{
+				PromptTokens:     100,
+				CompletionTokens: 50,
+				TotalTokens:      150,
+				Cost:             0.001,
+			},
+			ExitCode:  nil,
+			ProjectID: "test-project",
+			CreatedAt: time.Now(),
+		}
+
+		err := sdb.CreateStep(step)
+		if err != nil {
+			t.Fatalf("Failed to create step %d: %v", i, err)
+		}
+		steps[i] = step
+	}
+
+	// Deactivate steps from ID 3 onwards
+	err := sdb.DeactivateStepsFromID(3)
+	if err != nil {
+		t.Fatalf("Failed to deactivate steps from ID 3: %v", err)
+	}
+
+	// Verify steps 1 and 2 are still active
+	for i := 0; i < 2; i++ {
+		step, err := sdb.GetStep(steps[i].ID)
+		if err != nil {
+			t.Fatalf("Failed to get step %d: %v", i, err)
+		}
+		if !step.Active {
+			t.Errorf("Step %d should still be active", i)
+		}
+	}
+
+	// Verify steps 3, 4, and 5 are deactivated
+	for i := 2; i < 5; i++ {
+		step, err := sdb.GetStep(steps[i].ID)
+		if err != nil {
+			t.Fatalf("Failed to get step %d: %v", i, err)
+		}
+		if step.Active {
+			t.Errorf("Step %d should be deactivated", i)
+		}
+	}
+}
+
+func TestDeactivateStepsFromIDNonExistent(t *testing.T) {
+	sdb, cleanup := setupTestDB(t)
+	defer cleanup()
+
+	// Create a step
+	step := &Step{
+		Active:          true,
+		ParentStepID:    nil,
+		CommitSHABefore: "abc123",
+		CommitSHAAfter:  "",
+		AgentConfig: AgentConfig{
+			Model:        "test-model",
+			MaxTokens:    1000,
+			Temperature:  0.7,
+			SystemPrompt: "test prompt",
+		},
+		StartTime:  time.Now(),
+		EndTime:    nil,
+		DurationMs: nil,
+		TokenUsage: TokenUsage{
+			PromptTokens:     100,
+			CompletionTokens: 50,
+			TotalTokens:      150,
+			Cost:             0.001,
+		},
+		ExitCode:  nil,
+		ProjectID: "test-project",
+		CreatedAt: time.Now(),
+	}
+
+	err := sdb.CreateStep(step)
+	if err != nil {
+		t.Fatalf("Failed to create step: %v", err)
+	}
+
+	// Try to deactivate steps from a non-existent ID (should succeed but do nothing)
+	err = sdb.DeactivateStepsFromID(999)
+	if err != nil {
+		t.Fatalf("DeactivateStepsFromID should succeed even with non-existent ID: %v", err)
+	}
+
+	// Verify the step is still active
+	retrievedStep, err := sdb.GetStep(step.ID)
+	if err != nil {
+		t.Fatalf("Failed to get step: %v", err)
+	}
+	if !retrievedStep.Active {
+		t.Error("Step should still be active when deactivating from non-existent ID")
 	}
 }

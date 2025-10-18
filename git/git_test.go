@@ -194,7 +194,7 @@ func TestIsGitRepository(t *testing.T) {
 	defer os.RemoveAll(tempDir)
 
 	// Test non-git directory
-	if isGitRepository(tempDir) {
+	if IsGitRepository(tempDir) {
 		t.Errorf("Expected non-git directory to return false")
 	}
 
@@ -206,7 +206,7 @@ func TestIsGitRepository(t *testing.T) {
 	}
 
 	// Test git directory
-	if !isGitRepository(tempDir) {
+	if !IsGitRepository(tempDir) {
 		t.Errorf("Expected git directory to return true")
 	}
 }
@@ -309,5 +309,166 @@ func TestGetWorktrees(t *testing.T) {
 	// Clean up
 	if err := RemoveWorktree(worktree); err != nil {
 		t.Errorf("Failed to remove worktree: %v", err)
+	}
+}
+
+func TestResetToCommit(t *testing.T) {
+	// Skip if git is not available
+	if err := exec.Command("git", "--version").Run(); err != nil {
+		t.Skip("git is not available")
+	}
+
+	// Create a temporary directory for the test repository
+	tempDir, err := os.MkdirTemp("", "laforge-git-reset-test-")
+	if err != nil {
+		t.Fatalf("Failed to create temp directory: %v", err)
+	}
+	defer os.RemoveAll(tempDir)
+
+	repoDir := filepath.Join(tempDir, "repo")
+	if err := os.MkdirAll(repoDir, 0755); err != nil {
+		t.Fatalf("Failed to create repo directory: %v", err)
+	}
+
+	// Initialize git repository
+	cmd := exec.Command("git", "init")
+	cmd.Dir = repoDir
+	if err := cmd.Run(); err != nil {
+		t.Fatalf("Failed to initialize git repository: %v", err)
+	}
+
+	// Configure git user
+	cmd = exec.Command("git", "config", "user.name", "Test User")
+	cmd.Dir = repoDir
+	if err := cmd.Run(); err != nil {
+		t.Fatalf("Failed to configure git user.name: %v", err)
+	}
+
+	cmd = exec.Command("git", "config", "user.email", "test@example.com")
+	cmd.Dir = repoDir
+	if err := cmd.Run(); err != nil {
+		t.Fatalf("Failed to configure git user.email: %v", err)
+	}
+
+	// Create initial commit
+	testFile1 := filepath.Join(repoDir, "test1.txt")
+	if err := os.WriteFile(testFile1, []byte("initial content"), 0644); err != nil {
+		t.Fatalf("Failed to create test file 1: %v", err)
+	}
+
+	cmd = exec.Command("git", "add", "test1.txt")
+	cmd.Dir = repoDir
+	if err := cmd.Run(); err != nil {
+		t.Fatalf("Failed to add test file 1: %v", err)
+	}
+
+	cmd = exec.Command("git", "commit", "-m", "Initial commit")
+	cmd.Dir = repoDir
+	if err := cmd.Run(); err != nil {
+		t.Fatalf("Failed to commit test file 1: %v", err)
+	}
+
+	// Get the initial commit SHA
+	initialSHA, err := GetCurrentCommitSHA(repoDir)
+	if err != nil {
+		t.Fatalf("Failed to get initial commit SHA: %v", err)
+	}
+
+	// Create second commit
+	testFile2 := filepath.Join(repoDir, "test2.txt")
+	if err := os.WriteFile(testFile2, []byte("second content"), 0644); err != nil {
+		t.Fatalf("Failed to create test file 2: %v", err)
+	}
+
+	cmd = exec.Command("git", "add", "test2.txt")
+	cmd.Dir = repoDir
+	if err := cmd.Run(); err != nil {
+		t.Fatalf("Failed to add test file 2: %v", err)
+	}
+
+	cmd = exec.Command("git", "commit", "-m", "Second commit")
+	cmd.Dir = repoDir
+	if err := cmd.Run(); err != nil {
+		t.Fatalf("Failed to commit test file 2: %v", err)
+	}
+
+	// Verify both files exist
+	if _, err := os.Stat(testFile1); os.IsNotExist(err) {
+		t.Fatal("test1.txt should exist before reset")
+	}
+	if _, err := os.Stat(testFile2); os.IsNotExist(err) {
+		t.Fatal("test2.txt should exist before reset")
+	}
+
+	// Reset to initial commit
+	if err := ResetToCommit(repoDir, initialSHA); err != nil {
+		t.Fatalf("Failed to reset to initial commit: %v", err)
+	}
+
+	// Verify we're back to initial state
+	currentSHA, err := GetCurrentCommitSHA(repoDir)
+	if err != nil {
+		t.Fatalf("Failed to get current commit SHA after reset: %v", err)
+	}
+
+	if currentSHA != initialSHA {
+		t.Errorf("Current SHA %s does not match initial SHA %s after reset", currentSHA, initialSHA)
+	}
+
+	// Verify test2.txt no longer exists (reset should have removed it)
+	if _, err := os.Stat(testFile2); !os.IsNotExist(err) {
+		t.Error("test2.txt should not exist after reset to initial commit")
+	}
+
+	// Verify test1.txt still exists
+	if _, err := os.Stat(testFile1); os.IsNotExist(err) {
+		t.Error("test1.txt should still exist after reset")
+	}
+}
+
+func TestResetToCommitInvalidSHA(t *testing.T) {
+	// Skip if git is not available
+	if err := exec.Command("git", "--version").Run(); err != nil {
+		t.Skip("git is not available")
+	}
+
+	// Create a temporary directory for the test repository
+	tempDir, err := os.MkdirTemp("", "laforge-git-reset-invalid-test-")
+	if err != nil {
+		t.Fatalf("Failed to create temp directory: %v", err)
+	}
+	defer os.RemoveAll(tempDir)
+
+	repoDir := filepath.Join(tempDir, "repo")
+	if err := os.MkdirAll(repoDir, 0755); err != nil {
+		t.Fatalf("Failed to create repo directory: %v", err)
+	}
+
+	// Initialize git repository
+	cmd := exec.Command("git", "init")
+	cmd.Dir = repoDir
+	if err := cmd.Run(); err != nil {
+		t.Fatalf("Failed to initialize git repository: %v", err)
+	}
+
+	// Try to reset to non-existent commit
+	err = ResetToCommit(repoDir, "nonexistentsha123456789")
+	if err == nil {
+		t.Error("Expected error when resetting to non-existent commit SHA")
+	}
+}
+
+func TestResetToCommitNonRepo(t *testing.T) {
+	// Create a temporary directory that's not a git repository
+	tempDir, err := os.MkdirTemp("", "laforge-git-reset-nonrepo-test-")
+	if err != nil {
+		t.Fatalf("Failed to create temp directory: %v", err)
+	}
+	defer os.RemoveAll(tempDir)
+
+	// Try to reset in non-git directory
+	err = ResetToCommit(tempDir, "abc123")
+	if err == nil {
+		t.Error("Expected error when resetting in non-git directory")
 	}
 }

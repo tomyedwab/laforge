@@ -61,6 +61,9 @@ func init() {
 	rootCmd.AddCommand(stepCmd)
 	rootCmd.AddCommand(stepsCmd)
 	rootCmd.AddCommand(stepInfoCmd)
+
+	// Add step subcommands
+	stepCmd.AddCommand(stepRollbackCmd)
 }
 
 // initCmd represents the init command
@@ -110,6 +113,21 @@ This command displays comprehensive information about a step, including timing,
 commit SHAs, agent configuration, token usage, and exit status.`,
 	Args: cobra.ExactArgs(2),
 	RunE: runStepInfo,
+}
+
+// stepRollbackCmd represents the step rollback command
+var stepRollbackCmd = &cobra.Command{
+	Use:   "rollback [project-id] [step-id]",
+	Short: "Rollback to a previous step",
+	Long: `Rollback to a previous step by deactivating subsequent steps and reverting git changes.
+
+This command allows you to revert your project to the state at a specific step by:
+1. Deactivating all steps after the target step
+2. Resetting the git repository to the commit before the target step
+
+Use with caution as this will permanently deactivate subsequent steps and discard changes.`,
+	Args: cobra.ExactArgs(2),
+	RunE: runStepRollback,
 }
 
 func init() {
@@ -777,6 +795,101 @@ func runStepInfo(cmd *cobra.Command, args []string) error {
 
 	// Creation information
 	fmt.Printf("\nCreated: %s\n", step.CreatedAt.Format("2006-01-02 15:04:05"))
+
+	return nil
+}
+
+// runStepRollback is the handler for the step rollback command
+func runStepRollback(cmd *cobra.Command, args []string) error {
+	projectID := args[0]
+	stepIDStr := args[1]
+
+	// Validate project ID
+	if projectID == "" {
+		return errors.NewInvalidInputError("project ID cannot be empty")
+	}
+
+	// Parse step ID
+	var stepID int
+	if _, err := fmt.Sscanf(stepIDStr, "S%d", &stepID); err != nil {
+		// Try parsing as plain integer
+		if _, err := fmt.Sscanf(stepIDStr, "%d", &stepID); err != nil {
+			return errors.NewInvalidInputError(fmt.Sprintf("invalid step ID format: %s. Use format like 'S1' or '1'", stepIDStr))
+		}
+	}
+
+	// Check if project exists
+	exists, err := projects.ProjectExists(projectID)
+	if err != nil {
+		return errors.Wrap(errors.ErrUnknown, err, "failed to check if project exists")
+	}
+	if !exists {
+		return errors.NewProjectNotFoundError(projectID)
+	}
+
+	// Open step database
+	stepDB, err := projects.OpenProjectStepDatabase(projectID)
+	if err != nil {
+		return errors.Wrap(errors.ErrDatabaseConnectionFailed, err, "failed to open project step database")
+	}
+	defer stepDB.Close()
+
+	// Get step by ID
+	targetStep, err := stepDB.GetStep(stepID)
+	if err != nil {
+		return errors.Wrap(errors.ErrDatabaseOperationFailed, err, "failed to get step")
+	}
+
+	if targetStep == nil {
+		return errors.NewInvalidInputError(fmt.Sprintf("step S%d not found in project '%s'", stepID, projectID))
+	}
+
+	// Validate target step is active
+	if !targetStep.Active {
+		return errors.NewInvalidInputError(fmt.Sprintf("step S%d is already rolled back", stepID))
+	}
+
+	// Get current working directory (should be the git repository)
+	repoDir, err := os.Getwd()
+	if err != nil {
+		return errors.Wrap(errors.ErrUnknown, err, "failed to get current working directory")
+	}
+
+	// Verify this is a git repository
+	if !git.IsGitRepository(repoDir) {
+		return errors.NewInvalidInputError("current directory is not a git repository")
+	}
+
+	// Confirm rollback with user
+	fmt.Printf("WARNING: This will rollback to step S%d and deactivate all subsequent steps.\n", stepID)
+	fmt.Printf("Project: %s\n", projectID)
+	fmt.Printf("Target commit: %s\n", targetStep.CommitSHABefore)
+	fmt.Print("Proceed with rollback? (yes/no): ")
+
+	var response string
+	fmt.Scanln(&response)
+	if response != "yes" {
+		fmt.Println("Rollback cancelled.")
+		return nil
+	}
+
+	fmt.Printf("Rolling back to step S%d...\n", stepID)
+
+	// Step 1: Deactivate all steps from the target step ID onwards
+	fmt.Printf("Deactivating steps from S%d onwards...\n", stepID)
+	if err := stepDB.DeactivateStepsFromID(stepID); err != nil {
+		return errors.Wrap(errors.ErrDatabaseOperationFailed, err, "failed to deactivate steps")
+	}
+
+	// Step 2: Reset git repository to the commit before the target step
+	fmt.Printf("Resetting repository to commit %s...\n", targetStep.CommitSHABefore)
+	if err := git.ResetToCommit(repoDir, targetStep.CommitSHABefore); err != nil {
+		return errors.Wrap(errors.ErrUnknown, err, "failed to reset repository to target commit")
+	}
+
+	fmt.Printf("Successfully rolled back to step S%d\n", stepID)
+	fmt.Printf("Repository reset to commit: %s\n", targetStep.CommitSHABefore)
+	fmt.Printf("All steps from S%d onwards have been deactivated.\n", stepID)
 
 	return nil
 }
