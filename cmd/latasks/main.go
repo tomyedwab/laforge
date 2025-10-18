@@ -50,7 +50,7 @@ func printTask(task *tasks.Task, db *sql.DB) {
 		fmt.Printf("Description: %s\n", task.Description)
 	}
 	if task.AcceptanceCriteria != "" {
-		fmt.Printf("Acceptance Criteria: %s\n", task.AcceptanceCriteria)
+		fmt.Printf("Acceptance Criteria:\n%s\n", task.AcceptanceCriteria)
 	}
 	if task.UpstreamDependencyID != nil {
 		fmt.Printf("Upstream Dependency: T%d\n", *task.UpstreamDependencyID)
@@ -98,6 +98,7 @@ func printTask(task *tasks.Task, db *sql.DB) {
 			fmt.Println()
 		}
 	}
+	fmt.Println()
 }
 
 var nextCmd = &cobra.Command{

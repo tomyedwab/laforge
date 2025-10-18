@@ -493,13 +493,13 @@ func DeleteTask(db *sql.DB, taskID int) error {
 
 // YAMLTask represents a task in the YAML import format
 type YAMLTask struct {
-	ID                   interface{} `yaml:"id"`                      // int, string ("T15"), or string ("new-*"/"tmp-*")
+	ID                   interface{} `yaml:"id"` // int, string ("T15"), or string ("new-*"/"tmp-*")
 	Title                string      `yaml:"title"`
 	Description          string      `yaml:"description"`
 	AcceptanceCriteria   string      `yaml:"acceptance_criteria"`
 	UpstreamDependencyID interface{} `yaml:"upstream_dependency_id"` // int, string ("T15"), or string ("new-*"/"tmp-*")
 	ReviewRequired       bool        `yaml:"review_required"`
-	ParentID             interface{} `yaml:"parent_id"`              // int, string ("T15"), or string ("new-*"/"tmp-*")
+	ParentID             interface{} `yaml:"parent_id"` // int, string ("T15"), or string ("new-*"/"tmp-*")
 	Status               string      `yaml:"status"`
 }
 
@@ -600,6 +600,26 @@ func importTasks(tx *sql.Tx, tasks []YAMLTask) (map[string]int, error) {
 		"completed":   true,
 	}
 
+	// Get all existing task IDs from database
+	existingTaskIDs := make(map[int]bool)
+	rows, err := tx.Query("SELECT id FROM tasks")
+	if err != nil {
+		return nil, fmt.Errorf("failed to query existing task IDs: %w", err)
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var id int
+		if err := rows.Scan(&id); err != nil {
+			return nil, fmt.Errorf("failed to scan task ID: %w", err)
+		}
+		existingTaskIDs[id] = true
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("failed to iterate existing task IDs: %w", err)
+	}
+
 	// Phase 1: Parse all task IDs and categorize tasks
 	var parsedTasks []parsedTask
 	existingDBIDs := make(map[int]bool)
@@ -607,7 +627,7 @@ func importTasks(tx *sql.Tx, tasks []YAMLTask) (map[string]int, error) {
 
 	for i, task := range tasks {
 		// Parse task ID
-		idResult, err := parseTaskID(task.ID)
+		idResult, err := parseTaskID(task.ID, existingTaskIDs)
 		if err != nil {
 			return nil, fmt.Errorf("task %d: %w", i, err)
 		}
@@ -615,7 +635,7 @@ func importTasks(tx *sql.Tx, tasks []YAMLTask) (map[string]int, error) {
 		// Parse parent ID
 		var parentID *TaskIDResult
 		if task.ParentID != nil {
-			parentID, err = parseTaskID(task.ParentID)
+			parentID, err = parseTaskID(task.ParentID, existingTaskIDs)
 			if err != nil {
 				return nil, fmt.Errorf("task %d parent_id: %w", i, err)
 			}
@@ -624,7 +644,7 @@ func importTasks(tx *sql.Tx, tasks []YAMLTask) (map[string]int, error) {
 		// Parse upstream dependency ID
 		var upstreamID *TaskIDResult
 		if task.UpstreamDependencyID != nil {
-			upstreamID, err = parseTaskID(task.UpstreamDependencyID)
+			upstreamID, err = parseTaskID(task.UpstreamDependencyID, existingTaskIDs)
 			if err != nil {
 				return nil, fmt.Errorf("task %d upstream_dependency_id: %w", i, err)
 			}
@@ -895,13 +915,33 @@ func topologicalSortParsedTasks(tasks []parsedTask) []parsedTask {
 
 // importTaskLogs imports task log entries
 func importTaskLogs(tx *sql.Tx, logs []YAMLTaskLog, idMap map[string]int) error {
+	// Get all existing task IDs from database
+	existingTaskIDs := make(map[int]bool)
+	rows, err := tx.Query("SELECT id FROM tasks")
+	if err != nil {
+		return fmt.Errorf("failed to query existing task IDs: %w", err)
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var id int
+		if err := rows.Scan(&id); err != nil {
+			return fmt.Errorf("failed to scan task ID: %w", err)
+		}
+		existingTaskIDs[id] = true
+	}
+
+	if err := rows.Err(); err != nil {
+		return fmt.Errorf("failed to iterate existing task IDs: %w", err)
+	}
+
 	for i, log := range logs {
 		if log.Message == "" {
 			return fmt.Errorf("task log %d has empty message", i)
 		}
 
 		// Parse task ID
-		idResult, err := parseTaskID(log.TaskID)
+		idResult, err := parseTaskID(log.TaskID, existingTaskIDs)
 		if err != nil {
 			return fmt.Errorf("task log %d: %w", i, err)
 		}
@@ -937,6 +977,26 @@ func importTaskReviews(tx *sql.Tx, reviews []YAMLTaskReview, idMap map[string]in
 		"rejected": true,
 	}
 
+	// Get all existing task IDs from database
+	existingTaskIDs := make(map[int]bool)
+	rows, err := tx.Query("SELECT id FROM tasks")
+	if err != nil {
+		return fmt.Errorf("failed to query existing task IDs: %w", err)
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var id int
+		if err := rows.Scan(&id); err != nil {
+			return fmt.Errorf("failed to scan task ID: %w", err)
+		}
+		existingTaskIDs[id] = true
+	}
+
+	if err := rows.Err(); err != nil {
+		return fmt.Errorf("failed to iterate existing task IDs: %w", err)
+	}
+
 	for i, review := range reviews {
 		if review.Message == "" {
 			return fmt.Errorf("task review %d has empty message", i)
@@ -952,7 +1012,7 @@ func importTaskReviews(tx *sql.Tx, reviews []YAMLTaskReview, idMap map[string]in
 		}
 
 		// Parse task ID
-		idResult, err := parseTaskID(review.TaskID)
+		idResult, err := parseTaskID(review.TaskID, existingTaskIDs)
 		if err != nil {
 			return fmt.Errorf("task review %d: %w", i, err)
 		}
@@ -993,10 +1053,10 @@ type TaskIDResult struct {
 // an existing database task or is a local reference for a new task.
 // Supported formats:
 //   - nil or 0: new task with no local reference
-//   - Positive int (e.g., 15): existing database task ID 15
-//   - String "T15": existing database task ID 15
+//   - Positive int (e.g., 15): existing database task ID 15 if it exists in existingIDs
+//   - String "T15": existing database task ID 15 if it exists in existingIDs
 //   - String "new-*" or "tmp-*": new task with local reference
-func parseTaskID(idValue interface{}) (*TaskIDResult, error) {
+func parseTaskID(idValue interface{}, existingIDs map[int]bool) (*TaskIDResult, error) {
 	if idValue == nil {
 		return &TaskIDResult{IsExisting: false, LocalID: ""}, nil
 	}
@@ -1009,7 +1069,10 @@ func parseTaskID(idValue interface{}) (*TaskIDResult, error) {
 		if v < 0 {
 			return nil, fmt.Errorf("negative task IDs are not allowed: %d", v)
 		}
-		return &TaskIDResult{IsExisting: true, DBID: v}, nil
+		if existingIDs[v] {
+			return &TaskIDResult{IsExisting: true, DBID: v}, nil
+		}
+		return &TaskIDResult{IsExisting: false, DBID: v}, nil
 
 	case string:
 		if v == "" {
@@ -1020,7 +1083,10 @@ func parseTaskID(idValue interface{}) (*TaskIDResult, error) {
 		if len(v) > 1 && v[0] == 'T' {
 			var dbID int
 			if _, err := fmt.Sscanf(v, "T%d", &dbID); err == nil && dbID > 0 {
-				return &TaskIDResult{IsExisting: true, DBID: dbID}, nil
+				if existingIDs[dbID] {
+					return &TaskIDResult{IsExisting: true, DBID: dbID}, nil
+				}
+				return &TaskIDResult{IsExisting: false, DBID: dbID}, nil
 			}
 		}
 

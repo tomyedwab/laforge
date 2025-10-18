@@ -16,7 +16,8 @@ Every time I ask you to run you will follow these steps:
 5. Make a plan for making progress on the task and update the task log.
 6. If the plan involves a decision or requires feedback, attach a review request
    to the task with links to relevant artifacts. Add a log message on the task
-   documenting next steps to take once the review is accepted and stop working.
+   documenting next steps to take once the review is accepted and STOP WORKING
+   IMMEDIATELY - DO NOT START IMPLEMENTATION UNTIL A PLAN HAS BEEN REVIEWED!
 7. Otherwise, proceed with implementation work, make changes to the local
    codebase in /src as needed, keeping the task updated with log messages at
    regular intervals.
@@ -57,29 +58,15 @@ Task statuses:
 - `in-review`: The task has an active review and is waiting for human feedback.
 - `completed`: The task has been completed.
 
-## Task breakdown process
-
-The type of a task can be conveyed simply by inserting tags into the task title.
-Some examples:
-
-[EPIC]: A larger project consisting of multiple sub-tasks.
-[FEAT]: A new feature or enhancement.
-[BUG]: A bug or issue that needs to be fixed.
-[PLAN]: A task to break down a large scope of work into epics & features. Submit
-  the task list as an artifact for review before creating the relevant tasks.
-[ARCH]: A task to research possible architectural solutions for a problem and
-  get them reviewed.
-[DESIGN]: A task to come up with possible visual designs (UI wireframes for
-  example) and get them reviewed.
-
-The [PLAN] task type deserves special mention: When planning, the goal is always
-to create a YAML file containing the desired new or updated tasks, and have it
-reviewed. If the file matches the expected format, when approved the tasks will
-automatically be updated.
-
-Reviews should always be required for [PLAN], [ARCH], and [DESIGN] tasks. The
-other tasks do not require review unless technical or design decisions were made
-as part of the process.
+Task types:
+- [EPIC]: A larger project consisting of multiple sub-tasks
+- [PLAN]: An epic or complex task needs to be broken down into subtasks (read `doc/tasks/plan.md` before starting)
+- [FEAT]: A new feature to be implemented
+- [BUG]: A bug to be fixed
+- [ARCH]: An architectural decision to be made
+- [DOC]: Documentation needs updating
+- [DESIGN]: Design decisions to be made
+- [TEST]: Test cases to be written
 
 ## Artifacts
 
@@ -87,7 +74,7 @@ Artifacts are files attached to a review that can be reviewed by a human, and
 therefore need to be human readable. Thus, the format needs to be one of the
 following:
 
-- YAML specification for tasks to create/update, as documented below
+- YAML specification for tasks to create/update, as documented in `doc/tasks/plan.md`.
 - Markdown document, for one-pagers and written architecture documents
 - PlantUML diagram, for actor models, architectural diagrams (using NPlant), and UI mocks (using Salt)
 - Mermaid diagram, for architecture diagrams
@@ -99,55 +86,6 @@ feedback, or left as-is for future reference.
 
 PLEASE KEEP THE REVIEW MESSAGE SHORT AND KEEP EACH ARTIFACT TO ONE PAGE IN
 LENGTH, NO MORE!
-
-## Task definition YAML
-
-This is the format for task definitions:
-
-```yaml
-tasks:
-  - id: 1
-    title: "Implement user authentication system"
-    description: "Create a complete authentication system with login, logout, and registration"
-    acceptance_criteria: |
-      - Users can register with email and password
-      - Users can login with valid credentials
-      - Users can logout
-      - Password reset functionality works
-      - Session management is secure
-    upstream_dependency_id: null
-    review_required: true
-    parent_id: null
-    status: "todo"
-
-  - id: 2
-    title: "Design database schema"
-    description: "Create the database schema for user management"
-    acceptance_criteria: |
-      - Users table with required fields
-      - Proper indexing for performance
-      - Migration scripts are created
-    upstream_dependency_id: null
-    review_required: true
-    parent_id: null
-    status: "completed"
-
-  - id: 3
-    title: "Implement login endpoint"
-    description: "Create REST API endpoint for user login"
-    acceptance_criteria: |
-      - POST /api/login endpoint exists
-      - Returns JWT token on success
-      - Proper error handling for invalid credentials
-      - Rate limiting implemented
-    upstream_dependency_id: 2  # Depends on database schema
-    review_required: true
-    parent_id: 1  # Child of authentication system
-    status: "in-progress"
-```
-
-When a YAML document of this type is reviewed and approved, the tasks will
-automatically be updated in the task database.
 
 ## Documentation
 
