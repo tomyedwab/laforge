@@ -595,6 +595,7 @@ func runStep(cmd *cobra.Command, args []string) error {
 				"project_id": projectID,
 				"step_id":    stepID,
 			})
+
 		} else {
 			logger.Info("git", "No changes to commit (only COMMIT.md was modified)", map[string]interface{}{
 				"project_id": projectID,
@@ -605,6 +606,14 @@ func runStep(cmd *cobra.Command, args []string) error {
 		logger.Info("git", "No changes to commit", map[string]interface{}{
 			"project_id": projectID,
 			"step_id":    stepID,
+		})
+	}
+
+	// Delete the COMMIT.md file if it exists
+	commitMDPath := filepath.Join(worktree.Path, "COMMIT.md")
+	if err := os.Remove(commitMDPath); err != nil {
+		stepLogger.LogWarning("git", "Failed to delete COMMIT.md", map[string]interface{}{
+			"error": err.Error(),
 		})
 	}
 

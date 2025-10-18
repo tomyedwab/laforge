@@ -124,6 +124,11 @@ func (l *Logger) log(level LogLevel, component, message string, metadata map[str
 		file = filepath.Base(file)
 	}
 
+	error := ""
+	if err, ok := metadata["error"]; ok {
+		error = fmt.Sprintf("%v", err)
+	}
+
 	// Create log entry
 	entry := LogEntry{
 		Timestamp: time.Now(),
@@ -133,6 +138,7 @@ func (l *Logger) log(level LogLevel, component, message string, metadata map[str
 		ProjectID: l.projectID,
 		Component: component,
 		Metadata:  metadata,
+		Error:     error,
 	}
 
 	// Format log message
