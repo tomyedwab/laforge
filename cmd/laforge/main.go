@@ -59,6 +59,8 @@ func init() {
 	// Add subcommands
 	rootCmd.AddCommand(initCmd)
 	rootCmd.AddCommand(stepCmd)
+	rootCmd.AddCommand(stepsCmd)
+	rootCmd.AddCommand(stepInfoCmd)
 }
 
 // initCmd represents the init command
@@ -84,6 +86,30 @@ launches an agent container with proper mounts, captures and commits changes, an
 cleans up resources.`,
 	Args: cobra.ExactArgs(1),
 	RunE: runStep,
+}
+
+// stepsCmd represents the steps command
+var stepsCmd = &cobra.Command{
+	Use:   "steps [project-id]",
+	Short: "List all steps for a project",
+	Long: `List all steps for a LaForge project.
+
+This command displays a formatted list of all steps recorded for the specified project,
+including step ID, status, duration, and commit information.`,
+	Args: cobra.ExactArgs(1),
+	RunE: runSteps,
+}
+
+// stepInfoCmd represents the step info command
+var stepInfoCmd = &cobra.Command{
+	Use:   "info [project-id] [step-id]",
+	Short: "Show detailed information about a specific step",
+	Long: `Show detailed information about a specific step.
+
+This command displays comprehensive information about a step, including timing,
+commit SHAs, agent configuration, token usage, and exit status.`,
+	Args: cobra.ExactArgs(2),
+	RunE: runStepInfo,
 }
 
 func init() {
@@ -531,6 +557,192 @@ func commitChanges(repoDir string, message string) error {
 		}
 		return fmt.Errorf("failed to commit changes: %w\nOutput: %s", err, string(output))
 	}
+
+	return nil
+}
+
+// runSteps is the handler for the steps command
+func runSteps(cmd *cobra.Command, args []string) error {
+	projectID := args[0]
+
+	// Validate project ID
+	if projectID == "" {
+		return errors.NewInvalidInputError("project ID cannot be empty")
+	}
+
+	// Check if project exists
+	exists, err := projects.ProjectExists(projectID)
+	if err != nil {
+		return errors.Wrap(errors.ErrUnknown, err, "failed to check if project exists")
+	}
+	if !exists {
+		return errors.NewProjectNotFoundError(projectID)
+	}
+
+	// Open step database
+	stepDB, err := projects.OpenProjectStepDatabase(projectID)
+	if err != nil {
+		return errors.Wrap(errors.ErrDatabaseConnectionFailed, err, "failed to open project step database")
+	}
+	defer stepDB.Close()
+
+	// Get all steps for the project
+	steps, err := stepDB.ListSteps(projectID, false)
+	if err != nil {
+		return errors.Wrap(errors.ErrDatabaseOperationFailed, err, "failed to list steps")
+	}
+
+	if len(steps) == 0 {
+		fmt.Printf("No steps found for project '%s'\n", projectID)
+		return nil
+	}
+
+	// Print header
+	fmt.Printf("Steps for project '%s':\n", projectID)
+	fmt.Printf("%-8s %-10s %-12s %-10s %-20s %-20s\n", "STEP ID", "STATUS", "DURATION", "EXIT CODE", "STARTED", "COMMIT BEFORE")
+	fmt.Printf("%-8s %-10s %-12s %-10s %-20s %-20s\n", "--------", "----------", "------------", "----------", "--------------------", "--------------------")
+
+	// Print each step
+	for _, step := range steps {
+		status := "COMPLETED"
+		if step.Active && step.EndTime == nil {
+			status = "RUNNING"
+		} else if !step.Active {
+			status = "ROLLED BACK"
+		}
+
+		duration := "N/A"
+		if step.DurationMs != nil && *step.DurationMs > 0 {
+			duration = fmt.Sprintf("%dms", *step.DurationMs)
+		}
+
+		exitCode := "N/A"
+		if step.ExitCode != nil {
+			exitCode = fmt.Sprintf("%d", *step.ExitCode)
+		}
+
+		started := step.StartTime.Format("2006-01-02 15:04:05")
+		commitBefore := step.CommitSHABefore[:8] // Show first 8 characters of SHA
+
+		fmt.Printf("%-8s %-10s %-12s %-10s %-20s %-20s\n",
+			fmt.Sprintf("S%d", step.ID), status, duration, exitCode, started, commitBefore)
+	}
+
+	return nil
+}
+
+// runStepInfo is the handler for the step info command
+func runStepInfo(cmd *cobra.Command, args []string) error {
+	projectID := args[0]
+	stepIDStr := args[1]
+
+	// Validate project ID
+	if projectID == "" {
+		return errors.NewInvalidInputError("project ID cannot be empty")
+	}
+
+	// Parse step ID
+	var stepID int
+	if _, err := fmt.Sscanf(stepIDStr, "S%d", &stepID); err != nil {
+		// Try parsing as plain integer
+		if _, err := fmt.Sscanf(stepIDStr, "%d", &stepID); err != nil {
+			return errors.NewInvalidInputError(fmt.Sprintf("invalid step ID format: %s. Use format like 'S1' or '1'", stepIDStr))
+		}
+	}
+
+	// Check if project exists
+	exists, err := projects.ProjectExists(projectID)
+	if err != nil {
+		return errors.Wrap(errors.ErrUnknown, err, "failed to check if project exists")
+	}
+	if !exists {
+		return errors.NewProjectNotFoundError(projectID)
+	}
+
+	// Open step database
+	stepDB, err := projects.OpenProjectStepDatabase(projectID)
+	if err != nil {
+		return errors.Wrap(errors.ErrDatabaseConnectionFailed, err, "failed to open project step database")
+	}
+	defer stepDB.Close()
+
+	// Get step by ID
+	step, err := stepDB.GetStep(stepID)
+	if err != nil {
+		return errors.Wrap(errors.ErrDatabaseOperationFailed, err, "failed to get step")
+	}
+
+	if step == nil {
+		return errors.NewInvalidInputError(fmt.Sprintf("step S%d not found in project '%s'", stepID, projectID))
+	}
+
+	// Print detailed step information
+	fmt.Printf("Step Information for S%d (Project: %s)\n", step.ID, projectID)
+	fmt.Printf("%s\n", strings.Repeat("=", 55))
+
+	// Basic information
+	status := "COMPLETED"
+	if step.Active && step.EndTime == nil {
+		status = "RUNNING"
+	} else if !step.Active {
+		status = "ROLLED BACK"
+	}
+	fmt.Printf("Status: %s\n", status)
+
+	// Timing information
+	fmt.Printf("Started: %s\n", step.StartTime.Format("2006-01-02 15:04:05"))
+	if step.EndTime != nil {
+		fmt.Printf("Ended: %s\n", step.EndTime.Format("2006-01-02 15:04:05"))
+	}
+	if step.DurationMs != nil && *step.DurationMs > 0 {
+		fmt.Printf("Duration: %dms (%.2fs)\n", *step.DurationMs, float64(*step.DurationMs)/1000.0)
+	}
+
+	// Exit information
+	if step.ExitCode != nil {
+		fmt.Printf("Exit Code: %d\n", *step.ExitCode)
+	}
+
+	// Commit information
+	fmt.Printf("Commit SHA (Before): %s\n", step.CommitSHABefore)
+	if step.CommitSHAAfter != "" {
+		fmt.Printf("Commit SHA (After): %s\n", step.CommitSHAAfter)
+	}
+
+	// Parent step
+	if step.ParentStepID != nil {
+		fmt.Printf("Parent Step: S%d\n", *step.ParentStepID)
+	}
+
+	// Agent configuration
+	fmt.Printf("\nAgent Configuration:\n")
+	fmt.Printf("  Model: %s\n", step.AgentConfig.Model)
+	if step.AgentConfig.MaxTokens > 0 {
+		fmt.Printf("  Max Tokens: %d\n", step.AgentConfig.MaxTokens)
+	}
+	if step.AgentConfig.Temperature > 0 {
+		fmt.Printf("  Temperature: %.2f\n", step.AgentConfig.Temperature)
+	}
+	if len(step.AgentConfig.Metadata) > 0 {
+		fmt.Printf("  Metadata:\n")
+		for key, value := range step.AgentConfig.Metadata {
+			fmt.Printf("    %s: %s\n", key, value)
+		}
+	}
+
+	// Token usage
+	if step.TokenUsage.TotalTokens > 0 {
+		fmt.Printf("\nToken Usage:\n")
+		fmt.Printf("  Prompt Tokens: %d\n", step.TokenUsage.PromptTokens)
+		fmt.Printf("  Completion Tokens: %d\n", step.TokenUsage.CompletionTokens)
+		fmt.Printf("  Total Tokens: %d\n", step.TokenUsage.TotalTokens)
+		if step.TokenUsage.Cost > 0 {
+			fmt.Printf("  Estimated Cost: $%.4f\n", step.TokenUsage.Cost)
+		}
+	}
+
+	// Creation information
+	fmt.Printf("\nCreated: %s\n", step.CreatedAt.Format("2006-01-02 15:04:05"))
 
 	return nil
 }
