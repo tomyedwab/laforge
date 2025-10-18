@@ -6,6 +6,8 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+
+	"github.com/tomyedwab/laforge/errors"
 )
 
 // Worktree represents a git worktree
@@ -64,19 +66,8 @@ func RemoveWorktree(worktree *Worktree) error {
 		}
 	}
 
-	/* TODO this needs to be done _after_ the changes are merged to main
-	// Prune the branch (if it exists and is not the current branch)
-	if !isCurrentBranch(worktree.OriginalDir, worktree.Branch) {
-		cmd = exec.Command("git", "branch", "-D", worktree.Branch)
-		cmd.Dir = worktree.OriginalDir
-		if output, err := cmd.CombinedOutput(); err != nil {
-			// It's okay if the branch doesn't exist
-			if !strings.Contains(string(output), "not found") {
-				return fmt.Errorf("failed to delete branch: %w\nOutput: %s", err, string(output))
-			}
-		}
-	}
-	*/
+	// Note: Branch cleanup is now handled by the automerge functionality in runStep
+	// This function only removes the worktree, leaving branch management to the merge process
 
 	return nil
 }
@@ -267,4 +258,125 @@ func ResetToCommit(repoDir string, commitSHA string) error {
 	}
 
 	return nil
+}
+
+// MergeBranch merges source branch into target branch
+func MergeBranch(repoDir string, sourceBranch string, targetBranch string, message string) error {
+	// Check if git is available
+	if err := exec.Command("git", "--version").Run(); err != nil {
+		return fmt.Errorf("git is not available: %w", err)
+	}
+
+	// Verify the repository directory is a git repository
+	if !IsGitRepository(repoDir) {
+		return fmt.Errorf("directory is not a git repository: %s", repoDir)
+	}
+
+	// Get current branch to restore later
+	originalBranch, err := GetCurrentBranch(repoDir)
+	if err != nil {
+		return fmt.Errorf("failed to get current branch: %w", err)
+	}
+
+	// Switch to target branch if not already on it
+	if originalBranch != targetBranch {
+		if err := SwitchBranch(repoDir, targetBranch); err != nil {
+			return fmt.Errorf("failed to switch to target branch %s: %w", targetBranch, err)
+		}
+		defer func() {
+			// Restore original branch
+			_ = SwitchBranch(repoDir, originalBranch)
+		}()
+	}
+
+	// Perform the merge
+	cmd := exec.Command("git", "merge", sourceBranch, "-m", message)
+	cmd.Dir = repoDir
+	if output, err := cmd.CombinedOutput(); err != nil {
+		// Check if it's a merge conflict
+		if strings.Contains(string(output), "CONFLICT") {
+			return errors.NewGitMergeConflictError(
+				fmt.Errorf("merge conflict detected: %w\nOutput: %s", err, string(output)),
+				sourceBranch, targetBranch,
+			)
+		}
+		return fmt.Errorf("failed to merge %s into %s: %w\nOutput: %s", sourceBranch, targetBranch, err, string(output))
+	}
+
+	return nil
+}
+
+// DeleteBranch deletes a branch if it exists and is not current
+func DeleteBranch(repoDir string, branchName string) error {
+	// Check if git is available
+	if err := exec.Command("git", "--version").Run(); err != nil {
+		return fmt.Errorf("git is not available: %w", err)
+	}
+
+	// Verify the repository directory is a git repository
+	if !IsGitRepository(repoDir) {
+		return fmt.Errorf("directory is not a git repository: %s", repoDir)
+	}
+
+	// Check if branch exists
+	exists, err := BranchExists(repoDir, branchName)
+	if err != nil {
+		return fmt.Errorf("failed to check if branch exists: %w", err)
+	}
+	if !exists {
+		return nil // Branch doesn't exist, nothing to do
+	}
+
+	// Check if it's the current branch
+	currentBranch, err := GetCurrentBranch(repoDir)
+	if err != nil {
+		return fmt.Errorf("failed to get current branch: %w", err)
+	}
+	if currentBranch == branchName {
+		return fmt.Errorf("cannot delete current branch %s", branchName)
+	}
+
+	// Delete the branch
+	cmd := exec.Command("git", "branch", "-D", branchName)
+	cmd.Dir = repoDir
+	if output, err := cmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("failed to delete branch %s: %w\nOutput: %s", branchName, err, string(output))
+	}
+
+	return nil
+}
+
+// GetCurrentBranch returns the currently checked out branch
+func GetCurrentBranch(repoDir string) (string, error) {
+	cmd := exec.Command("git", "rev-parse", "--abbrev-ref", "HEAD")
+	cmd.Dir = repoDir
+	output, err := cmd.Output()
+	if err != nil {
+		return "", fmt.Errorf("failed to get current branch: %w", err)
+	}
+
+	return strings.TrimSpace(string(output)), nil
+}
+
+// SwitchBranch switches to the specified branch
+func SwitchBranch(repoDir string, branchName string) error {
+	cmd := exec.Command("git", "checkout", branchName)
+	cmd.Dir = repoDir
+	if output, err := cmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("failed to switch to branch %s: %w\nOutput: %s", branchName, err, string(output))
+	}
+
+	return nil
+}
+
+// BranchExists checks if a branch exists
+func BranchExists(repoDir string, branchName string) (bool, error) {
+	cmd := exec.Command("git", "branch", "--list", branchName)
+	cmd.Dir = repoDir
+	output, err := cmd.Output()
+	if err != nil {
+		return false, fmt.Errorf("failed to list branches: %w", err)
+	}
+
+	return len(strings.TrimSpace(string(output))) > 0, nil
 }

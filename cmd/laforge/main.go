@@ -605,6 +605,58 @@ func runStep(cmd *cobra.Command, args []string) error {
 		return errors.Wrap(errors.ErrUnknown, err, "failed to update main task database")
 	}
 
+	// Step 8: Automerge step branch into main branch (only if step completed successfully)
+	if exitCode == 0 && hasChanges {
+		stepLogger.LogStepPhase("git", "Automerging step branch into main branch")
+
+		stepBranch := fmt.Sprintf("step-S%d", step.ID)
+		mergeMessage := fmt.Sprintf("Automerge %s into main", stepBranch)
+
+		if mergeErr := git.MergeBranch(sourceDir, stepBranch, "main", mergeMessage); mergeErr != nil {
+			// Check if it's a merge conflict
+			if errors.IsErrorType(mergeErr, errors.ErrGitMergeConflict) {
+				// Log merge conflict but don't fail the step - keep branch for manual resolution
+				stepLogger.LogWarning("git", "Merge conflict detected, keeping step branch for manual resolution", map[string]interface{}{
+					"step_branch": stepBranch,
+					"error":       mergeErr.Error(),
+				})
+				logger.Info("git", fmt.Sprintf("Merge conflict in %s, branch preserved for manual resolution", stepBranch), map[string]interface{}{
+					"project_id":  projectID,
+					"step_id":     stepID,
+					"step_branch": stepBranch,
+					"error_type":  "merge_conflict",
+				})
+			} else {
+				// Log other merge failures but don't fail the step - keep branch for manual resolution
+				stepLogger.LogWarning("git", "Automerge failed, keeping step branch for manual resolution", map[string]interface{}{
+					"step_branch": stepBranch,
+					"error":       mergeErr.Error(),
+				})
+				logger.Info("git", fmt.Sprintf("Automerge failed for %s, branch preserved for manual resolution", stepBranch), map[string]interface{}{
+					"project_id":  projectID,
+					"step_id":     stepID,
+					"step_branch": stepBranch,
+					"error":       mergeErr.Error(),
+				})
+			}
+		} else {
+			// Merge successful, delete step branch
+			stepLogger.LogStepPhase("git", "Merge successful, cleaning up step branch")
+			if deleteErr := git.DeleteBranch(sourceDir, stepBranch); deleteErr != nil {
+				stepLogger.LogWarning("git", "Failed to delete step branch after successful merge", map[string]interface{}{
+					"step_branch": stepBranch,
+					"error":       deleteErr.Error(),
+				})
+			} else {
+				logger.Info("git", fmt.Sprintf("Successfully automerged %s into main and deleted step branch", stepBranch), map[string]interface{}{
+					"project_id":  projectID,
+					"step_id":     stepID,
+					"step_branch": stepBranch,
+				})
+			}
+		}
+	}
+
 	logger.Info("step", fmt.Sprintf("LaForge step completed successfully for project '%s'", projectID), map[string]interface{}{
 		"project_id": projectID,
 		"step_id":    stepID,
