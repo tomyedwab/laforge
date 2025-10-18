@@ -26,6 +26,7 @@ WORKDIR /home/laforge
 # Install opencode
 RUN curl -fsSL https://opencode.ai/install | bash
 
-WORKDIR /src
+# Add scripts
+COPY scripts/opencode.sh /bin/opencode.sh
 
-#ENTRYPOINT ["/home/opencode/.opencode/bin/opencode"]
+WORKDIR /src
