@@ -10,6 +10,7 @@ import (
 
 	_ "github.com/mattn/go-sqlite3"
 	"github.com/tomyedwab/laforge/errors"
+	"github.com/tomyedwab/laforge/steps"
 	"github.com/tomyedwab/laforge/tasks"
 )
 
@@ -135,6 +136,13 @@ func CreateProject(projectID string, name string, description string) (*Project,
 		return nil, errors.Wrap(errors.ErrDatabaseOperationFailed, err, "failed to create task database")
 	}
 
+	// Create step database
+	if err := createStepDatabase(projectDir); err != nil {
+		// Clean up on error
+		os.RemoveAll(projectDir)
+		return nil, errors.Wrap(errors.ErrDatabaseOperationFailed, err, "failed to create step database")
+	}
+
 	// Create default agents.yml configuration file
 	if err := CreateDefaultAgentsConfig(projectID); err != nil {
 		// Clean up on error
@@ -251,6 +259,19 @@ func LoadProject(projectID string) (*Project, error) {
 	return project, nil
 }
 
+// createStepDatabase creates the step database for the project
+func createStepDatabase(projectDir string) error {
+	dbPath := filepath.Join(projectDir, "steps.db")
+
+	// Use the steps package to initialize the database
+	_, err := steps.InitStepDB(dbPath)
+	if err != nil {
+		return fmt.Errorf("failed to initialize step database: %w", err)
+	}
+
+	return nil
+}
+
 // GetProjectTaskDatabase returns the path to the project's task database
 func GetProjectTaskDatabase(projectID string) (string, error) {
 	projectDir, err := GetProjectDir(projectID)
@@ -258,6 +279,15 @@ func GetProjectTaskDatabase(projectID string) (string, error) {
 		return "", errors.Wrap(errors.ErrUnknown, err, "failed to get project directory")
 	}
 	return filepath.Join(projectDir, "tasks.db"), nil
+}
+
+// GetProjectStepDatabase returns the path to the project's step database
+func GetProjectStepDatabase(projectID string) (string, error) {
+	projectDir, err := GetProjectDir(projectID)
+	if err != nil {
+		return "", errors.Wrap(errors.ErrUnknown, err, "failed to get project directory")
+	}
+	return filepath.Join(projectDir, "steps.db"), nil
 }
 
 // OpenProjectTaskDatabase opens the task database for the given project
@@ -284,4 +314,19 @@ func OpenProjectTaskDatabase(projectID string) (*sql.DB, error) {
 	}
 
 	return db, nil
+}
+
+// OpenProjectStepDatabase opens the step database for the given project
+func OpenProjectStepDatabase(projectID string) (*steps.StepDatabase, error) {
+	dbPath, err := GetProjectStepDatabase(projectID)
+	if err != nil {
+		return nil, err
+	}
+
+	sdb, err := steps.InitStepDB(dbPath)
+	if err != nil {
+		return nil, errors.Wrap(errors.ErrDatabaseConnectionFailed, err, "failed to open project step database")
+	}
+
+	return sdb, nil
 }
