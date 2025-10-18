@@ -26,6 +26,7 @@ const (
 	ErrGitNotAvailable
 	ErrGitRepositoryNotFound
 	ErrGitOperationFailed
+	ErrGitMergeConflict
 
 	// Database errors
 	ErrDatabaseNotFound
@@ -166,7 +167,7 @@ func ExitCode(err error) int {
 			return 4
 		case ErrTimeout:
 			return 5
-		case ErrGitNotAvailable, ErrGitRepositoryNotFound, ErrGitOperationFailed:
+		case ErrGitNotAvailable, ErrGitRepositoryNotFound, ErrGitOperationFailed, ErrGitMergeConflict:
 			return 10
 		case ErrDatabaseConnectionFailed, ErrDatabaseCorrupted, ErrDatabaseOperationFailed:
 			return 20
@@ -214,6 +215,8 @@ func UserFriendlyMessage(err error) string {
 			return "Git repository not found. Please initialize a Git repository first."
 		case ErrGitOperationFailed:
 			return "Git operation failed. Please check your Git configuration and try again."
+		case ErrGitMergeConflict:
+			return "Git merge conflict detected. Please resolve the conflict manually."
 		case ErrDatabaseNotFound:
 			return "Database not found. Please check the database path and try again."
 		case ErrDatabaseConnectionFailed:
@@ -329,4 +332,11 @@ func NewDatabaseConnectionError(cause error) *LaForgeError {
 func NewContainerExecutionError(cause error, containerID string) *LaForgeError {
 	return Wrapf(ErrContainerExecutionFailed, cause, "Container %s execution failed", containerID).
 		WithContext("container_id", containerID)
+}
+
+// NewGitMergeConflictError creates an error for git merge conflicts
+func NewGitMergeConflictError(cause error, sourceBranch, targetBranch string) *LaForgeError {
+	return Wrapf(ErrGitMergeConflict, cause, "Merge conflict when merging %s into %s", sourceBranch, targetBranch).
+		WithContext("source_branch", sourceBranch).
+		WithContext("target_branch", targetBranch)
 }

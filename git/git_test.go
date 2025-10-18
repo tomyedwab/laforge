@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/tomyedwab/laforge/errors"
 )
 
 func TestCreateWorktree(t *testing.T) {
@@ -410,6 +412,267 @@ func TestGetWorktrees(t *testing.T) {
 	if err := RemoveWorktree(worktree); err != nil {
 		t.Errorf("Failed to remove worktree: %v", err)
 	}
+}
+
+func TestBranchOperations(t *testing.T) {
+	// Skip if git is not available
+	if err := exec.Command("git", "--version").Run(); err != nil {
+		t.Skip("git is not available")
+	}
+
+	// Create a temporary directory for testing
+	tempDir, err := os.MkdirTemp("", "laforge-git-branch-test-")
+	if err != nil {
+		t.Fatalf("Failed to create temp directory: %v", err)
+	}
+	defer os.RemoveAll(tempDir)
+
+	// Initialize a git repository
+	cmd := exec.Command("git", "init")
+	cmd.Dir = tempDir
+	if err := cmd.Run(); err != nil {
+		t.Fatalf("Failed to initialize git repository: %v", err)
+	}
+
+	// Configure git user for testing
+	cmd = exec.Command("git", "config", "user.name", "Test User")
+	cmd.Dir = tempDir
+	if err := cmd.Run(); err != nil {
+		t.Fatalf("Failed to configure git user.name: %v", err)
+	}
+
+	cmd = exec.Command("git", "config", "user.email", "test@example.com")
+	cmd.Dir = tempDir
+	if err := cmd.Run(); err != nil {
+		t.Fatalf("Failed to configure git user.email: %v", err)
+	}
+
+	// Create initial commit
+	testFile := filepath.Join(tempDir, "test.txt")
+	if err := os.WriteFile(testFile, []byte("initial content"), 0644); err != nil {
+		t.Fatalf("Failed to create test file: %v", err)
+	}
+
+	cmd = exec.Command("git", "add", "test.txt")
+	cmd.Dir = tempDir
+	if err := cmd.Run(); err != nil {
+		t.Fatalf("Failed to add test file: %v", err)
+	}
+
+	cmd = exec.Command("git", "commit", "-m", "Initial commit")
+	cmd.Dir = tempDir
+	if err := cmd.Run(); err != nil {
+		t.Fatalf("Failed to create initial commit: %v", err)
+	}
+
+	t.Run("BranchExists", func(t *testing.T) {
+		// Test main branch exists
+		exists, err := BranchExists(tempDir, "main")
+		if err != nil {
+			t.Errorf("BranchExists failed: %v", err)
+		}
+		if !exists {
+			t.Error("Expected main branch to exist")
+		}
+
+		// Test non-existent branch
+		exists, err = BranchExists(tempDir, "nonexistent")
+		if err != nil {
+			t.Errorf("BranchExists failed: %v", err)
+		}
+		if exists {
+			t.Error("Expected nonexistent branch to not exist")
+		}
+	})
+
+	t.Run("GetCurrentBranch", func(t *testing.T) {
+		branch, err := GetCurrentBranch(tempDir)
+		if err != nil {
+			t.Errorf("GetCurrentBranch failed: %v", err)
+		}
+		if branch != "main" {
+			t.Errorf("Expected current branch to be 'main', got '%s'", branch)
+		}
+	})
+
+	t.Run("SwitchBranch and CreateBranch", func(t *testing.T) {
+		// Create a new branch by switching to it
+		cmd = exec.Command("git", "checkout", "-b", "test-branch")
+		cmd.Dir = tempDir
+		if err := cmd.Run(); err != nil {
+			t.Fatalf("Failed to create test branch: %v", err)
+		}
+
+		// Verify we're on the new branch
+		branch, err := GetCurrentBranch(tempDir)
+		if err != nil {
+			t.Errorf("GetCurrentBranch failed: %v", err)
+		}
+		if branch != "test-branch" {
+			t.Errorf("Expected current branch to be 'test-branch', got '%s'", branch)
+		}
+
+		// Switch back to main
+		if err := SwitchBranch(tempDir, "main"); err != nil {
+			t.Errorf("SwitchBranch failed: %v", err)
+		}
+
+		// Verify we're back on main
+		branch, err = GetCurrentBranch(tempDir)
+		if err != nil {
+			t.Errorf("GetCurrentBranch failed: %v", err)
+		}
+		if branch != "main" {
+			t.Errorf("Expected current branch to be 'main' after switch, got '%s'", branch)
+		}
+	})
+
+	t.Run("DeleteBranch", func(t *testing.T) {
+		// Create a test branch
+		cmd = exec.Command("git", "checkout", "-b", "delete-me")
+		cmd.Dir = tempDir
+		if err := cmd.Run(); err != nil {
+			t.Fatalf("Failed to create branch to delete: %v", err)
+		}
+
+		// Switch back to main
+		if err := SwitchBranch(tempDir, "main"); err != nil {
+			t.Fatalf("Failed to switch to main: %v", err)
+		}
+
+		// Delete the branch
+		if err := DeleteBranch(tempDir, "delete-me"); err != nil {
+			t.Errorf("DeleteBranch failed: %v", err)
+		}
+
+		// Verify it's gone
+		exists, err := BranchExists(tempDir, "delete-me")
+		if err != nil {
+			t.Errorf("BranchExists failed: %v", err)
+		}
+		if exists {
+			t.Error("Expected deleted branch to not exist")
+		}
+	})
+
+	t.Run("DeleteBranch_CurrentBranch", func(t *testing.T) {
+		// Create a test branch and switch to it
+		cmd = exec.Command("git", "checkout", "-b", "current-branch")
+		cmd.Dir = tempDir
+		if err := cmd.Run(); err != nil {
+			t.Fatalf("Failed to create current branch: %v", err)
+		}
+
+		// Try to delete the current branch (should fail)
+		err := DeleteBranch(tempDir, "current-branch")
+		if err == nil {
+			t.Error("Expected DeleteBranch to fail when trying to delete current branch")
+		}
+	})
+
+	t.Run("MergeBranch_Success", func(t *testing.T) {
+		// Create a feature branch
+		cmd = exec.Command("git", "checkout", "-b", "feature")
+		cmd.Dir = tempDir
+		if err := cmd.Run(); err != nil {
+			t.Fatalf("Failed to create feature branch: %v", err)
+		}
+
+		// Make a change on the feature branch
+		if err := os.WriteFile(testFile, []byte("feature content"), 0644); err != nil {
+			t.Fatalf("Failed to update test file: %v", err)
+		}
+
+		cmd = exec.Command("git", "add", "test.txt")
+		cmd.Dir = tempDir
+		if err := cmd.Run(); err != nil {
+			t.Fatalf("Failed to add changes: %v", err)
+		}
+
+		cmd = exec.Command("git", "commit", "-m", "Feature commit")
+		cmd.Dir = tempDir
+		if err := cmd.Run(); err != nil {
+			t.Fatalf("Failed to commit feature changes: %v", err)
+		}
+
+		// Switch back to main
+		if err := SwitchBranch(tempDir, "main"); err != nil {
+			t.Fatalf("Failed to switch to main: %v", err)
+		}
+
+		// Merge feature into main
+		if err := MergeBranch(tempDir, "feature", "main", "Merge feature into main"); err != nil {
+			t.Errorf("MergeBranch failed: %v", err)
+		}
+
+		// Verify the merge by checking file content
+		content, err := os.ReadFile(testFile)
+		if err != nil {
+			t.Fatalf("Failed to read test file: %v", err)
+		}
+		if string(content) != "feature content" {
+			t.Errorf("Expected file content to be 'feature content', got '%s'", string(content))
+		}
+	})
+
+	t.Run("MergeBranch_Conflict", func(t *testing.T) {
+		// Create a conflict branch
+		cmd = exec.Command("git", "checkout", "-b", "conflict")
+		cmd.Dir = tempDir
+		if err := cmd.Run(); err != nil {
+			t.Fatalf("Failed to create conflict branch: %v", err)
+		}
+
+		// Make a conflicting change
+		if err := os.WriteFile(testFile, []byte("conflict content"), 0644); err != nil {
+			t.Fatalf("Failed to update test file: %v", err)
+		}
+
+		cmd = exec.Command("git", "add", "test.txt")
+		cmd.Dir = tempDir
+		if err := cmd.Run(); err != nil {
+			t.Fatalf("Failed to add changes: %v", err)
+		}
+
+		cmd = exec.Command("git", "commit", "-m", "Conflict commit")
+		cmd.Dir = tempDir
+		if err := cmd.Run(); err != nil {
+			t.Fatalf("Failed to commit conflict changes: %v", err)
+		}
+
+		// Switch back to main
+		if err := SwitchBranch(tempDir, "main"); err != nil {
+			t.Fatalf("Failed to switch to main: %v", err)
+		}
+
+		// Make a change on main that conflicts
+		if err := os.WriteFile(testFile, []byte("main content"), 0644); err != nil {
+			t.Fatalf("Failed to update test file on main: %v", err)
+		}
+
+		cmd = exec.Command("git", "add", "test.txt")
+		cmd.Dir = tempDir
+		if err := cmd.Run(); err != nil {
+			t.Fatalf("Failed to add changes on main: %v", err)
+		}
+
+		cmd = exec.Command("git", "commit", "-m", "Main commit")
+		cmd.Dir = tempDir
+		if err := cmd.Run(); err != nil {
+			t.Fatalf("Failed to commit main changes: %v", err)
+		}
+
+		// Try to merge conflict branch (should fail with merge conflict)
+		err := MergeBranch(tempDir, "conflict", "main", "Merge conflict into main")
+		if err == nil {
+			t.Error("Expected MergeBranch to fail with merge conflict")
+		}
+
+		// Check if it's a merge conflict error
+		if !errors.IsErrorType(err, errors.ErrGitMergeConflict) {
+			t.Errorf("Expected merge conflict error type, got: %v", err)
+		}
+	})
 }
 
 func TestResetToCommit(t *testing.T) {
