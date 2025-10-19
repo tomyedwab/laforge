@@ -2,18 +2,21 @@
 import { useState, useEffect } from 'preact/hooks';
 import type { Task, TaskLog, TaskReview } from '../types';
 import { apiService } from '../services/api';
+import { TaskForm } from './TaskForm';
 
 interface TaskDetailProps {
   task: Task;
   onClose: () => void;
   onStatusChange?: (taskId: number, status: Task['status']) => void;
+  onTaskUpdate?: (updatedTask: Task) => void;
 }
 
-export function TaskDetail({ task, onClose, onStatusChange }: TaskDetailProps) {
+export function TaskDetail({ task, onClose, onStatusChange, onTaskUpdate }: TaskDetailProps) {
   const [logs, setLogs] = useState<TaskLog[]>([]);
   const [reviews, setReviews] = useState<TaskReview[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<'details' | 'logs' | 'reviews' | 'children'>('details');
+  const [isEditing, setIsEditing] = useState(false);
 
   useEffect(() => {
     loadTaskDetails();
@@ -44,6 +47,21 @@ export function TaskDetail({ task, onClose, onStatusChange }: TaskDetailProps) {
       console.error('Failed to update task status:', error);
       setError('Failed to update task status');
     }
+  };
+
+  const handleEdit = () => {
+    setIsEditing(true);
+  };
+
+  const handleCancelEdit = () => {
+    setIsEditing(false);
+  };
+
+  const handleTaskUpdate = (updatedTask: Task) => {
+    setIsEditing(false);
+    onTaskUpdate?.(updatedTask);
+    // Reload task details to reflect changes
+    loadTaskDetails();
   };
 
   const formatDate = (dateString: string) => {
@@ -84,30 +102,41 @@ export function TaskDetail({ task, onClose, onStatusChange }: TaskDetailProps) {
   return (
     <div class="task-detail-overlay" onClick={onClose}>
       <div class="task-detail-modal" onClick={(e) => e.stopPropagation()}>
-        <div class="task-detail-header">
-          <div class="task-detail-title-section">
-            <h2>{task.title}</h2>
-            <div class="task-detail-badges">
-              <span 
-                class="task-type-badge"
-                style={{ backgroundColor: getTypeColor(task.type), color: 'white' }}
-              >
-                {task.type}
-              </span>
-              <span 
-                class="task-status-badge"
-                style={{ backgroundColor: getStatusColor(task.status), color: 'white' }}
-              >
-                {task.status.replace('-', ' ')}
-              </span>
-              {task.review_required && (
-                <span class="review-required-badge">Review Required</span>
-              )}
+        {isEditing ? (
+          <TaskForm
+            task={task}
+            onSave={handleTaskUpdate}
+            onCancel={handleCancelEdit}
+          />
+        ) : (
+          <>
+            <div class="task-detail-header">
+              <div class="task-detail-title-section">
+                <h2>{task.title}</h2>
+                <div class="task-detail-badges">
+                  <span 
+                    class="task-type-badge"
+                    style={{ backgroundColor: getTypeColor(task.type), color: 'white' }}
+                  >
+                    {task.type}
+                  </span>
+                  <span 
+                    class="task-status-badge"
+                    style={{ backgroundColor: getStatusColor(task.status), color: 'white' }}
+                  >
+                    {task.status.replace('-', ' ')}
+                  </span>
+                  {task.review_required && (
+                    <span class="review-required-badge">Review Required</span>
+                  )}
+                </div>
+              </div>
+              
+              <div class="task-detail-actions">
+                <button class="edit-button" onClick={handleEdit}>Edit</button>
+                <button class="close-button" onClick={onClose}>×</button>
+              </div>
             </div>
-          </div>
-          
-          <button class="close-button" onClick={onClose}>×</button>
-        </div>
 
         <div class="task-detail-content">
           <div class="task-detail-tabs">
@@ -264,8 +293,10 @@ export function TaskDetail({ task, onClose, onStatusChange }: TaskDetailProps) {
           </div>
         </div>
 
-        {error && (
-          <div class="error-message">{error}</div>
+            {error && (
+              <div class="error-message">{error}</div>
+            )}
+          </>
         )}
       </div>
     </div>

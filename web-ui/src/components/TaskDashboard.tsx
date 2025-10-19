@@ -6,6 +6,7 @@ import type { TaskFilterOptions } from './TaskFilters';
 import { TaskFilters } from './TaskFilters';
 import { TaskCard } from './TaskCard';
 import { TaskDetail } from './TaskDetail';
+import { TaskForm } from './TaskForm';
 import { Pagination } from './Pagination';
 
 export function TaskDashboard() {
@@ -19,6 +20,7 @@ export function TaskDashboard() {
   });
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage, setItemsPerPage] = useState(25);
+  const [isCreatingTask, setIsCreatingTask] = useState(false);
 
   useEffect(() => {
     loadTasks();
@@ -85,6 +87,29 @@ export function TaskDashboard() {
     setSelectedTask(task);
   };
 
+  const handleCreateTask = () => {
+    setIsCreatingTask(true);
+  };
+
+  const handleCancelCreateTask = () => {
+    setIsCreatingTask(false);
+  };
+
+  const handleTaskCreated = (newTask: Task) => {
+    setIsCreatingTask(false);
+    // Reload tasks to include the new task
+    loadTasks();
+  };
+
+  const handleTaskUpdated = (updatedTask: Task) => {
+    // Update the task in the local state
+    setTasks(prevTasks => 
+      prevTasks.map(task => 
+        task.id === updatedTask.id ? updatedTask : task
+      )
+    );
+  };
+
   const handleStatusChange = async (taskId: number, status: TaskStatus) => {
     try {
       await apiService.updateTaskStatus(taskId, status);
@@ -142,7 +167,7 @@ export function TaskDashboard() {
       <div class="dashboard-header">
         <h2>Task Dashboard</h2>
         <div class="dashboard-actions">
-          <button class="create-task-button">+ New Task</button>
+          <button class="create-task-button" onClick={handleCreateTask}>+ New Task</button>
         </div>
       </div>
       
@@ -183,6 +208,14 @@ export function TaskDashboard() {
           task={selectedTask}
           onClose={() => setSelectedTask(null)}
           onStatusChange={handleStatusChange}
+          onTaskUpdate={handleTaskUpdated}
+        />
+      )}
+      
+      {isCreatingTask && (
+        <TaskForm
+          onSave={handleTaskCreated}
+          onCancel={handleCancelCreateTask}
         />
       )}
     </div>
