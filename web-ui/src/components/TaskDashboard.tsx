@@ -1,12 +1,24 @@
-import { h } from 'preact';
-import { useState, useEffect } from 'preact/hooks';
+// Preact JSX doesn't require h import
+import { useState, useEffect, useMemo } from 'preact/hooks';
 import { apiService } from '../services/api';
-import { Task } from '../types';
+import type { Task, TaskStatus } from '../types';
+import type { TaskFilterOptions } from './TaskFilters';
+import { TaskFilters } from './TaskFilters';
+import { TaskCard } from './TaskCard';
+import { TaskDetail } from './TaskDetail';
+import { Pagination } from './Pagination';
 
 export function TaskDashboard() {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [selectedTask, setSelectedTask] = useState<Task | null>(null);
+  const [filters, setFilters] = useState<TaskFilterOptions>({
+    sortBy: 'created_at',
+    sortOrder: 'desc',
+  });
+  const [currentPage, setCurrentPage] = useState(1);
+  const [itemsPerPage, setItemsPerPage] = useState(25);
 
   useEffect(() => {
     loadTasks();
@@ -21,6 +33,10 @@ export function TaskDashboard() {
         include_children: true,
         include_logs: false,
         include_reviews: false,
+        page: currentPage,
+        limit: itemsPerPage,
+        status: filters.status,
+        type: filters.type,
       });
       
       setTasks(response.tasks);
@@ -31,6 +47,78 @@ export function TaskDashboard() {
       setIsLoading(false);
     }
   };
+
+  // Filter and sort tasks locally for more responsive UI
+  const processedTasks = useMemo(() => {
+    let filtered = tasks;
+
+    // Apply search filter
+    if (filters.search) {
+      const searchLower = filters.search.toLowerCase();
+      filtered = filtered.filter(task => 
+        task.title.toLowerCase().includes(searchLower) ||
+        task.description?.toLowerCase().includes(searchLower)
+      );
+    }
+
+    // Apply sorting
+    if (filters.sortBy) {
+      filtered = [...filtered].sort((a, b) => {
+        let aValue: any = a[filters.sortBy!];
+        let bValue: any = b[filters.sortBy!];
+        
+        if (filters.sortBy === 'title') {
+          aValue = aValue.toLowerCase();
+          bValue = bValue.toLowerCase();
+        }
+        
+        if (aValue < bValue) return filters.sortOrder === 'asc' ? -1 : 1;
+        if (aValue > bValue) return filters.sortOrder === 'asc' ? 1 : -1;
+        return 0;
+      });
+    }
+
+    return filtered;
+  }, [tasks, filters]);
+
+  const handleTaskClick = (task: Task) => {
+    setSelectedTask(task);
+  };
+
+  const handleStatusChange = async (taskId: number, status: TaskStatus) => {
+    try {
+      await apiService.updateTaskStatus(taskId, status);
+      // Update the task in the local state
+      setTasks(prevTasks => 
+        prevTasks.map(task => 
+          task.id === taskId ? { ...task, status } : task
+        )
+      );
+    } catch (error) {
+      console.error('Failed to update task status:', error);
+      setError('Failed to update task status');
+    }
+  };
+
+  const handlePageChange = (page: number) => {
+    setCurrentPage(page);
+    loadTasks();
+  };
+
+  const handleItemsPerPageChange = (items: number) => {
+    setItemsPerPage(items);
+    setCurrentPage(1);
+    loadTasks();
+  };
+
+  // Reload tasks when filters change (with debouncing for search)
+  useEffect(() => {
+    const timeoutId = setTimeout(() => {
+      loadTasks();
+    }, 300);
+    
+    return () => clearTimeout(timeoutId);
+  }, [filters.status, filters.type, currentPage, itemsPerPage]);
 
   if (isLoading) {
     return (
@@ -51,37 +139,51 @@ export function TaskDashboard() {
 
   return (
     <div class="task-dashboard">
-      <h2>Task Dashboard</h2>
+      <div class="dashboard-header">
+        <h2>Task Dashboard</h2>
+        <div class="dashboard-actions">
+          <button class="create-task-button">+ New Task</button>
+        </div>
+      </div>
       
-      {tasks.length === 0 ? (
+      <TaskFilters filters={filters} onFiltersChange={setFilters} />
+      
+      {processedTasks.length === 0 ? (
         <div class="empty-state">
           <p>No tasks found.</p>
-          <p>Tasks will appear here once they are created.</p>
+          <p>Try adjusting your filters or create a new task.</p>
         </div>
       ) : (
-        <div class="task-list">
-          {tasks.map(task => (
-            <div key={task.id} class={`task-card task-${task.status}`}>
-              <div class="task-header">
-                <h3>{task.title}</h3>
-                <span class={`task-status status-${task.status}`}>
-                  {task.status.replace('-', ' ')}
-                </span>
-              </div>
-              
-              {task.description && (
-                <p class="task-description">{task.description}</p>
-              )}
-              
-              <div class="task-meta">
-                <span class="task-type">{task.type}</span>
-                <span class="task-date">
-                  Created: {new Date(task.created_at).toLocaleDateString()}
-                </span>
-              </div>
-            </div>
-          ))}
-        </div>
+        <>
+          <div class="task-list">
+            {processedTasks.map(task => (
+              <TaskCard
+                key={task.id}
+                task={task}
+                onClick={handleTaskClick}
+                onStatusChange={handleStatusChange}
+                showActions={true}
+              />
+            ))}
+          </div>
+          
+          <Pagination
+            currentPage={currentPage}
+            totalPages={Math.ceil(processedTasks.length / itemsPerPage)}
+            totalItems={processedTasks.length}
+            itemsPerPage={itemsPerPage}
+            onPageChange={handlePageChange}
+            onItemsPerPageChange={handleItemsPerPageChange}
+          />
+        </>
+      )}
+      
+      {selectedTask && (
+        <TaskDetail
+          task={selectedTask}
+          onClose={() => setSelectedTask(null)}
+          onStatusChange={handleStatusChange}
+        />
       )}
     </div>
   );
