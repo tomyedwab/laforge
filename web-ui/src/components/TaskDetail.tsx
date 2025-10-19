@@ -1,5 +1,6 @@
 // Preact JSX doesn't require h import
 import { useState, useEffect } from 'preact/hooks';
+import { useWebSocket } from '../hooks/useWebSocket';
 import type { Task, TaskLog, TaskReview } from '../types';
 import { apiService } from '../services/api';
 import { TaskForm } from './TaskForm';
@@ -21,6 +22,22 @@ export function TaskDetail({ task, onClose, onStatusChange, onTaskUpdate }: Task
   const [isEditing, setIsEditing] = useState(false);
   const [showReviewRequest, setShowReviewRequest] = useState(false);
   const [selectedReview, setSelectedReview] = useState<TaskReview | null>(null);
+
+  // Set up WebSocket connection for real-time updates
+  const { isConnected } = useWebSocket({
+    onTaskUpdate: (updatedTask) => {
+      // If this task is updated, notify the parent component
+      if (updatedTask.id === task.id) {
+        onTaskUpdate?.(updatedTask);
+      }
+    },
+    onReviewUpdate: (updatedReview) => {
+      // If a review for this task is updated, refresh the reviews
+      if (updatedReview.task_id === task.id) {
+        loadTaskDetails();
+      }
+    },
+  });
 
   useEffect(() => {
     loadTaskDetails();
@@ -139,6 +156,9 @@ export function TaskDetail({ task, onClose, onStatusChange, onTaskUpdate }: Task
               <div class="task-detail-title-section">
                 <h2>{task.title}</h2>
                 <div class="task-detail-badges">
+                  <div class={`connection-status small ${isConnected ? 'connected' : 'disconnected'}`}>
+                    <span class="status-indicator"></span>
+                  </div>
                   <span 
                     class="task-type-badge"
                     style={{ backgroundColor: getTypeColor(task.type), color: 'white' }}

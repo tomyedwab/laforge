@@ -92,15 +92,15 @@ func run(config *Config) error {
 	// Create JWT manager
 	jwtManager := auth.NewJWTManager(config.JWTSecret)
 
-	// Create task handler
-	taskHandler := handlers.NewTaskHandler(db)
-
-	// Create step handler
-	stepHandler := handlers.NewStepHandler(stepDB)
-
 	// Create WebSocket server
 	wsServer := websocket.NewServer()
 	go wsServer.Run() // Start WebSocket server in background
+
+	// Create task handler
+	taskHandler := handlers.NewTaskHandler(db, wsServer)
+
+	// Create step handler
+	stepHandler := handlers.NewStepHandler(stepDB, wsServer)
 
 	// Create router
 	router := setupRouter(jwtManager, taskHandler, stepHandler, wsServer)

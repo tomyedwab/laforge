@@ -220,6 +220,60 @@ button[type="submit"]:disabled {
 .dashboard-actions {
   display: flex;
   gap: 1rem;
+  align-items: center;
+}
+
+.connection-status {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 1rem;
+  border-radius: 4px;
+  font-size: 0.875rem;
+  font-weight: 500;
+}
+
+.connection-status.connected {
+  background-color: #d4edda;
+  color: #155724;
+}
+
+.connection-status.disconnected {
+  background-color: #f8d7da;
+  color: #721c24;
+}
+
+.status-indicator {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background-color: currentColor;
+}
+
+.connection-status.connected .status-indicator {
+  animation: pulse 2s infinite;
+}
+
+.connection-status.small {
+  padding: 0.25rem 0.5rem;
+  font-size: 0.75rem;
+}
+
+.connection-status.small .status-indicator {
+  width: 6px;
+  height: 6px;
+}
+
+@keyframes pulse {
+  0% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.5;
+  }
+  100% {
+    opacity: 1;
+  }
 }
 
 .create-task-button {

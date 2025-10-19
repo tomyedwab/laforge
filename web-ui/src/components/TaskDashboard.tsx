@@ -1,6 +1,7 @@
 // Preact JSX doesn't require h import
 import { useState, useEffect, useMemo } from 'preact/hooks';
 import { apiService } from '../services/api';
+import { useWebSocket } from '../hooks/useWebSocket';
 import type { Task, TaskStatus } from '../types';
 import type { TaskFilterOptions } from './TaskFilters';
 import { TaskFilters } from './TaskFilters';
@@ -25,6 +26,23 @@ export function TaskDashboard({ onTaskClick }: TaskDashboardProps) {
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage, setItemsPerPage] = useState(25);
   const [isCreatingTask, setIsCreatingTask] = useState(false);
+
+  // Set up WebSocket connection for real-time updates
+  const { isConnected, connectionError } = useWebSocket({
+    onTaskUpdate: (updatedTask) => {
+      // Update the task in the local state
+      setTasks(prevTasks => 
+        prevTasks.map(task => 
+          task.id === updatedTask.id ? updatedTask : task
+        )
+      );
+    },
+    onReviewUpdate: (updatedReview) => {
+      // If a review is updated, we might need to refresh the task data
+      // This is a simple approach - in a real app you might want to be more targeted
+      loadTasks();
+    },
+  });
 
   useEffect(() => {
     loadTasks();
@@ -175,6 +193,11 @@ export function TaskDashboard({ onTaskClick }: TaskDashboardProps) {
       <div class="dashboard-header">
         <h2>Task Dashboard</h2>
         <div class="dashboard-actions">
+          <div class={`connection-status ${isConnected ? 'connected' : 'disconnected'}`}>
+            <span class="status-indicator"></span>
+            {isConnected ? 'Connected' : 'Disconnected'}
+            {connectionError && <span class="error-tooltip">{connectionError}</span>}
+          </div>
           <button class="create-task-button" onClick={handleCreateTask}>+ New Task</button>
         </div>
       </div>

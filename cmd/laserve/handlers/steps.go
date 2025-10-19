@@ -8,15 +8,17 @@ import (
 	"time"
 
 	"github.com/gorilla/mux"
+	"github.com/tomyedwab/laforge/cmd/laserve/websocket"
 	"github.com/tomyedwab/laforge/steps"
 )
 
 type StepHandler struct {
-	db *steps.StepDatabase
+	db       *steps.StepDatabase
+	wsServer *websocket.Server
 }
 
-func NewStepHandler(db *steps.StepDatabase) *StepHandler {
-	return &StepHandler{db: db}
+func NewStepHandler(db *steps.StepDatabase, wsServer *websocket.Server) *StepHandler {
+	return &StepHandler{db: db, wsServer: wsServer}
 }
 
 // StepResponse represents the API response format for steps

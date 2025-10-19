@@ -9,15 +9,17 @@ import (
 	"time"
 
 	"github.com/gorilla/mux"
+	"github.com/tomyedwab/laforge/cmd/laserve/websocket"
 	"github.com/tomyedwab/laforge/tasks"
 )
 
 type TaskHandler struct {
-	db *sql.DB
+	db       *sql.DB
+	wsServer *websocket.Server
 }
 
-func NewTaskHandler(db *sql.DB) *TaskHandler {
-	return &TaskHandler{db: db}
+func NewTaskHandler(db *sql.DB, wsServer *websocket.Server) *TaskHandler {
+	return &TaskHandler{db: db, wsServer: wsServer}
 }
 
 // TaskResponse represents the API response format for tasks
@@ -280,6 +282,13 @@ func (h *TaskHandler) CreateTask(w http.ResponseWriter, r *http.Request) {
 
 	responseTask := convertTask(createdTask)
 
+	// Broadcast task creation via WebSocket
+	if h.wsServer != nil {
+		vars := mux.Vars(r)
+		projectID := vars["project_id"]
+		h.wsServer.BroadcastTaskUpdate(projectID, taskID, responseTask.Status)
+	}
+
 	response := map[string]interface{}{
 		"data": map[string]interface{}{
 			"task": responseTask,
@@ -394,6 +403,13 @@ func (h *TaskHandler) UpdateTaskStatus(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, `{"error":{"code":"INTERNAL_ERROR","message":"Failed to update task status"}}`, http.StatusInternalServerError)
 		}
 		return
+	}
+
+	// Broadcast task status update via WebSocket
+	if h.wsServer != nil {
+		vars := mux.Vars(r)
+		projectID := vars["project_id"]
+		h.wsServer.BroadcastTaskUpdate(projectID, taskID, req.Status)
 	}
 
 	// Fetch updated task
@@ -772,6 +788,14 @@ func (h *TaskHandler) CreateTaskReview(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		http.Error(w, `{"error":{"code":"INTERNAL_ERROR","message":"Failed to create task review"}}`, http.StatusInternalServerError)
 		return
+	}
+
+	// Broadcast review creation via WebSocket
+	if h.wsServer != nil {
+		vars := mux.Vars(r)
+		projectID := vars["project_id"]
+		// Note: We need to get the review ID from the database, for now we'll use a placeholder
+		h.wsServer.BroadcastReviewUpdate(projectID, 0, "pending")
 	}
 
 	// For now, we will create a response with the provided data
