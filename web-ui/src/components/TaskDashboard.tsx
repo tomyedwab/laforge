@@ -9,7 +9,11 @@ import { TaskDetail } from './TaskDetail';
 import { TaskForm } from './TaskForm';
 import { Pagination } from './Pagination';
 
-export function TaskDashboard() {
+interface TaskDashboardProps {
+  onTaskClick?: (task: Task) => void;
+}
+
+export function TaskDashboard({ onTaskClick }: TaskDashboardProps) {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -84,7 +88,11 @@ export function TaskDashboard() {
   }, [tasks, filters]);
 
   const handleTaskClick = (task: Task) => {
-    setSelectedTask(task);
+    if (onTaskClick) {
+      onTaskClick(task);
+    } else {
+      setSelectedTask(task);
+    }
   };
 
   const handleCreateTask = () => {

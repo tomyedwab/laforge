@@ -3,6 +3,8 @@ import { useState, useEffect } from 'preact/hooks';
 import type { Task, TaskLog, TaskReview } from '../types';
 import { apiService } from '../services/api';
 import { TaskForm } from './TaskForm';
+import { ReviewRequest } from './ReviewRequest';
+import { ReviewDetail } from './ReviewDetail';
 
 interface TaskDetailProps {
   task: Task;
@@ -17,6 +19,8 @@ export function TaskDetail({ task, onClose, onStatusChange, onTaskUpdate }: Task
   const [error, setError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<'details' | 'logs' | 'reviews' | 'children'>('details');
   const [isEditing, setIsEditing] = useState(false);
+  const [showReviewRequest, setShowReviewRequest] = useState(false);
+  const [selectedReview, setSelectedReview] = useState<TaskReview | null>(null);
 
   useEffect(() => {
     loadTaskDetails();
@@ -63,6 +67,27 @@ export function TaskDetail({ task, onClose, onStatusChange, onTaskUpdate }: Task
     // Reload task details to reflect changes
     loadTaskDetails();
   };
+
+  const handleRequestReview = () => {
+    setShowReviewRequest(true);
+  };
+
+  const handleReviewCreated = (newReview: TaskReview) => {
+    setReviews([...reviews, newReview]);
+    setShowReviewRequest(false);
+  };
+
+  const handleReviewClick = (review: TaskReview) => {
+    setSelectedReview(review);
+  };
+
+  const handleReviewUpdated = (updatedReview: TaskReview) => {
+    setReviews(reviews.map(r => r.id === updatedReview.id ? updatedReview : r));
+    setSelectedReview(null);
+  };
+
+  const hasPendingReviews = reviews.some(r => r.status === 'pending');
+  const canRequestReview = task.status !== 'completed' && !hasPendingReviews;
 
   const formatDate = (dateString: string) => {
     return new Date(dateString).toLocaleString();
@@ -129,11 +154,19 @@ export function TaskDetail({ task, onClose, onStatusChange, onTaskUpdate }: Task
                   {task.review_required && (
                     <span class="review-required-badge">Review Required</span>
                   )}
+                  {hasPendingReviews && (
+                    <span class="pending-review-badge">Pending Review</span>
+                  )}
                 </div>
               </div>
               
               <div class="task-detail-actions">
                 <button class="edit-button" onClick={handleEdit}>Edit</button>
+                {canRequestReview && (
+                  <button class="review-button" onClick={handleRequestReview}>
+                    Request Review
+                  </button>
+                )}
                 <button class="close-button" onClick={onClose}>×</button>
               </div>
             </div>
@@ -237,30 +270,52 @@ export function TaskDetail({ task, onClose, onStatusChange, onTaskUpdate }: Task
             {activeTab === 'reviews' && (
               <div class="task-reviews-tab">
                 {reviews.length === 0 ? (
-                  <p class="empty-message">No reviews for this task yet.</p>
+                  <div class="empty-reviews">
+                    <p class="empty-message">No reviews for this task yet.</p>
+                    {canRequestReview && (
+                      <button class="request-review-button" onClick={handleRequestReview}>
+                        Request First Review
+                      </button>
+                    )}
+                  </div>
                 ) : (
-                  <div class="reviews-list">
-                    {reviews.map(review => (
-                      <div key={review.id} class="review-item">
-                        <div class="review-header">
-                          <span class={`review-status status-${review.status}`}>
-                            {review.status}
-                          </span>
-                          <span class="review-date">{formatDate(review.created_at)}</span>
+                  <div class="reviews-container">
+                    <div class="reviews-header">
+                      <h4>Review History</h4>
+                      {canRequestReview && (
+                        <button class="request-review-button" onClick={handleRequestReview}>
+                          Request New Review
+                        </button>
+                      )}
+                    </div>
+                    <div class="reviews-list">
+                      {reviews.map(review => (
+                        <div 
+                          key={review.id} 
+                          class="review-item"
+                          onClick={() => handleReviewClick(review)}
+                        >
+                          <div class="review-header">
+                            <span class={`review-status status-${review.status}`}>
+                              {review.status}
+                            </span>
+                            <span class="review-date">{formatDate(review.created_at)}</span>
+                          </div>
+                          <div class="review-message">{review.message}</div>
+                          {review.attachment && (
+                            <div class="review-attachment">
+                              <span class="attachment-icon">📎</span>
+                              {review.attachment}
+                            </div>
+                          )}
+                          {review.feedback && (
+                            <div class="review-feedback">
+                              <strong>Feedback:</strong> {review.feedback}
+                            </div>
+                          )}
                         </div>
-                        <div class="review-message">{review.message}</div>
-                        {review.attachment && (
-                          <div class="review-attachment">
-                            Attachment: {review.attachment}
-                          </div>
-                        )}
-                        {review.feedback && (
-                          <div class="review-feedback">
-                            <strong>Feedback:</strong> {review.feedback}
-                          </div>
-                        )}
-                      </div>
-                    ))}
+                      ))}
+                    </div>
                   </div>
                 )}
               </div>
@@ -296,6 +351,24 @@ export function TaskDetail({ task, onClose, onStatusChange, onTaskUpdate }: Task
             {error && (
               <div class="error-message">{error}</div>
             )}
+          </>
+        )}
+
+        {showReviewRequest && (
+          <ReviewRequest
+            task={task}
+            onClose={() => setShowReviewRequest(false)}
+            onReviewCreated={handleReviewCreated}
+          />
+        )}
+
+        {selectedReview && (
+          <ReviewDetail
+            review={selectedReview}
+            onClose={() => setSelectedReview(null)}
+            onReviewUpdated={handleReviewUpdated}
+          />
+        )}
           </>
         )}
       </div>

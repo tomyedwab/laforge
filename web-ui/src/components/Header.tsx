@@ -3,8 +3,8 @@ import { useAuth, useUser } from '../hooks/useAuth';
 
 interface HeaderProps {
   title?: string;
-  currentView?: 'tasks' | 'steps';
-  onViewChange?: (view: 'tasks' | 'steps') => void;
+  currentView?: 'tasks' | 'steps' | 'reviews';
+  onViewChange?: (view: 'tasks' | 'steps' | 'reviews') => void;
 }
 
 export function Header({ title = 'LaForge', currentView = 'tasks', onViewChange }: HeaderProps) {
@@ -24,7 +24,7 @@ export function Header({ title = 'LaForge', currentView = 'tasks', onViewChange 
         
         {user && (
           <div class="header-actions">
-            <nav class="view-navigation">
+             <nav class="view-navigation">
               <button
                 class={`nav-button ${currentView === 'tasks' ? 'active' : ''}`}
                 onClick={() => onViewChange?.('tasks')}
@@ -38,6 +38,13 @@ export function Header({ title = 'LaForge', currentView = 'tasks', onViewChange 
                 type="button"
               >
                 Step History
+              </button>
+              <button
+                class={`nav-button ${currentView === 'reviews' ? 'active' : ''}`}
+                onClick={() => onViewChange?.('reviews')}
+                type="button"
+              >
+                Reviews
               </button>
             </nav>
             
