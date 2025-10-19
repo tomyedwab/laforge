@@ -1,4 +1,4 @@
-import { WebSocketMessage, WebSocketSubscribeMessage } from '../types';
+import type { WebSocketMessage, WebSocketSubscribeMessage } from '../types';
 
 export class WebSocketService {
   private ws: WebSocket | null = null;
@@ -17,16 +17,16 @@ export class WebSocketService {
     }
 
     const wsUrl = token ? `${this.url}?token=${token}` : this.url;
-    
+
     try {
       this.ws = new WebSocket(wsUrl);
-      
+
       this.ws.onopen = () => {
         console.log('WebSocket connected');
         this.subscribe(['tasks', 'reviews', 'steps']);
       };
 
-      this.ws.onmessage = (event) => {
+      this.ws.onmessage = event => {
         try {
           const message: WebSocketMessage = JSON.parse(event.data);
           this.handleMessage(message);
@@ -43,7 +43,7 @@ export class WebSocketService {
         }
       };
 
-      this.ws.onerror = (error) => {
+      this.ws.onerror = error => {
         console.error('WebSocket error:', error);
       };
     } catch (error) {
@@ -107,4 +107,6 @@ export class WebSocketService {
 // Create singleton instance
 const WS_URL = import.meta.env.VITE_WS_URL || 'ws://localhost:8080/api/v1';
 const PROJECT_ID = import.meta.env.VITE_PROJECT_ID || 'laforge-main';
-export const websocketService = new WebSocketService(`${WS_URL}/projects/${PROJECT_ID}/ws`);
+export const websocketService = new WebSocketService(
+  `${WS_URL}/projects/${PROJECT_ID}/ws`
+);

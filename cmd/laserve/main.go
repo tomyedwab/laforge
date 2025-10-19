@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -103,7 +104,7 @@ func run(config *Config) error {
 	stepHandler := handlers.NewStepHandler(stepDB, wsServer)
 
 	// Create router
-	router := setupRouter(jwtManager, taskHandler, stepHandler, wsServer)
+	router := setupRouter(jwtManager, taskHandler, stepHandler, wsServer, config)
 
 	// Create HTTP server
 	srv := &http.Server{
@@ -135,8 +136,51 @@ func run(config *Config) error {
 	return srv.Shutdown(ctx)
 }
 
-func setupRouter(jwtManager *auth.JWTManager, taskHandler *handlers.TaskHandler, stepHandler *handlers.StepHandler, wsServer *websocket.Server) *mux.Router {
+func corsMiddleware(config *Config) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			origin := r.Header.Get("Origin")
+
+			// In development, allow any localhost origin
+			// In production, restrict to specific origins
+			allowOrigin := false
+			if config.Environment == "development" {
+				// Allow requests from localhost on any port
+				if strings.Contains(origin, "localhost") || strings.Contains(origin, "127.0.0.1") {
+					allowOrigin = true
+				}
+			} else {
+				// In production, you'd validate against a whitelist
+				// For now, just allow localhost
+				if strings.Contains(origin, "localhost") || strings.Contains(origin, "127.0.0.1") {
+					allowOrigin = true
+				}
+			}
+
+			if allowOrigin {
+				w.Header().Set("Access-Control-Allow-Origin", origin)
+				w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
+				w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
+				w.Header().Set("Access-Control-Max-Age", "3600")
+				w.Header().Set("Access-Control-Allow-Credentials", "true")
+			}
+
+			// Handle preflight OPTIONS requests
+			if r.Method == "OPTIONS" {
+				w.WriteHeader(http.StatusOK)
+				return
+			}
+
+			next.ServeHTTP(w, r)
+		})
+	}
+}
+
+func setupRouter(jwtManager *auth.JWTManager, taskHandler *handlers.TaskHandler, stepHandler *handlers.StepHandler, wsServer *websocket.Server, config *Config) *mux.Router {
 	router := mux.NewRouter()
+
+	// Apply CORS middleware to all routes
+	router.Use(corsMiddleware(config))
 
 	// API versioning
 	api := router.PathPrefix("/api/v1").Subrouter()
@@ -144,7 +188,9 @@ func setupRouter(jwtManager *auth.JWTManager, taskHandler *handlers.TaskHandler,
 	// Public routes (no authentication required)
 	public := api.PathPrefix("/public").Subrouter()
 	public.HandleFunc("/health", healthHandler).Methods("GET")
+	public.HandleFunc("/health", corsPreflightHandler).Methods("OPTIONS")
 	public.HandleFunc("/login", makeLoginHandler(jwtManager)).Methods("POST")
+	public.HandleFunc("/login", corsPreflightHandler).Methods("OPTIONS")
 
 	// Protected routes (authentication required)
 	protected := api.PathPrefix("/projects").Subrouter()
@@ -153,26 +199,42 @@ func setupRouter(jwtManager *auth.JWTManager, taskHandler *handlers.TaskHandler,
 	// Task management routes
 	protected.HandleFunc("/{project_id}/tasks", taskHandler.ListTasks).Methods("GET")
 	protected.HandleFunc("/{project_id}/tasks", taskHandler.CreateTask).Methods("POST")
+	protected.HandleFunc("/{project_id}/tasks", corsPreflightHandler).Methods("OPTIONS")
 	protected.HandleFunc("/{project_id}/tasks/next", taskHandler.GetNextTask).Methods("GET")
+	protected.HandleFunc("/{project_id}/tasks/next", corsPreflightHandler).Methods("OPTIONS")
 	protected.HandleFunc("/{project_id}/tasks/{task_id}", taskHandler.GetTask).Methods("GET")
 	protected.HandleFunc("/{project_id}/tasks/{task_id}", taskHandler.UpdateTask).Methods("PUT")
-	protected.HandleFunc("/{project_id}/tasks/{task_id}/status", taskHandler.UpdateTaskStatus).Methods("PUT")
 	protected.HandleFunc("/{project_id}/tasks/{task_id}", taskHandler.DeleteTask).Methods("DELETE")
+	protected.HandleFunc("/{project_id}/tasks/{task_id}", corsPreflightHandler).Methods("OPTIONS")
+	protected.HandleFunc("/{project_id}/tasks/{task_id}/status", taskHandler.UpdateTaskStatus).Methods("PUT")
+	protected.HandleFunc("/{project_id}/tasks/{task_id}/status", corsPreflightHandler).Methods("OPTIONS")
 
 	// Task logs and reviews routes
 	protected.HandleFunc("/{project_id}/tasks/{task_id}/logs", taskHandler.GetTaskLogs).Methods("GET")
 	protected.HandleFunc("/{project_id}/tasks/{task_id}/logs", taskHandler.CreateTaskLog).Methods("POST")
+	protected.HandleFunc("/{project_id}/tasks/{task_id}/logs", corsPreflightHandler).Methods("OPTIONS")
 	protected.HandleFunc("/{project_id}/tasks/{task_id}/reviews", taskHandler.GetTaskReviews).Methods("GET")
 	protected.HandleFunc("/{project_id}/tasks/{task_id}/reviews", taskHandler.CreateTaskReview).Methods("POST")
+	protected.HandleFunc("/{project_id}/tasks/{task_id}/reviews", corsPreflightHandler).Methods("OPTIONS")
 
 	// Step history routes
 	protected.HandleFunc("/{project_id}/steps", stepHandler.ListSteps).Methods("GET")
+	protected.HandleFunc("/{project_id}/steps", corsPreflightHandler).Methods("OPTIONS")
 	protected.HandleFunc("/{project_id}/steps/{step_id}", stepHandler.GetStep).Methods("GET")
+	protected.HandleFunc("/{project_id}/steps/{step_id}", corsPreflightHandler).Methods("OPTIONS")
 
 	// WebSocket route for real-time updates
 	protected.HandleFunc("/{project_id}/ws", wsServer.HandleWebSocket)
 
 	return router
+}
+
+func corsPreflightHandler(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Access-Control-Allow-Origin", r.Header.Get("Origin"))
+	w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
+	w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
+	w.Header().Set("Access-Control-Max-Age", "3600")
+	w.WriteHeader(http.StatusOK)
 }
 
 func healthHandler(w http.ResponseWriter, r *http.Request) {

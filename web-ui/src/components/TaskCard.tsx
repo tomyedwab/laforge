@@ -11,27 +11,27 @@ interface TaskCardProps {
 }
 
 const statusColors = {
-  'todo': '#95a5a6',
+  todo: '#95a5a6',
   'in-progress': '#f39c12',
   'in-review': '#9b59b6',
-  'completed': '#27ae60',
+  completed: '#27ae60',
 };
 
 const typeColors = {
-  'EPIC': '#e74c3c',
-  'FEAT': '#3498db',
-  'BUG': '#e67e22',
-  'PLAN': '#9b59b6',
-  'DOC': '#34495e',
-  'ARCH': '#16a085',
-  'DESIGN': '#d35400',
-  'TEST': '#27ae60',
+  EPIC: '#e74c3c',
+  FEAT: '#3498db',
+  BUG: '#e67e22',
+  PLAN: '#9b59b6',
+  DOC: '#34495e',
+  ARCH: '#16a085',
+  DESIGN: '#d35400',
+  TEST: '#27ae60',
 };
 
-export function TaskCard({ 
-  task, 
-  onClick, 
-  onStatusChange, 
+export function TaskCard({
+  task,
+  onClick,
+  onStatusChange,
   showActions = true,
   isSelected = false,
   depth = 0,
@@ -85,7 +85,7 @@ export function TaskCard({
     const now = new Date();
     const diffTime = Math.abs(now.getTime() - date.getTime());
     const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-    
+
     if (diffDays === 0) {
       return 'Today';
     } else if (diffDays === 1) {
@@ -101,7 +101,10 @@ export function TaskCard({
   };
 
   const hasChildren = task.children && task.children.length > 0;
-  const isOverdue = task.status !== 'completed' && task.completed_at && new Date(task.completed_at) < new Date();
+  const isOverdue =
+    task.status !== 'completed' &&
+    task.completed_at &&
+    new Date(task.completed_at) < new Date();
 
   const handleKeyDown = (e: KeyboardEvent) => {
     if (e.key === 'Enter' || e.key === ' ') {
@@ -137,14 +140,18 @@ export function TaskCard({
             </span>
           )}
         </div>
-        
+
         <div class="task-status-section">
           {showActions && onStatusChange ? (
             <select
               class="status-select"
               value={task.status}
-              onChange={(e) => handleStatusChange((e.target as HTMLSelectElement).value as TaskStatus)}
-              onClick={(e) => e.stopPropagation()}
+              onChange={e =>
+                handleStatusChange(
+                  (e.target as HTMLSelectElement).value as TaskStatus
+                )
+              }
+              onClick={e => e.stopPropagation()}
               style={{ backgroundColor: statusColors[task.status] }}
             >
               <option value="todo">Todo</option>
@@ -153,7 +160,7 @@ export function TaskCard({
               <option value="completed">Completed</option>
             </select>
           ) : (
-            <span 
+            <span
               class="task-status-badge"
               style={{ backgroundColor: statusColors[task.status] }}
             >
@@ -163,28 +170,38 @@ export function TaskCard({
         </div>
       </div>
 
-      {task.description && (
-        <p class="task-description">{task.description}</p>
-      )}
+      {task.description && <p class="task-description">{task.description}</p>}
 
       <div class="task-meta">
         <div class="task-meta-left">
-          <span class="task-type-badge" style={{ color: typeColors[task.type] }}>
+          <span
+            class="task-type-badge"
+            style={{ color: typeColors[task.type] }}
+          >
             {task.type}
           </span>
           {hasChildren && (
-            <span class="child-count" title={`${task.children!.length} subtask${task.children!.length !== 1 ? 's' : ''}`}>
+            <span
+              class="child-count"
+              title={`${task.children!.length} subtask${task.children!.length !== 1 ? 's' : ''}`}
+            >
               📂 {task.children!.length}
             </span>
           )}
         </div>
-        
+
         <div class="task-meta-right">
-          <span class="task-date" title={new Date(task.created_at).toLocaleString()}>
+          <span
+            class="task-date"
+            title={new Date(task.created_at).toLocaleString()}
+          >
             Created {formatDate(task.created_at)}
           </span>
           {task.updated_at !== task.created_at && (
-            <span class="task-date" title={new Date(task.updated_at).toLocaleString()}>
+            <span
+              class="task-date"
+              title={new Date(task.updated_at).toLocaleString()}
+            >
               • Updated {formatDate(task.updated_at)}
             </span>
           )}
@@ -192,7 +209,7 @@ export function TaskCard({
       </div>
 
       {showActions && (
-        <div class="task-actions" onClick={(e) => e.stopPropagation()}>
+        <div class="task-actions" onClick={e => e.stopPropagation()}>
           <button
             class="task-action-button view-button"
             onClick={() => onClick?.(task)}
@@ -200,14 +217,11 @@ export function TaskCard({
           >
             👁️ View
           </button>
-          <button
-            class="task-action-button edit-button"
-            title="Edit task"
-          >
+          <button class="task-action-button edit-button" title="Edit task">
             ✏️ Edit
           </button>
         </div>
       )}
-    </div>
+    </article>
   );
 }

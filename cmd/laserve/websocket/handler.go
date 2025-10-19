@@ -3,27 +3,36 @@ package websocket
 import (
 	"encoding/json"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 
 	"github.com/gorilla/mux"
 	"github.com/gorilla/websocket"
+	"github.com/tomyedwab/laforge/cmd/laserve/auth"
 )
 
-var upgrader = websocket.Upgrader{
-	CheckOrigin: func(r *http.Request) bool {
-		// Allow connections from any origin for now
-		// In production, this should be more restrictive
-		return true
-	},
-	ReadBufferSize:  1024,
-	WriteBufferSize: 1024,
+func createUpgrader() websocket.Upgrader {
+	return websocket.Upgrader{
+		CheckOrigin: func(r *http.Request) bool {
+			// Allow connections from localhost on any port
+			origin := r.Header.Get("Origin")
+			if origin == "" {
+				// WebSocket connections from same origin don't have Origin header
+				return true
+			}
+			// Allow localhost connections for development
+			if strings.Contains(origin, "localhost") || strings.Contains(origin, "127.0.0.1") {
+				return true
+			}
+			return false
+		},
+		ReadBufferSize:  1024,
+		WriteBufferSize: 1024,
+	}
 }
 
-// Context key for user ID
-type contextKey string
-
-const userContextKey contextKey = "user_id"
+var upgrader = createUpgrader()
 
 // Client represents a WebSocket client connection
 type Client struct {
@@ -111,7 +120,7 @@ func (s *Server) Run() {
 func (s *Server) HandleWebSocket(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	// Extract user ID from context (set by auth middleware)
-	userID, ok := ctx.Value(userContextKey).(string)
+	userID, ok := ctx.Value(auth.UserContextKey).(string)
 	if !ok {
 		http.Error(w, "User ID not found in context", http.StatusInternalServerError)
 		return

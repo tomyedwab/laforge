@@ -1,6 +1,6 @@
 import { useEffect, useState, useRef } from 'preact/hooks';
 import { websocketService } from '../services/websocket';
-import { Task, TaskReview, Step } from '../types';
+import type { Task, TaskReview, Step } from '../types';
 
 interface UseWebSocketOptions {
   onTaskUpdate?: (task: Task) => void;
@@ -24,7 +24,9 @@ export function useWebSocket({
       return;
     }
 
-    const token = localStorage.getItem(import.meta.env.VITE_AUTH_TOKEN_KEY || 'laforge_auth_token');
+    const token = localStorage.getItem(
+      import.meta.env.VITE_AUTH_TOKEN_KEY || 'laforge_auth_token'
+    );
 
     // Set up connection status monitoring
     const handleConnect = () => {
@@ -43,23 +45,32 @@ export function useWebSocket({
 
     // Set up message handlers
     if (onTaskUpdate) {
-      const unsubscribe = websocketService.on('task_updated', (data: { task: Task }) => {
-        onTaskUpdate(data.task);
-      });
+      const unsubscribe = websocketService.on(
+        'task_updated',
+        (data: { task: Task }) => {
+          onTaskUpdate(data.task);
+        }
+      );
       unsubscribeRef.current.push(unsubscribe);
     }
 
     if (onReviewUpdate) {
-      const unsubscribe = websocketService.on('review_updated', (data: { review: TaskReview }) => {
-        onReviewUpdate(data.review);
-      });
+      const unsubscribe = websocketService.on(
+        'review_updated',
+        (data: { review: TaskReview }) => {
+          onReviewUpdate(data.review);
+        }
+      );
       unsubscribeRef.current.push(unsubscribe);
     }
 
     if (onStepUpdate) {
-      const unsubscribe = websocketService.on('step_completed', (data: { step: Step }) => {
-        onStepUpdate(data.step);
-      });
+      const unsubscribe = websocketService.on(
+        'step_completed',
+        (data: { step: Step }) => {
+          onStepUpdate(data.step);
+        }
+      );
       unsubscribeRef.current.push(unsubscribe);
     }
 

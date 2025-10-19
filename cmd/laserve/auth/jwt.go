@@ -3,6 +3,7 @@ package auth
 import (
 	"context"
 	"fmt"
+	"log"
 	"net/http"
 	"strings"
 	"time"
@@ -63,38 +64,63 @@ func (j *JWTManager) ValidateToken(tokenString string) (*Claims, error) {
 	return claims, nil
 }
 
-type contextKey string
+type ContextKey string
 
-const userContextKey contextKey = "user_id"
+const UserContextKey ContextKey = "user_id"
 
 func (j *JWTManager) AuthMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Allow CORS preflight requests to pass through without authentication
+		if r.Method == "OPTIONS" {
+			next.ServeHTTP(w, r)
+			return
+		}
+
+		var tokenString string
+
+		// Try to get token from Authorization header first (preferred for regular requests)
 		authHeader := r.Header.Get("Authorization")
-		if authHeader == "" {
-			http.Error(w, `{"error":{"code":"UNAUTHORIZED","message":"Authorization header required"}}`, http.StatusUnauthorized)
-			return
+		if authHeader != "" {
+			bearerToken := strings.Split(authHeader, " ")
+			if len(bearerToken) != 2 || bearerToken[0] != "Bearer" {
+				log.Printf("AUTH: Invalid header format: %v", bearerToken)
+				http.Error(w, `{"error":{"code":"UNAUTHORIZED","message":"Invalid authorization header format"}}`, http.StatusUnauthorized)
+				return
+			}
+			tokenString = bearerToken[1]
+		} else {
+			// Fallback to query parameter (for WebSocket connections)
+			tokenString = r.URL.Query().Get("token")
+			if tokenString == "" {
+				log.Printf("AUTH: Missing Authorization header and token query param for %s %s", r.Method, r.RequestURI)
+				http.Error(w, `{"error":{"code":"UNAUTHORIZED","message":"Authorization header or token query parameter required"}}`, http.StatusUnauthorized)
+				return
+			}
 		}
 
-		bearerToken := strings.Split(authHeader, " ")
-		if len(bearerToken) != 2 || bearerToken[0] != "Bearer" {
-			http.Error(w, `{"error":{"code":"UNAUTHORIZED","message":"Invalid authorization header format"}}`, http.StatusUnauthorized)
-			return
-		}
-
-		tokenString := bearerToken[1]
+		log.Printf("AUTH: Validating token starting with %s...", tokenString[:min(10, len(tokenString))])
 		claims, err := j.ValidateToken(tokenString)
 		if err != nil {
+			log.Printf("AUTH: Token validation failed: %v", err)
 			http.Error(w, `{"error":{"code":"UNAUTHORIZED","message":"Invalid or expired token"}}`, http.StatusUnauthorized)
 			return
 		}
 
+		log.Printf("AUTH: Successfully validated token for user: %s", claims.UserID)
 		// Add user ID to context
-		ctx := context.WithValue(r.Context(), userContextKey, claims.UserID)
+		ctx := context.WithValue(r.Context(), UserContextKey, claims.UserID)
 		next.ServeHTTP(w, r.WithContext(ctx))
 	})
 }
 
+func min(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
+}
+
 func GetUserIDFromContext(ctx context.Context) (string, bool) {
-	userID, ok := ctx.Value(userContextKey).(string)
+	userID, ok := ctx.Value(UserContextKey).(string)
 	return userID, ok
 }
