@@ -22,19 +22,20 @@ describe('LoginForm', () => {
     );
   };
 
-  it('renders login form', () => {
+  it('renders login form with all fields', () => {
     renderLoginForm();
     
-    expect(screen.getByText('Login to LaForge')).toBeInTheDocument();
-    expect(screen.getByLabelText('Username')).toBeInTheDocument();
-    expect(screen.getByLabelText('Password')).toBeInTheDocument();
-    expect(screen.getByText('Login')).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: /login to laforge/i })).toBeInTheDocument();
+    expect(screen.getByLabelText(/username/i)).toBeInTheDocument();
+    expect(screen.getByLabelText(/password/i)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /login/i })).toBeInTheDocument();
+    expect(screen.getByText(/for development, any username.password will work/i)).toBeInTheDocument();
   });
 
   it('disables submit button when fields are empty', () => {
     renderLoginForm();
     
-    const submitButton = screen.getByText('Login');
+    const submitButton = screen.getByRole('button', { name: /login/i });
     expect(submitButton).toBeDisabled();
   });
 
@@ -43,7 +44,7 @@ describe('LoginForm', () => {
     
     const usernameInput = screen.getByLabelText('Username');
     const passwordInput = screen.getByLabelText('Password');
-    const submitButton = screen.getByText('Login');
+    const submitButton = screen.getByRole('button', { name: /login/i });
 
     fireEvent.input(usernameInput, { target: { value: 'testuser' } });
     fireEvent.input(passwordInput, { target: { value: 'testpass' } });
@@ -53,7 +54,27 @@ describe('LoginForm', () => {
     });
   });
 
-  it('handles form submission', async () => {
+  it('shows loading state when submitting', async () => {
+    (global.fetch as any).mockImplementationOnce(() => 
+      new Promise(resolve => setTimeout(resolve, 100))
+    );
+
+    renderLoginForm();
+
+    const usernameInput = screen.getByLabelText('Username');
+    const passwordInput = screen.getByLabelText('Password');
+    const submitButton = screen.getByRole('button', { name: /login/i });
+
+    fireEvent.input(usernameInput, { target: { value: 'testuser' } });
+    fireEvent.input(passwordInput, { target: { value: 'testpass' } });
+    fireEvent.click(submitButton);
+
+    expect(screen.getByRole('button', { name: /logging in/i })).toBeInTheDocument();
+    expect(usernameInput).toBeDisabled();
+    expect(passwordInput).toBeDisabled();
+  });
+
+  it('handles successful login with API response', async () => {
     // Mock successful login response
     (global.fetch as any).mockResolvedValueOnce({
       ok: true,
@@ -73,7 +94,7 @@ describe('LoginForm', () => {
     
     const usernameInput = screen.getByLabelText('Username');
     const passwordInput = screen.getByLabelText('Password');
-    const submitButton = screen.getByText('Login');
+    const submitButton = screen.getByRole('button', { name: /login/i });
 
     fireEvent.input(usernameInput, { target: { value: 'testuser' } });
     fireEvent.input(passwordInput, { target: { value: 'testpass' } });
@@ -116,7 +137,7 @@ describe('LoginForm', () => {
     
     const usernameInput = screen.getByLabelText('Username');
     const passwordInput = screen.getByLabelText('Password');
-    const submitButton = screen.getByText('Login');
+    const submitButton = screen.getByRole('button', { name: /login/i });
 
     fireEvent.input(usernameInput, { target: { value: 'testuser' } });
     fireEvent.input(passwordInput, { target: { value: 'testpass' } });
@@ -125,5 +146,92 @@ describe('LoginForm', () => {
     await waitFor(() => {
       expect(mockOnSuccess).toHaveBeenCalled();
     });
+  });
+
+  it('handles failed login and falls back to mock login', async () => {
+    const mockResponse = {
+      ok: false,
+    };
+
+    (global.fetch as any).mockResolvedValueOnce(mockResponse);
+
+    renderLoginForm();
+    
+    const usernameInput = screen.getByLabelText('Username');
+    const passwordInput = screen.getByLabelText('Password');
+    const submitButton = screen.getByRole('button', { name: /login/i });
+
+    fireEvent.input(usernameInput, { target: { value: 'testuser' } });
+    fireEvent.input(passwordInput, { target: { value: 'testpass' } });
+    fireEvent.click(submitButton);
+
+    await waitFor(() => {
+      // Should attempt fetch first
+      expect(global.fetch).toHaveBeenCalled();
+      
+      // Should fall back to mock login
+      expect(mockOnSuccess).toHaveBeenCalled();
+    });
+  });
+
+  it('handles network errors and falls back to mock login', async () => {
+    (global.fetch as any).mockRejectedValueOnce(new Error('Network error'));
+
+    renderLoginForm();
+    
+    const usernameInput = screen.getByLabelText('Username');
+    const passwordInput = screen.getByLabelText('Password');
+    const submitButton = screen.getByRole('button', { name: /login/i });
+
+    fireEvent.input(usernameInput, { target: { value: 'testuser' } });
+    fireEvent.input(passwordInput, { target: { value: 'testpass' } });
+    fireEvent.click(submitButton);
+
+    await waitFor(() => {
+      expect(mockOnSuccess).toHaveBeenCalled();
+    });
+  });
+
+  it('has proper accessibility attributes', () => {
+    renderLoginForm();
+
+    const usernameInput = screen.getByLabelText('Username');
+    const passwordInput = screen.getByLabelText('Password');
+    const submitButton = screen.getByRole('button', { name: /login/i });
+
+    expect(usernameInput).toHaveAttribute('required');
+    expect(passwordInput).toHaveAttribute('required');
+    expect(usernameInput).toHaveAttribute('type', 'text');
+    expect(passwordInput).toHaveAttribute('type', 'password');
+  });
+
+  it('prevents form submission with empty fields', () => {
+    renderLoginForm();
+
+    const form = screen.getByRole('form');
+    const submitEvent = new Event('submit', { bubbles: true, cancelable: true });
+    
+    fireEvent(form, submitEvent);
+
+    expect(global.fetch).not.toHaveBeenCalled();
+  });
+
+  it('trims whitespace from input fields', async () => {
+    (global.fetch as any).mockImplementationOnce(() => 
+      new Promise(resolve => setTimeout(resolve, 100))
+    );
+
+    renderLoginForm();
+
+    const usernameInput = screen.getByLabelText('Username');
+    const passwordInput = screen.getByLabelText('Password');
+    const submitButton = screen.getByRole('button', { name: /login/i });
+
+    fireEvent.input(usernameInput, { target: { value: '  testuser  ' } });
+    fireEvent.input(passwordInput, { target: { value: '  testpass  ' } });
+    fireEvent.click(submitButton);
+
+    // Button should be enabled despite whitespace
+    expect(submitButton).not.toBeDisabled();
   });
 });

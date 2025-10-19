@@ -9,6 +9,7 @@ import { TaskCard } from './TaskCard';
 import { TaskDetail } from './TaskDetail';
 import { TaskForm } from './TaskForm';
 import { Pagination } from './Pagination';
+import { LoadingSpinner, CardSkeleton } from './LoadingStates';
 
 interface TaskDashboardProps {
   onTaskClick?: (task: Task) => void;
@@ -173,8 +174,19 @@ export function TaskDashboard({ onTaskClick }: TaskDashboardProps) {
 
   if (isLoading) {
     return (
-      <div class="loading-container">
-        <div class="loading-spinner">Loading tasks...</div>
+      <div class="task-dashboard">
+        <div class="dashboard-header">
+          <h2>Task Dashboard</h2>
+          <div class="dashboard-actions">
+            <div class={`connection-status ${isConnected ? 'connected' : 'disconnected'}`}>
+              <span class="status-indicator"></span>
+              {isConnected ? 'Connected' : 'Disconnected'}
+              {connectionError && <span class="error-tooltip">{connectionError}</span>}
+            </div>
+          </div>
+        </div>
+        
+        <CardSkeleton count={5} />
       </div>
     );
   }

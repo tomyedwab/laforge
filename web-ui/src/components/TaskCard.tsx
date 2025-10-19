@@ -103,11 +103,22 @@ export function TaskCard({
   const hasChildren = task.children && task.children.length > 0;
   const isOverdue = task.status !== 'completed' && task.completed_at && new Date(task.completed_at) < new Date();
 
+  const handleKeyDown = (e: KeyboardEvent) => {
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault();
+      onClick?.(task);
+    }
+  };
+
   return (
-    <div
+    <article
       class={`task-card ${isSelected ? 'selected' : ''} ${depth > 0 ? 'child-task' : ''}`}
       style={{ marginLeft: `${depth * 24}px` }}
       onClick={() => onClick?.(task)}
+      onKeyDown={handleKeyDown}
+      role="article"
+      tabIndex={0}
+      aria-label={`Task: ${task.title}, Type: ${task.type}, Status: ${task.status}`}
     >
       <div class="task-card-header">
         <div class="task-title-section">
