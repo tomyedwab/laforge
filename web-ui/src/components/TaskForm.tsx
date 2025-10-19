@@ -12,6 +12,7 @@ interface TaskFormProps {
 interface FormData {
   title: string;
   description: string;
+  acceptance_criteria: string;
   type: TaskType;
   status: TaskStatus;
   parent_id: number | null;
@@ -22,14 +23,22 @@ interface FormData {
 interface FormErrors {
   title?: string;
   description?: string;
+  acceptance_criteria?: string;
   type?: string;
   status?: string;
 }
 
 export function TaskForm({ task, onSave, onCancel }: TaskFormProps) {
+  // Extract title without type prefix for existing tasks
+  const extractTitleWithoutType = (title: string, type: string): string => {
+    const typePrefix = `[${type}] `;
+    return title.startsWith(typePrefix) ? title.slice(typePrefix.length) : title;
+  };
+
   const [formData, setFormData] = useState<FormData>({
-    title: task?.title || '',
+    title: task ? extractTitleWithoutType(task.title, task.type) : '',
     description: task?.description || '',
+    acceptance_criteria: task?.acceptance_criteria || '',
     type: task?.type || 'FEAT',
     status: task?.status || 'todo',
     parent_id: task?.parent_id || null,
@@ -83,6 +92,10 @@ export function TaskForm({ task, onSave, onCancel }: TaskFormProps) {
       newErrors.description = 'Description must be less than 2000 characters';
     }
 
+    if (formData.acceptance_criteria && formData.acceptance_criteria.length > 2000) {
+      newErrors.acceptance_criteria = 'Acceptance criteria must be less than 2000 characters';
+    }
+
     if (!formData.type) {
       newErrors.type = 'Type is required';
     }
@@ -107,13 +120,22 @@ export function TaskForm({ task, onSave, onCancel }: TaskFormProps) {
     try {
       let savedTask: Task;
 
+      // Prepare the data to send to the backend
+      const taskData = {
+        ...formData,
+        // Prepend task type to title for new tasks or if title doesn't already have the type prefix
+        title: formData.title.startsWith(`[${formData.type}] `) 
+          ? formData.title 
+          : `[${formData.type}] ${formData.title}`
+      };
+
       if (task) {
         // Update existing task
-        const response = await apiService.updateTask(task.id, formData);
+        const response = await apiService.updateTask(task.id, taskData);
         savedTask = response.task;
       } else {
         // Create new task
-        const response = await apiService.createTask(formData);
+        const response = await apiService.createTask(taskData);
         savedTask = response.task;
       }
 
@@ -179,6 +201,21 @@ export function TaskForm({ task, onSave, onCancel }: TaskFormProps) {
             {errors.description && <span class="error-message">{errors.description}</span>}
             <div class="character-count">
               {formData.description.length}/2000
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label htmlFor="acceptance_criteria">Acceptance Criteria</label>
+            <textarea
+              id="acceptance_criteria"
+              value={formData.acceptance_criteria}
+              onChange={(e) => handleInputChange('acceptance_criteria', (e.target as HTMLTextAreaElement).value)}
+              placeholder="Define what needs to be true for this task to be considered complete..."
+              rows={4}
+              disabled={isSubmitting}
+            />
+            <div class="character-count">
+              {formData.acceptance_criteria.length}/2000
             </div>
           </div>
 

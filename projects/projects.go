@@ -316,6 +316,32 @@ func OpenProjectTaskDatabase(projectID string) (*sql.DB, error) {
 	return db, nil
 }
 
+// ListProjects returns a list of all available projects
+func ListProjects(projectsDir string) ([]*Project, error) {
+	entries, err := os.ReadDir(projectsDir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return []*Project{}, nil // Return empty list if projects directory doesn't exist
+		}
+		return nil, fmt.Errorf("failed to read projects directory: %w", err)
+	}
+
+	var projectList []*Project
+	for _, entry := range entries {
+		if entry.IsDir() {
+			projectID := entry.Name()
+			project, err := LoadProject(projectID)
+			if err != nil {
+				// Skip projects that can't be loaded (maybe corrupted or incomplete)
+				continue
+			}
+			projectList = append(projectList, project)
+		}
+	}
+
+	return projectList, nil
+}
+
 // OpenProjectStepDatabase opens the step database for the given project
 func OpenProjectStepDatabase(projectID string) (*steps.StepDatabase, error) {
 	dbPath, err := GetProjectStepDatabase(projectID)

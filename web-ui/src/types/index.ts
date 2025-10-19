@@ -3,6 +3,7 @@ export interface Task {
   id: number;
   title: string;
   description: string;
+  acceptance_criteria: string;
   type: TaskType;
   status: TaskStatus;
   parent_id: number | null;

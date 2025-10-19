@@ -3,6 +3,7 @@ package handlers
 import (
 	"database/sql"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"strconv"
 	"strings"
@@ -10,16 +11,25 @@ import (
 
 	"github.com/gorilla/mux"
 	"github.com/tomyedwab/laforge/cmd/laserve/websocket"
+	"github.com/tomyedwab/laforge/projects"
 	"github.com/tomyedwab/laforge/tasks"
 )
 
 type TaskHandler struct {
-	db       *sql.DB
 	wsServer *websocket.Server
 }
 
-func NewTaskHandler(db *sql.DB, wsServer *websocket.Server) *TaskHandler {
-	return &TaskHandler{db: db, wsServer: wsServer}
+func NewTaskHandler(wsServer *websocket.Server) *TaskHandler {
+	return &TaskHandler{wsServer: wsServer}
+}
+
+// getProjectDB opens the task database for the specified project
+func (h *TaskHandler) getProjectDB(projectID string) (*sql.DB, error) {
+	db, err := projects.OpenProjectTaskDatabase(projectID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to open project task database: %w", err)
+	}
+	return db, nil
 }
 
 // TaskResponse represents the API response format for tasks
@@ -27,6 +37,7 @@ type TaskResponse struct {
 	ID                   int        `json:"id"`
 	Title                string     `json:"title"`
 	Description          string     `json:"description"`
+	AcceptanceCriteria   string     `json:"acceptance_criteria"`
 	Type                 string     `json:"type"`
 	Status               string     `json:"status"`
 	ParentID             *int       `json:"parent_id"`
@@ -41,6 +52,7 @@ type TaskResponse struct {
 type CreateTaskRequest struct {
 	Title                string `json:"title"`
 	Description          string `json:"description"`
+	AcceptanceCriteria   string `json:"acceptance_criteria"`
 	Type                 string `json:"type"`
 	ParentID             *int   `json:"parent_id"`
 	UpstreamDependencyID *int   `json:"upstream_dependency_id"`
@@ -51,6 +63,7 @@ type CreateTaskRequest struct {
 type UpdateTaskRequest struct {
 	Title                string `json:"title"`
 	Description          string `json:"description"`
+	AcceptanceCriteria   string `json:"acceptance_criteria"`
 	Type                 string `json:"type"`
 	ParentID             *int   `json:"parent_id"`
 	UpstreamDependencyID *int   `json:"upstream_dependency_id"`
@@ -77,6 +90,7 @@ func convertTask(task *tasks.Task) *TaskResponse {
 		ID:                   task.ID,
 		Title:                task.Title,
 		Description:          task.Description,
+		AcceptanceCriteria:   task.AcceptanceCriteria,
 		Type:                 taskType,
 		Status:               task.Status,
 		ParentID:             task.ParentID,
@@ -96,6 +110,18 @@ func convertTask(task *tasks.Task) *TaskResponse {
 
 // ListTasks handles GET /tasks
 func (h *TaskHandler) ListTasks(w http.ResponseWriter, r *http.Request) {
+	// Get project ID from URL
+	vars := mux.Vars(r)
+	projectID := vars["project_id"]
+
+	// Open project database
+	db, err := h.getProjectDB(projectID)
+	if err != nil {
+		http.Error(w, `{"error":{"code":"INTERNAL_ERROR","message":"Failed to open project database"}}`, http.StatusInternalServerError)
+		return
+	}
+	defer db.Close()
+
 	// Parse query parameters
 	status := r.URL.Query().Get("status")
 	taskType := r.URL.Query().Get("type")
@@ -124,7 +150,7 @@ func (h *TaskHandler) ListTasks(w http.ResponseWriter, r *http.Request) {
 	_ = includeReviews
 
 	// Get all tasks from database
-	dbTasks, err := tasks.ListTasks(h.db)
+	dbTasks, err := tasks.ListTasks(db)
 	if err != nil {
 		http.Error(w, `{"error":{"code":"INTERNAL_ERROR","message":"Failed to fetch tasks"}}`, http.StatusInternalServerError)
 		return
@@ -267,7 +293,7 @@ func (h *TaskHandler) CreateTask(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Create task in database
-	taskID, err := tasks.AddTaskWithDetails(h.db, req.Title, req.Description, "", req.UpstreamDependencyID, req.ReviewRequired, req.ParentID)
+	taskID, err := tasks.AddTaskWithDetails(h.db, req.Title, req.Description, req.AcceptanceCriteria, req.UpstreamDependencyID, req.ReviewRequired, req.ParentID)
 	if err != nil {
 		http.Error(w, `{"error":{"code":"INTERNAL_ERROR","message":"Failed to create task"}}`, http.StatusInternalServerError)
 		return
@@ -341,6 +367,7 @@ func (h *TaskHandler) UpdateTask(w http.ResponseWriter, r *http.Request) {
 	// Update task fields
 	existingTask.Title = req.Title
 	existingTask.Description = req.Description
+	existingTask.AcceptanceCriteria = req.AcceptanceCriteria
 	existingTask.ParentID = req.ParentID
 	existingTask.UpstreamDependencyID = req.UpstreamDependencyID
 	existingTask.ReviewRequired = req.ReviewRequired
