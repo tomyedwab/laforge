@@ -16,11 +16,12 @@ import (
 )
 
 type TaskHandler struct {
+	db       *sql.DB
 	wsServer *websocket.Server
 }
 
-func NewTaskHandler(wsServer *websocket.Server) *TaskHandler {
-	return &TaskHandler{wsServer: wsServer}
+func NewTaskHandler(db *sql.DB, wsServer *websocket.Server) *TaskHandler {
+	return &TaskHandler{db: db, wsServer: wsServer}
 }
 
 // getProjectDB opens the task database for the specified project
@@ -130,6 +131,12 @@ func (h *TaskHandler) ListTasks(w http.ResponseWriter, r *http.Request) {
 	includeLogs := r.URL.Query().Get("include_logs") == "true"
 	includeReviews := r.URL.Query().Get("include_reviews") == "true"
 
+	// Parse status filter (handle comma-separated values)
+	var statusFilter []string
+	if status != "" {
+		statusFilter = strings.Split(status, ",")
+	}
+
 	page := 1
 	if p := r.URL.Query().Get("page"); p != "" {
 		if parsed, err := strconv.Atoi(p); err == nil && parsed > 0 {
@@ -159,9 +166,18 @@ func (h *TaskHandler) ListTasks(w http.ResponseWriter, r *http.Request) {
 	// Filter tasks based on query parameters
 	var filteredTasks []tasks.Task
 	for _, task := range dbTasks {
-		// Filter by status
-		if status != "" && task.Status != status {
-			continue
+		// Filter by status (handle multiple statuses)
+		if len(statusFilter) > 0 {
+			statusMatch := false
+			for _, s := range statusFilter {
+				if task.Status == strings.TrimSpace(s) {
+					statusMatch = true
+					break
+				}
+			}
+			if !statusMatch {
+				continue
+			}
 		}
 
 		// Filter by type (extract from title)
@@ -292,15 +308,27 @@ func (h *TaskHandler) CreateTask(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Get project ID from URL
+	vars := mux.Vars(r)
+	projectID := vars["project_id"]
+
+	// Open project database
+	db, err := h.getProjectDB(projectID)
+	if err != nil {
+		http.Error(w, `{"error":{"code":"INTERNAL_ERROR","message":"Failed to open project database"}}`, http.StatusInternalServerError)
+		return
+	}
+	defer db.Close()
+
 	// Create task in database
-	taskID, err := tasks.AddTaskWithDetails(h.db, req.Title, req.Description, req.AcceptanceCriteria, req.UpstreamDependencyID, req.ReviewRequired, req.ParentID)
+	taskID, err := tasks.AddTaskWithDetails(db, req.Title, req.Description, req.AcceptanceCriteria, req.UpstreamDependencyID, req.ReviewRequired, req.ParentID)
 	if err != nil {
 		http.Error(w, `{"error":{"code":"INTERNAL_ERROR","message":"Failed to create task"}}`, http.StatusInternalServerError)
 		return
 	}
 
 	// Fetch the created task
-	createdTask, err := tasks.GetTask(h.db, taskID)
+	createdTask, err := tasks.GetTask(db, taskID)
 	if err != nil {
 		http.Error(w, `{"error":{"code":"INTERNAL_ERROR","message":"Failed to fetch created task"}}`, http.StatusInternalServerError)
 		return
