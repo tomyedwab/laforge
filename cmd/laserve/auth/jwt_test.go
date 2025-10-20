@@ -148,7 +148,7 @@ func TestAuthMiddleware(t *testing.T) {
 
 func TestGetUserIDFromContext(t *testing.T) {
 	userID := "test-user-123"
-	ctx := context.WithValue(context.Background(), userContextKey, userID)
+	ctx := context.WithValue(context.Background(), UserContextKey, userID)
 
 	retrievedUserID, ok := GetUserIDFromContext(ctx)
 	if !ok {
