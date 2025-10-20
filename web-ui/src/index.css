@@ -1,12 +1,74 @@
+/* LaForge Color Palette */
+:root {
+  /* Primary colors from specification */
+  --color-jasmine: #fee787;
+  --color-brown: #a25b23;
+  --color-bistre: #2a200b;
+  --color-lion: #bd9d68;
+  --color-black: #000000;
+  
+  /* Semantic color mappings */
+  --color-primary: var(--color-brown);
+  --color-primary-light: var(--color-lion);
+  --color-primary-dark: var(--color-bistre);
+  --color-accent: var(--color-jasmine);
+  --color-background: #fafafa;
+  --color-surface: #ffffff;
+  --color-text: var(--color-bistre);
+  --color-text-light: var(--color-lion);
+  --color-border: var(--color-lion);
+  --color-border-light: rgba(189, 157, 104, 0.3);
+  
+  /* Status colors */
+  --color-success: var(--color-lion);
+  --color-warning: var(--color-jasmine);
+  --color-error: var(--color-brown);
+  --color-info: var(--color-lion);
+  
+  /* UI element colors */
+  --color-header-bg: var(--color-bistre);
+  --color-header-text: var(--color-jasmine);
+  --color-button-primary: var(--color-brown);
+  --color-button-primary-hover: var(--color-lion);
+  --color-button-secondary: var(--color-lion);
+  --color-button-danger: var(--color-brown);
+  
+  /* Interactive states */
+  --color-focus: var(--color-jasmine);
+  --color-hover: var(--color-lion);
+  --color-active: var(--color-brown);
+  
+  /* Shadows and overlays */
+  --color-shadow: rgba(42, 32, 11, 0.1);
+  --color-overlay: rgba(42, 32, 11, 0.5);
+}
+
+/* Dark mode support */
+@media (prefers-color-scheme: dark) {
+  :root {
+    --color-background: #1a1a1a;
+    --color-surface: #2d2d2d;
+    --color-text: var(--color-jasmine);
+    --color-text-light: var(--color-lion);
+    --color-border: var(--color-brown);
+    --color-border-light: rgba(162, 91, 35, 0.3);
+    --color-shadow: rgba(254, 231, 135, 0.1);
+    --color-overlay: rgba(0, 0, 0, 0.7);
+  }
+}
+
 body {
   margin: 0;
   min-width: 320px;
   min-height: 100vh;
+  background-color: var(--color-background);
+  color: var(--color-text);
 }
 
 h1 {
   font-size: 3.2em;
   line-height: 1.1;
+  color: var(--color-text);
 }
 
 button {
@@ -16,27 +78,30 @@ button {
   font-size: 1em;
   font-weight: 500;
   font-family: inherit;
-  background-color: #1a1a1a;
+  background-color: var(--color-button-primary);
+  color: white;
   cursor: pointer;
-  transition: border-color 0.25s;
+  transition: all 0.25s ease;
 }
 button:hover {
-  border-color: #646cff;
+  border-color: var(--color-hover);
+  background-color: var(--color-button-primary-hover);
 }
 button:focus,
 button:focus-visible {
-  outline: 4px auto -webkit-focus-ring-color;
+  outline: 2px solid var(--color-focus);
+  outline-offset: 2px;
 }
 
 @media (prefers-color-scheme: light) {
   :root {
-    color: #213547;
-    background-color: #ffffff;
+    color: var(--color-text);
+    background-color: var(--color-background);
   }
   a:hover {
-    color: #747bff;
+    color: var(--color-hover);
   }
   button {
-    background-color: #f9f9f9;
+    background-color: var(--color-button-primary);
   }
 }

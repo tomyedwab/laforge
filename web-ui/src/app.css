@@ -11,8 +11,8 @@ body {
     sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-  background-color: #f5f5f5;
-  color: #333;
+  background-color: var(--color-background);
+  color: var(--color-text);
   margin: 0;
   padding: 0;
 }
@@ -40,9 +40,9 @@ body {
 
 /* Header */
 .app-header {
-  background-color: #2c3e50;
-  color: white;
-  box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+  background-color: var(--color-header-bg);
+  color: var(--color-header-text);
+  box-shadow: 0 2px 4px var(--color-shadow);
 }
 
 .header-content {
@@ -79,7 +79,7 @@ body {
 }
 
 .logout-button {
-  background-color: #e74c3c;
+  background-color: var(--color-button-danger);
   color: white;
   border: none;
   padding: 0.5rem 1rem;
@@ -90,7 +90,7 @@ body {
 }
 
 .logout-button:hover {
-  background-color: #c0392b;
+  background-color: var(--color-primary-light);
 }
 
 /* Login form */
@@ -98,15 +98,15 @@ body {
   max-width: 400px;
   margin: 2rem auto;
   padding: 2rem;
-  background: white;
+  background: var(--color-surface);
   border-radius: 8px;
-  box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+  box-shadow: 0 2px 10px var(--color-shadow);
 }
 
 .login-form h2 {
   margin-bottom: 1.5rem;
   text-align: center;
-  color: #2c3e50;
+  color: var(--color-text);
 }
 
 .form-group {
@@ -117,22 +117,24 @@ body {
   display: block;
   margin-bottom: 0.5rem;
   font-weight: 500;
-  color: #555;
+  color: var(--color-text-light);
 }
 
 .form-group input {
   width: 100%;
   padding: 0.75rem;
-  border: 1px solid #ddd;
+  border: 1px solid var(--color-border);
   border-radius: 4px;
   font-size: 1rem;
   transition: border-color 0.2s;
+  background-color: var(--color-surface);
+  color: var(--color-text);
 }
 
 .form-group input:focus {
   outline: none;
-  border-color: #3498db;
-  box-shadow: 0 0 0 2px rgba(52, 152, 219, 0.2);
+  border-color: var(--color-focus);
+  box-shadow: 0 0 0 2px var(--color-border-light);
 }
 
 .form-group input:disabled {
@@ -143,7 +145,7 @@ body {
 button[type="submit"] {
   width: 100%;
   padding: 0.75rem;
-  background-color: #3498db;
+  background-color: var(--color-button-primary);
   color: white;
   border: none;
   border-radius: 4px;
@@ -154,7 +156,7 @@ button[type="submit"] {
 }
 
 button[type="submit"]:hover:not(:disabled) {
-  background-color: #2980b9;
+  background-color: var(--color-button-primary-hover);
 }
 
 button[type="submit"]:disabled {
@@ -171,7 +173,7 @@ button[type="submit"]:disabled {
 
 /* Error messages */
 .error-message {
-  background-color: #e74c3c;
+  background-color: var(--color-error);
   color: white;
   padding: 0.75rem;
   border-radius: 4px;
@@ -187,7 +189,7 @@ button[type="submit"]:disabled {
 .error-container button {
   margin-top: 1rem;
   padding: 0.5rem 1rem;
-  background-color: #3498db;
+  background-color: var(--color-button-primary);
   color: white;
   border: none;
   border-radius: 4px;
@@ -204,15 +206,15 @@ button[type="submit"]:disabled {
 
 .loading-spinner {
   font-size: 1.1rem;
-  color: #7f8c8d;
+  color: var(--color-text-light);
 }
 
 /* Task dashboard */
 .task-dashboard {
-  background: white;
+  background: var(--color-surface);
   border-radius: 8px;
   padding: 2rem;
-  box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+  box-shadow: 0 2px 10px var(--color-shadow);
 }
 
 /* Task Tabs */
@@ -220,7 +222,7 @@ button[type="submit"]:disabled {
   display: flex;
   gap: 0.5rem;
   margin-bottom: 1.5rem;
-  border-bottom: 1px solid #e9ecef;
+  border-bottom: 1px solid var(--color-border-light);
 }
 
 .tab-button {
@@ -230,7 +232,7 @@ button[type="submit"]:disabled {
   cursor: pointer;
   font-size: 1rem;
   font-weight: 500;
-  color: #6c757d;
+  color: var(--color-text-light);
   border-bottom: 2px solid transparent;
   transition: all 0.2s;
   display: flex;
@@ -241,18 +243,18 @@ button[type="submit"]:disabled {
 }
 
 .tab-button:hover {
-  color: #495057;
-  background-color: #f8f9fa;
+  color: var(--color-text);
+  background-color: var(--color-border-light);
 }
 
 .tab-button.active {
-  color: #3498db;
-  border-bottom-color: #3498db;
-  background-color: white;
+  color: var(--color-primary);
+  border-bottom-color: var(--color-primary);
+  background-color: var(--color-surface);
 }
 
 .tab-count {
-  background-color: #6c757d;
+  background-color: var(--color-text-light);
   color: white;
   padding: 0.2rem 0.4rem;
   border-radius: 10px;
@@ -263,7 +265,7 @@ button[type="submit"]:disabled {
 }
 
 .tab-button.active .tab-count {
-  background-color: #3498db;
+  background-color: var(--color-primary);
 }
 
 .dashboard-header {
@@ -274,7 +276,7 @@ button[type="submit"]:disabled {
 }
 
 .dashboard-header h2 {
-  color: #2c3e50;
+  color: var(--color-text);
   margin: 0;
 }
 
@@ -295,13 +297,13 @@ button[type="submit"]:disabled {
 }
 
 .connection-status.connected {
-  background-color: #d4edda;
-  color: #155724;
+  background-color: var(--color-border-light);
+  color: var(--color-success);
 }
 
 .connection-status.disconnected {
-  background-color: #f8d7da;
-  color: #721c24;
+  background-color: var(--color-border-light);
+  color: var(--color-error);
 }
 
 .status-indicator {
@@ -338,7 +340,7 @@ button[type="submit"]:disabled {
 }
 
 .create-task-button {
-  background-color: #3498db;
+  background-color: var(--color-button-primary);
   color: white;
   border: none;
   padding: 0.5rem 1rem;
@@ -350,7 +352,7 @@ button[type="submit"]:disabled {
 }
 
 .create-task-button:hover {
-  background-color: #2980b9;
+  background-color: var(--color-button-primary-hover);
 }
 
 .empty-state {
@@ -367,11 +369,11 @@ button[type="submit"]:disabled {
 
 /* Task Filters */
 .task-filters {
-  background-color: #f8f9fa;
+  background-color: var(--color-border-light);
   border-radius: 6px;
   padding: 1.5rem;
   margin-bottom: 2rem;
-  border: 1px solid #e9ecef;
+  border: 1px solid var(--color-border);
 }
 
 .filter-row {
@@ -393,17 +395,18 @@ button[type="submit"]:disabled {
 
 .filter-group label {
   font-weight: 500;
-  color: #495057;
+  color: var(--color-text);
   font-size: 0.9rem;
 }
 
 .filter-group select,
 .filter-group input {
   padding: 0.5rem;
-  border: 1px solid #ced4da;
+  border: 1px solid var(--color-border);
   border-radius: 4px;
   font-size: 0.9rem;
-  background-color: white;
+  background-color: var(--color-surface);
+  color: var(--color-text);
 }
 
 .search-group {
@@ -452,27 +455,27 @@ button[type="submit"]:disabled {
 
 /* Enhanced Task Card */
 .task-card {
-  border: 1px solid #e1e8ed;
+  border: 1px solid var(--color-border);
   border-radius: 6px;
   padding: 1.5rem;
-  background: white;
+  background: var(--color-surface);
   transition: all 0.2s ease;
   cursor: pointer;
 }
 
 .task-card:hover {
-  box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+  box-shadow: 0 4px 12px var(--color-shadow);
   transform: translateY(-1px);
 }
 
 .task-card.selected {
-  border-color: #3498db;
-  box-shadow: 0 0 0 2px rgba(52, 152, 219, 0.2);
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 2px var(--color-border-light);
 }
 
 .task-card.child-task {
-  background-color: #f8f9fa;
-  border-left: 3px solid #3498db;
+  background-color: var(--color-border-light);
+  border-left: 3px solid var(--color-primary);
 }
 
 .task-card-header {
@@ -496,7 +499,7 @@ button[type="submit"]:disabled {
 
 .task-title {
   margin: 0;
-  color: #2c3e50;
+  color: var(--color-text);
   font-size: 1.1rem;
   font-weight: 600;
   flex: 1;
@@ -539,7 +542,7 @@ button[type="submit"]:disabled {
 }
 
 .task-description {
-  color: #555;
+  color: var(--color-text-light);
   margin-bottom: 1rem;
   line-height: 1.5;
   font-size: 0.95rem;
@@ -550,7 +553,7 @@ button[type="submit"]:disabled {
   justify-content: space-between;
   align-items: center;
   font-size: 0.85rem;
-  color: #6c757d;
+  color: var(--color-text-light);
 }
 
 .task-meta-left {
@@ -734,7 +737,7 @@ button[type="submit"]:disabled {
   left: 0;
   right: 0;
   bottom: 0;
-  background-color: rgba(0, 0, 0, 0.5);
+  background-color: var(--color-overlay);
   display: flex;
   justify-content: center;
   align-items: center;
@@ -743,7 +746,7 @@ button[type="submit"]:disabled {
 }
 
 .task-detail-modal {
-  background: white;
+  background: var(--color-surface);
   border-radius: 8px;
   max-width: 800px;
   width: 100%;
@@ -751,7 +754,7 @@ button[type="submit"]:disabled {
   overflow: hidden;
   display: flex;
   flex-direction: column;
-  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
+  box-shadow: 0 10px 30px var(--color-shadow);
 }
 
 .task-detail-header {
@@ -759,13 +762,13 @@ button[type="submit"]:disabled {
   justify-content: space-between;
   align-items: flex-start;
   padding: 1.5rem;
-  border-bottom: 1px solid #e9ecef;
-  background-color: #f8f9fa;
+  border-bottom: 1px solid var(--color-border);
+  background-color: var(--color-border-light);
 }
 
 .task-detail-title-section h2 {
   margin: 0 0 0.5rem 0;
-  color: #2c3e50;
+  color: var(--color-text);
   font-size: 1.5rem;
 }
 
@@ -817,18 +820,18 @@ button[type="submit"]:disabled {
 
 .task-detail-tabs {
   display: flex;
-  border-bottom: 1px solid #e9ecef;
-  background-color: #f8f9fa;
+  border-bottom: 1px solid var(--color-border);
+  background-color: var(--color-border-light);
 }
 
-.tab-button {
+.task-detail-tabs .tab-button {
   padding: 1rem 1.5rem;
   border: none;
   background: none;
   cursor: pointer;
   font-size: 0.9rem;
   font-weight: 500;
-  color: #6c757d;
+  color: var(--color-text-light);
   border-bottom: 2px solid transparent;
   transition: all 0.2s;
   display: flex;
@@ -836,19 +839,19 @@ button[type="submit"]:disabled {
   gap: 0.5rem;
 }
 
-.tab-button:hover {
-  color: #495057;
-  background-color: #e9ecef;
+.task-detail-tabs .tab-button:hover {
+  color: var(--color-text);
+  background-color: var(--color-border);
 }
 
-.tab-button.active {
-  color: #3498db;
-  border-bottom-color: #3498db;
-  background-color: white;
+.task-detail-tabs .tab-button.active {
+  color: var(--color-primary);
+  border-bottom-color: var(--color-primary);
+  background-color: var(--color-surface);
 }
 
-.tab-count {
-  background-color: #6c757d;
+.task-detail-tabs .tab-count {
+  background-color: var(--color-text-light);
   color: white;
   padding: 0.2rem 0.4rem;
   border-radius: 10px;
@@ -858,8 +861,8 @@ button[type="submit"]:disabled {
   text-align: center;
 }
 
-.tab-button.active .tab-count {
-  background-color: #3498db;
+.task-detail-tabs .tab-button.active .tab-count {
+  background-color: var(--color-primary);
 }
 
 .task-detail-panel {
@@ -874,14 +877,14 @@ button[type="submit"]:disabled {
 
 .detail-section h3 {
   margin: 0 0 1rem 0;
-  color: #495057;
+  color: var(--color-text);
   font-size: 1.1rem;
-  border-bottom: 1px solid #e9ecef;
+  border-bottom: 1px solid var(--color-border);
   padding-bottom: 0.5rem;
 }
 
 .task-description {
-  color: #495057;
+  color: var(--color-text);
   line-height: 1.6;
   font-size: 1rem;
 }
@@ -900,26 +903,27 @@ button[type="submit"]:disabled {
 
 .property-item label {
   font-weight: 600;
-  color: #6c757d;
+  color: var(--color-text-light);
   font-size: 0.9rem;
 }
 
 .property-item span {
-  color: #495057;
+  color: var(--color-text);
   font-size: 0.95rem;
 }
 
 .status-controls select {
   padding: 0.5rem;
-  border: 1px solid #ced4da;
+  border: 1px solid var(--color-border);
   border-radius: 4px;
   font-size: 0.9rem;
-  background-color: white;
+  background-color: var(--color-surface);
+  color: var(--color-text);
 }
 
 .empty-message {
   text-align: center;
-  color: #6c757d;
+  color: var(--color-text-light);
   padding: 2rem;
   font-style: italic;
 }
@@ -936,21 +940,21 @@ button[type="submit"]:disabled {
 .review-item,
 .child-task-item {
   padding: 1rem;
-  border: 1px solid #e9ecef;
+  border: 1px solid var(--color-border);
   border-radius: 6px;
-  background-color: #f8f9fa;
+  background-color: var(--color-border-light);
 }
 
 .log-message,
 .review-message {
-  color: #495057;
+  color: var(--color-text);
   margin-bottom: 0.5rem;
   line-height: 1.5;
 }
 
 .log-date,
 .review-date {
-  color: #6c757d;
+  color: var(--color-text-light);
   font-size: 0.85rem;
 }
 
@@ -971,35 +975,35 @@ button[type="submit"]:disabled {
 }
 
 .review-status.status-pending {
-  background-color: #ffc107;
-  color: #856404;
+  background-color: var(--color-warning);
+  color: var(--color-bistre);
 }
 
 .review-status.status-approved {
-  background-color: #28a745;
+  background-color: var(--color-success);
 }
 
 .review-status.status-rejected {
-  background-color: #dc3545;
+  background-color: var(--color-error);
 }
 
 .review-attachment,
 .review-feedback {
   margin-top: 0.5rem;
   padding: 0.5rem;
-  background-color: white;
+  background-color: var(--color-surface);
   border-radius: 4px;
   font-size: 0.9rem;
-  color: #495057;
+  color: var(--color-text);
 }
 
 .review-feedback {
-  border-left: 3px solid #3498db;
+  border-left: 3px solid var(--color-primary);
 }
 
 .child-task-title {
   font-weight: 600;
-  color: #495057;
+  color: var(--color-text);
 }
 
 .child-task-status {
@@ -1012,7 +1016,7 @@ button[type="submit"]:disabled {
 }
 
 .child-task-type {
-  color: #6c757d;
+  color: var(--color-text-light);
   font-size: 0.85rem;
   margin-top: 0.25rem;
 }
@@ -1031,8 +1035,8 @@ button[type="submit"]:disabled {
 
 .nav-button {
   background: none;
-  border: 1px solid rgba(255, 255, 255, 0.3);
-  color: white;
+  border: 1px solid var(--color-jasmine);
+  color: var(--color-jasmine);
   padding: 0.5rem 1rem;
   border-radius: 4px;
   cursor: pointer;
@@ -1042,30 +1046,30 @@ button[type="submit"]:disabled {
 }
 
 .nav-button:hover {
-  background-color: rgba(255, 255, 255, 0.1);
-  border-color: rgba(255, 255, 255, 0.5);
+  background-color: rgba(254, 231, 135, 0.1);
+  border-color: var(--color-jasmine);
 }
 
 .nav-button.active {
-  background-color: white;
-  color: #2c3e50;
-  border-color: white;
+  background-color: var(--color-jasmine);
+  color: var(--color-bistre);
+  border-color: var(--color-jasmine);
 }
 
 /* Step Dashboard */
 .step-dashboard {
-  background: white;
+  background: var(--color-surface);
   border-radius: 8px;
   padding: 2rem;
-  box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+  box-shadow: 0 2px 10px var(--color-shadow);
 }
 
 .step-filters {
-  background-color: #f8f9fa;
+  background-color: var(--color-border-light);
   border-radius: 6px;
   padding: 1.5rem;
   margin-bottom: 2rem;
-  border: 1px solid #e9ecef;
+  border: 1px solid var(--color-border);
   display: flex;
   gap: 2rem;
   align-items: center;
@@ -1080,7 +1084,7 @@ button[type="submit"]:disabled {
 
 .filter-group label {
   font-weight: 500;
-  color: #495057;
+  color: var(--color-text);
   font-size: 0.9rem;
   display: flex;
   align-items: center;
@@ -1089,9 +1093,11 @@ button[type="submit"]:disabled {
 
 .filter-group input[type="date"] {
   padding: 0.5rem;
-  border: 1px solid #ced4da;
+  border: 1px solid var(--color-border);
   border-radius: 4px;
   font-size: 0.9rem;
+  background-color: var(--color-surface);
+  color: var(--color-text);
 }
 
 .view-toggle {
@@ -1100,9 +1106,9 @@ button[type="submit"]:disabled {
 }
 
 .view-button {
-  background-color: #e9ecef;
-  border: 1px solid #ced4da;
-  color: #495057;
+  background-color: var(--color-border-light);
+  border: 1px solid var(--color-border);
+  color: var(--color-text);
   padding: 0.5rem 1rem;
   border-radius: 4px;
   cursor: pointer;
@@ -1112,12 +1118,12 @@ button[type="submit"]:disabled {
 }
 
 .view-button:hover {
-  background-color: #dee2e6;
+  background-color: var(--color-border);
 }
 
 .view-button.active {
-  background-color: #3498db;
-  border-color: #3498db;
+  background-color: var(--color-primary);
+  border-color: var(--color-primary);
   color: white;
 }
 
@@ -1129,17 +1135,17 @@ button[type="submit"]:disabled {
 }
 
 .step-card {
-  border: 1px solid #e1e8ed;
+  border: 1px solid var(--color-border);
   border-radius: 6px;
   padding: 1.5rem;
-  background: white;
+  background: var(--color-surface);
   transition: all 0.2s ease;
   cursor: pointer;
   position: relative;
 }
 
 .step-card:hover {
-  box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+  box-shadow: 0 4px 12px var(--color-shadow);
   transform: translateY(-1px);
 }
 
@@ -1174,7 +1180,7 @@ button[type="submit"]:disabled {
 
 .step-id-label {
   font-weight: 600;
-  color: #2c3e50;
+  color: var(--color-text);
   font-size: 1.1rem;
 }
 
@@ -1184,7 +1190,7 @@ button[type="submit"]:disabled {
 
 .step-duration {
   font-weight: 500;
-  color: #6c757d;
+  color: var(--color-text-light);
   font-size: 0.9rem;
 }
 
@@ -1204,17 +1210,17 @@ button[type="submit"]:disabled {
 .step-info strong,
 .step-commits strong,
 .step-metrics strong {
-  color: #495057;
+  color: var(--color-text);
   font-size: 0.9rem;
 }
 
 .step-date {
-  color: #6c757d;
+  color: var(--color-text-light);
   font-size: 0.9rem;
 }
 
 .commit-info {
-  color: #6c757d;
+  color: var(--color-text-light);
   font-size: 0.85rem;
   font-family: 'Courier New', monospace;
 }
@@ -1226,7 +1232,7 @@ button[type="submit"]:disabled {
 }
 
 .parent-step {
-  color: #6c757d;
+  color: var(--color-text-light);
   font-size: 0.85rem;
   font-style: italic;
 }
@@ -1241,15 +1247,15 @@ button[type="submit"]:disabled {
 }
 
 .summary-card {
-  background-color: #f8f9fa;
-  border: 1px solid #e9ecef;
+  background-color: var(--color-border-light);
+  border: 1px solid var(--color-border);
   border-radius: 6px;
   padding: 1.5rem;
 }
 
 .summary-card h4 {
   margin: 0 0 1rem 0;
-  color: #495057;
+  color: var(--color-text);
 }
 
 .summary-stats {
@@ -1265,13 +1271,13 @@ button[type="submit"]:disabled {
 }
 
 .stat-label {
-  color: #6c757d;
+  color: var(--color-text-light);
   font-size: 0.9rem;
 }
 
 .stat-value {
   font-weight: 600;
-  color: #2c3e50;
+  color: var(--color-text);
 }
 
 .timeline-container {
@@ -1281,8 +1287,8 @@ button[type="submit"]:disabled {
 }
 
 .timeline-day {
-  background: white;
-  border: 1px solid #e9ecef;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
   border-radius: 6px;
   padding: 1.5rem;
 }
@@ -1298,11 +1304,11 @@ button[type="submit"]:disabled {
 
 .timeline-date h4 {
   margin: 0;
-  color: #2c3e50;
+  color: var(--color-text);
 }
 
 .day-summary {
-  color: #6c757d;
+  color: var(--color-text-light);
   font-size: 0.9rem;
 }
 
@@ -1320,23 +1326,23 @@ button[type="submit"]:disabled {
   top: 0;
   bottom: 0;
   width: 2px;
-  background-color: #e9ecef;
+  background-color: var(--color-border);
 }
 
 .timeline-step {
   display: flex;
   gap: 1rem;
   padding: 1rem;
-  background-color: #f8f9fa;
+  background-color: var(--color-border-light);
   border-radius: 6px;
-  border-left: 4px solid #007bff;
+  border-left: 4px solid var(--color-primary);
   cursor: pointer;
   transition: all 0.2s;
   position: relative;
 }
 
 .timeline-step:hover {
-  background-color: #e9ecef;
+  background-color: var(--color-border);
   transform: translateX(4px);
 }
 
@@ -1346,8 +1352,8 @@ button[type="submit"]:disabled {
   justify-content: center;
   width: 40px;
   height: 40px;
-  background-color: white;
-  border: 2px solid #007bff;
+  background-color: var(--color-surface);
+  border: 2px solid var(--color-primary);
   border-radius: 50%;
   flex-shrink: 0;
   position: relative;
@@ -1368,11 +1374,11 @@ button[type="submit"]:disabled {
 
 .step-id {
   font-weight: 600;
-  color: #2c3e50;
+  color: var(--color-text);
 }
 
 .step-time {
-  color: #6c757d;
+  color: var(--color-text-light);
   font-size: 0.85rem;
 }
 
@@ -1383,7 +1389,7 @@ button[type="submit"]:disabled {
 }
 
 .step-metric {
-  color: #6c757d;
+  color: var(--color-text-light);
   font-size: 0.85rem;
 }
 
@@ -1394,7 +1400,7 @@ button[type="submit"]:disabled {
 }
 
 .commit-info {
-  color: #6c757d;
+  color: var(--color-text-light);
   font-size: 0.8rem;
   font-family: 'Courier New', monospace;
 }
@@ -1402,7 +1408,7 @@ button[type="submit"]:disabled {
 .empty-timeline {
   text-align: center;
   padding: 3rem;
-  color: #6c757d;
+  color: var(--color-text-light);
 }
 
 /* Step Detail Modal */
@@ -1412,7 +1418,7 @@ button[type="submit"]:disabled {
   left: 0;
   right: 0;
   bottom: 0;
-  background-color: rgba(0, 0, 0, 0.5);
+  background-color: var(--color-overlay);
   display: flex;
   justify-content: center;
   align-items: center;
@@ -1421,7 +1427,7 @@ button[type="submit"]:disabled {
 }
 
 .modal-content {
-  background: white;
+  background: var(--color-surface);
   border-radius: 8px;
   max-width: 800px;
   width: 100%;
@@ -1429,7 +1435,7 @@ button[type="submit"]:disabled {
   overflow: hidden;
   display: flex;
   flex-direction: column;
-  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
+  box-shadow: 0 10px 30px var(--color-shadow);
 }
 
 .modal-header {
@@ -1437,13 +1443,13 @@ button[type="submit"]:disabled {
   justify-content: space-between;
   align-items: center;
   padding: 1.5rem;
-  border-bottom: 1px solid #e9ecef;
-  background-color: #f8f9fa;
+  border-bottom: 1px solid var(--color-border);
+  background-color: var(--color-border-light);
 }
 
 .modal-header h3 {
   margin: 0;
-  color: #2c3e50;
+  color: var(--color-text);
 }
 
 .modal-close {
@@ -1451,14 +1457,14 @@ button[type="submit"]:disabled {
   border: none;
   font-size: 2rem;
   cursor: pointer;
-  color: #6c757d;
+  color: var(--color-text-light);
   padding: 0;
   line-height: 1;
   transition: color 0.2s;
 }
 
 .modal-close:hover {
-  color: #dc3545;
+  color: var(--color-error);
 }
 
 .modal-body {
@@ -1473,9 +1479,9 @@ button[type="submit"]:disabled {
 
 .detail-section h4 {
   margin: 0 0 1rem 0;
-  color: #495057;
+  color: var(--color-text);
   font-size: 1.1rem;
-  border-bottom: 1px solid #e9ecef;
+  border-bottom: 1px solid var(--color-border);
   padding-bottom: 0.5rem;
 }
 
@@ -1492,19 +1498,19 @@ button[type="submit"]:disabled {
 }
 
 .info-item strong {
-  color: #6c757d;
+  color: var(--color-text-light);
   font-size: 0.9rem;
 }
 
 .info-item span {
-  color: #495057;
+  color: var(--color-text);
   font-size: 0.95rem;
 }
 
 .commit-sha {
   font-family: 'Courier New', monospace;
   font-size: 0.85rem;
-  background-color: #f8f9fa;
+  background-color: var(--color-border-light);
   padding: 0.25rem 0.5rem;
   border-radius: 3px;
   word-break: break-all;
@@ -1512,7 +1518,7 @@ button[type="submit"]:disabled {
 
 .cost-value {
   font-weight: 600;
-  color: #28a745;
+  color: var(--color-success);
 }
 
 .status-badge {
@@ -1525,37 +1531,37 @@ button[type="submit"]:disabled {
 }
 
 .status-badge.status-success {
-  background-color: #d4edda;
-  color: #155724;
-  border: 1px solid #c3e6cb;
+  background-color: var(--color-border-light);
+  color: var(--color-success);
+  border: 1px solid var(--color-border);
 }
 
 .status-badge.status-failed {
-  background-color: #f8d7da;
-  color: #721c24;
-  border: 1px solid #f5c6cb;
+  background-color: var(--color-border-light);
+  color: var(--color-error);
+  border: 1px solid var(--color-border);
 }
 
 .status-badge.status-running {
-  background-color: #d1ecf1;
-  color: #0c5460;
-  border: 1px solid #bee5eb;
+  background-color: var(--color-border-light);
+  color: var(--color-primary);
+  border: 1px solid var(--color-border);
 }
 
 .status-badge.status-rolled-back {
-  background-color: #fff3cd;
-  color: #856404;
-  border: 1px solid #ffeaa7;
+  background-color: var(--color-border-light);
+  color: var(--color-warning);
+  border: 1px solid var(--color-border);
 }
 
 .exit-code {
-  color: #6c757d;
+  color: var(--color-text-light);
   font-size: 0.9rem;
 }
 
 .agent-config {
-  background-color: #f8f9fa;
-  border: 1px solid #e9ecef;
+  background-color: var(--color-border-light);
+  border: 1px solid var(--color-border);
   border-radius: 4px;
   padding: 1rem;
 }
@@ -1564,7 +1570,7 @@ button[type="submit"]:disabled {
   margin: 0;
   font-family: 'Courier New', monospace;
   font-size: 0.85rem;
-  color: #495057;
+  color: var(--color-text);
   white-space: pre-wrap;
   word-break: break-all;
 }
@@ -1579,7 +1585,7 @@ button[type="submit"]:disabled {
 
 .button-secondary {
   padding: 0.5rem 1rem;
-  background-color: #6c757d;
+  background-color: var(--color-text-light);
   color: white;
   border: none;
   border-radius: 4px;
@@ -1590,7 +1596,7 @@ button[type="submit"]:disabled {
 }
 
 .button-secondary:hover {
-  background-color: #5a6268;
+  background-color: var(--color-primary);
 }
 
 /* Mobile Navigation */
@@ -1622,7 +1628,7 @@ button[type="submit"]:disabled {
 .hamburger-line {
   width: 24px;
   height: 3px;
-  background-color: white;
+  background-color: var(--color-jasmine);
   border-radius: 2px;
   transition: all 0.3s ease;
 }
@@ -1633,7 +1639,7 @@ button[type="submit"]:disabled {
   left: 0;
   right: 0;
   bottom: 0;
-  background-color: rgba(0, 0, 0, 0.5);
+  background-color: var(--color-overlay);
   z-index: 999;
 }
 
@@ -1643,8 +1649,8 @@ button[type="submit"]:disabled {
   left: 0;
   bottom: 0;
   width: 280px;
-  background-color: #2c3e50;
-  box-shadow: 2px 0 10px rgba(0, 0, 0, 0.3);
+  background-color: var(--color-header-bg);
+  box-shadow: 2px 0 10px var(--color-shadow);
   z-index: 1000;
   display: flex;
   flex-direction: column;
@@ -1668,7 +1674,7 @@ button[type="submit"]:disabled {
   padding: 1rem 1.5rem;
   background: none;
   border: none;
-  color: rgba(255, 255, 255, 0.8);
+  color: var(--color-jasmine);
   font-size: 1.1rem;
   cursor: pointer;
   transition: all 0.2s;
@@ -1677,19 +1683,19 @@ button[type="submit"]:disabled {
 }
 
 .mobile-nav-item:hover {
-  background-color: rgba(255, 255, 255, 0.1);
-  color: white;
+  background-color: rgba(254, 231, 135, 0.1);
+  color: var(--color-jasmine);
 }
 
 .mobile-nav-item:focus {
-  outline: 2px solid rgba(255, 255, 255, 0.5);
+  outline: 2px solid var(--color-jasmine);
   outline-offset: -2px;
 }
 
 .mobile-nav-item.active {
-  background-color: rgba(255, 255, 255, 0.15);
-  color: white;
-  border-left: 4px solid #3498db;
+  background-color: rgba(254, 231, 135, 0.15);
+  color: var(--color-jasmine);
+  border-left: 4px solid var(--color-primary);
 }
 
 .nav-icon {
@@ -1963,7 +1969,7 @@ button[type="submit"]:disabled {
   width: 100%;
   height: 100%;
   border: 3px solid transparent;
-  border-top-color: #3498db;
+  border-top-color: var(--color-primary);
   border-radius: 50%;
   animation: spin 1s linear infinite;
 }
@@ -1986,7 +1992,7 @@ button[type="submit"]:disabled {
 }
 
 .loading-message {
-  color: #6c757d;
+  color: var(--color-text-light);
   font-size: 0.9rem;
   text-align: center;
 }
@@ -1998,11 +2004,11 @@ button[type="submit"]:disabled {
 
 .skeleton-line {
   height: 16px;
-  background: linear-gradient(90deg, #f0f0f0 25%, #e0e0e0 50%, #f0f0f0 75%);
+  background: linear-gradient(90deg, var(--color-border-light) 25%, var(--color-border) 50%, var(--color-border-light) 75%);
   background-size: 200% 100%;
-  border-radius: 4px;
-  margin-bottom: 12px;
   animation: loading 1.5s infinite;
+  border-radius: 4px;
+  margin-bottom: 8px;
 }
 
 /* Autocomplete Component */

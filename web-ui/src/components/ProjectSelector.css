@@ -8,19 +8,19 @@
 .project-selector-error,
 .project-selector-empty {
   padding: 0.5rem 1rem;
-  background: var(--surface-color, #f8f9fa);
-  border: 1px solid var(--border-color, #dee2e6);
+  background: var(--color-border-light);
+  border: 1px solid var(--color-border);
   border-radius: 4px;
   font-size: 0.875rem;
-  color: var(--text-muted, #6c757d);
+  color: var(--color-text-light);
   display: flex;
   align-items: center;
   gap: 0.5rem;
 }
 
 .project-selector-error {
-  color: var(--error-color, #dc3545);
-  border-color: var(--error-color, #dc3545);
+  color: var(--color-error);
+  border-color: var(--color-error);
 }
 
 .error-icon {
@@ -30,7 +30,7 @@
 .retry-button {
   margin-left: auto;
   padding: 0.25rem 0.5rem;
-  background: var(--primary-color, #007bff);
+  background: var(--color-button-primary);
   color: white;
   border: none;
   border-radius: 3px;
@@ -40,14 +40,14 @@
 }
 
 .retry-button:hover {
-  background: var(--primary-hover, #0056b3);
+  background: var(--color-button-primary-hover);
 }
 
 .loading-spinner {
   width: 12px;
   height: 12px;
-  border: 2px solid var(--border-color, #dee2e6);
-  border-top: 2px solid var(--primary-color, #007bff);
+  border: 2px solid var(--color-border);
+  border-top: 2px solid var(--color-primary);
   border-radius: 50%;
   animation: spin 1s linear infinite;
 }
@@ -64,11 +64,11 @@
 .project-selector-button {
   width: 100%;
   padding: 0.5rem 1rem;
-  background: var(--surface-color, #ffffff);
-  border: 1px solid var(--border-color, #dee2e6);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
   border-radius: 4px;
   font-size: 0.875rem;
-  color: var(--text-color, #212529);
+  color: var(--color-text);
   cursor: pointer;
   display: flex;
   align-items: center;
@@ -78,14 +78,14 @@
 }
 
 .project-selector-button:hover {
-  border-color: var(--primary-color, #007bff);
-  background: var(--surface-hover, #f8f9fa);
+  border-color: var(--color-primary);
+  background: var(--color-border-light);
 }
 
 .project-selector-button:focus {
   outline: none;
-  border-color: var(--primary-color, #007bff);
-  box-shadow: 0 0 0 2px rgba(0, 123, 255, 0.25);
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 2px var(--color-border-light);
 }
 
 .project-selector-button:disabled {
@@ -102,7 +102,7 @@
 
 .dropdown-arrow {
   font-size: 0.75rem;
-  color: var(--text-muted, #6c757d);
+  color: var(--color-text-light);
   transition: transform 0.2s;
   margin-left: 0.5rem;
 }
@@ -117,10 +117,10 @@
   left: 0;
   right: 0;
   margin-top: 4px;
-  background: var(--surface-color, #ffffff);
-  border: 1px solid var(--border-color, #dee2e6);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
   border-radius: 4px;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  box-shadow: 0 4px 12px var(--color-shadow);
   max-height: 300px;
   overflow-y: auto;
   z-index: 1000;
@@ -145,21 +145,21 @@
   justify-content: space-between;
   transition: background-color 0.2s;
   font-size: 0.875rem;
-  color: var(--text-color, #212529);
+  color: var(--color-text);
 }
 
 .project-option-button:hover {
-  background: var(--surface-hover, #f8f9fa);
+  background: var(--color-border-light);
 }
 
 .project-option-button:focus {
   outline: none;
-  background: var(--surface-focus, #e9ecef);
+  background: var(--color-border);
 }
 
 .project-option.selected .project-option-button {
-  background: var(--primary-light, #e7f3ff);
-  color: var(--primary-color, #007bff);
+  background: var(--color-border-light);
+  color: var(--color-primary);
 }
 
 .project-option-content {
@@ -179,14 +179,14 @@
 .project-option-description {
   display: block;
   font-size: 0.75rem;
-  color: var(--text-muted, #6c757d);
+  color: var(--color-text-light);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .selected-indicator {
-  color: var(--primary-color, #007bff);
+  color: var(--color-primary);
   font-weight: bold;
   margin-left: 0.5rem;
   font-size: 1rem;

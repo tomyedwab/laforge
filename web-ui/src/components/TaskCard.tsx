@@ -11,21 +11,21 @@ interface TaskCardProps {
 }
 
 const statusColors = {
-  todo: '#95a5a6',
-  'in-progress': '#f39c12',
-  'in-review': '#9b59b6',
-  completed: '#27ae60',
+  todo: 'var(--color-lion)',
+  'in-progress': 'var(--color-jasmine)',
+  'in-review': 'var(--color-brown)',
+  completed: 'var(--color-bistre)',
 };
 
 const typeColors = {
-  EPIC: '#e74c3c',
-  FEAT: '#3498db',
-  BUG: '#e67e22',
-  PLAN: '#9b59b6',
-  DOC: '#34495e',
-  ARCH: '#16a085',
-  DESIGN: '#d35400',
-  TEST: '#27ae60',
+  EPIC: 'var(--color-bistre)',
+  FEAT: 'var(--color-brown)',
+  BUG: 'var(--color-brown)',
+  PLAN: 'var(--color-lion)',
+  DOC: 'var(--color-bistre)',
+  ARCH: 'var(--color-lion)',
+  DESIGN: 'var(--color-jasmine)',
+  TEST: 'var(--color-bistre)',
 };
 
 export function TaskCard({
