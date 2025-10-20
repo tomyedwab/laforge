@@ -74,9 +74,9 @@ export function ReviewsDashboard({ onTaskClick }: ReviewsDashboardProps) {
 
   const getStatusColor = (status: TaskReview['status']) => {
     const colors = {
-      'pending': '#f39c12',
-      'approved': '#27ae60',
-      'rejected': '#e74c3c',
+      'pending': 'var(--color-warning)',
+      'approved': 'var(--color-success)',
+      'rejected': 'var(--color-error)',
     };
     return colors[status];
   };
@@ -213,8 +213,7 @@ export function ReviewsDashboard({ onTaskClick }: ReviewsDashboardProps) {
                 <div class="review-card-header">
                   <div class="review-status">
                     <span 
-                      class="status-badge"
-                      style={{ backgroundColor: getStatusColor(review.status), color: 'white' }}
+                      class={`status-badge status-${review.status}`}
                     >
                       {review.status}
                     </span>
