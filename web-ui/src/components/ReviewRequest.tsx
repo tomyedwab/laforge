@@ -1,4 +1,4 @@
-import { useState } from 'preact/hooks';
+import { useState, useEffect } from 'preact/hooks';
 import type { Task } from '../types';
 import { apiService } from '../services/api';
 
@@ -13,6 +13,17 @@ export function ReviewRequest({ task, onClose, onReviewCreated }: ReviewRequestP
   const [attachment, setAttachment] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    const handleEscape = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        onClose();
+      }
+    };
+
+    document.addEventListener('keydown', handleEscape);
+    return () => document.removeEventListener('keydown', handleEscape);
+  }, [onClose]);
 
   const handleSubmit = async (e: Event) => {
     e.preventDefault();
@@ -56,11 +67,11 @@ export function ReviewRequest({ task, onClose, onReviewCreated }: ReviewRequestP
   ];
 
   return (
-    <div class="review-request-overlay" onClick={onClose}>
+    <div class="review-request-overlay" onClick={onClose} role="dialog" aria-modal="true" aria-labelledby="review-request-title">
       <div class="review-request-modal" onClick={(e) => e.stopPropagation()}>
         <div class="review-request-header">
-          <h3>Request Review for Task</h3>
-          <button class="close-button" onClick={onClose}>×</button>
+          <h3 id="review-request-title">Request Review for Task</h3>
+          <button class="close-button" onClick={onClose} aria-label="Close review request dialog">×</button>
         </div>
 
         <div class="review-request-content">

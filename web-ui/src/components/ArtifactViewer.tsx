@@ -15,6 +15,17 @@ export function ArtifactViewer({ artifactPath, onClose }: ArtifactViewerProps) {
     loadArtifact();
   }, [artifactPath]);
 
+  useEffect(() => {
+    const handleEscape = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        onClose();
+      }
+    };
+
+    document.addEventListener('keydown', handleEscape);
+    return () => document.removeEventListener('keydown', handleEscape);
+  }, [onClose]);
+
   const loadArtifact = async () => {
     try {
       setIsLoading(true);
@@ -147,11 +158,11 @@ export function ArtifactViewer({ artifactPath, onClose }: ArtifactViewerProps) {
   };
 
   return (
-    <div class="artifact-viewer-overlay" onClick={onClose}>
+    <div class="artifact-viewer-overlay" onClick={onClose} role="dialog" aria-modal="true" aria-labelledby="artifact-viewer-title">
       <div class="artifact-viewer-modal" onClick={(e) => e.stopPropagation()}>
         <div class="artifact-viewer-header">
           <div class="artifact-info">
-            <h3>{getFileName()}</h3>
+            <h3 id="artifact-viewer-title">{getFileName()}</h3>
             <span class="artifact-path">{artifactPath}</span>
           </div>
           <div class="artifact-actions">
@@ -160,10 +171,11 @@ export function ArtifactViewer({ artifactPath, onClose }: ArtifactViewerProps) {
               onClick={loadArtifact}
               disabled={isLoading}
               title="Refresh content"
+              aria-label="Refresh artifact content"
             >
               🔄
             </button>
-            <button class="close-button" onClick={onClose}>×</button>
+            <button class="close-button" onClick={onClose} aria-label="Close artifact viewer">×</button>
           </div>
         </div>
 
