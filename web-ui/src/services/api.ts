@@ -11,13 +11,29 @@ const API_BASE_URL =
   import.meta.env.VITE_API_BASE_URL || 'http://localhost:8080/api/v1';
 
 class ApiService {
-  private projectId: string = 'laforge-main'; // Default project ID
+  private projectId: string | null = null;
+
+  constructor() {
+    // Load projectId from localStorage on initialization
+    const storedProject = localStorage.getItem('laforge_selected_project');
+    if (storedProject) {
+      try {
+        const project = JSON.parse(storedProject);
+        if (project && project.id) {
+          this.projectId = project.id;
+        }
+      } catch (err) {
+        // Silently ignore parse errors
+        console.debug('Failed to parse stored project');
+      }
+    }
+  }
 
   setProjectId(projectId: string) {
     this.projectId = projectId;
   }
 
-  getProjectId(): string {
+  getProjectId(): string | null {
     return this.projectId;
   }
 
@@ -105,10 +121,13 @@ class ApiService {
   }
 
   async updateTask(id: number, task: Partial<Task>): Promise<{ task: Task }> {
-    return this.request<{ task: Task }>(`/projects/${this.projectId}/tasks/${id}`, {
-      method: 'PUT',
-      body: JSON.stringify(task),
-    });
+    return this.request<{ task: Task }>(
+      `/projects/${this.projectId}/tasks/${id}`,
+      {
+        method: 'PUT',
+        body: JSON.stringify(task),
+      }
+    );
   }
 
   async updateTaskStatus(id: number, status: string): Promise<{ task: Task }> {
@@ -218,7 +237,9 @@ class ApiService {
   }
 
   async getStep(id: number): Promise<{ step: Step }> {
-    return this.request<{ step: Step }>(`/projects/${this.projectId}/steps/${id}`);
+    return this.request<{ step: Step }>(
+      `/projects/${this.projectId}/steps/${id}`
+    );
   }
 
   // Project endpoints

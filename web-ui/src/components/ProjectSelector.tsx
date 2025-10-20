@@ -16,16 +16,10 @@ export function ProjectSelector() {
   const fetchProjects = async () => {
     setIsLoading(true);
     setError(null);
-    
+
     try {
       const response = await apiService.getProjects();
       setProjects(response.projects);
-      
-      // If no project is selected and we have projects, select the first one
-      if (!selectedProject && response.projects.length > 0) {
-        setSelectedProject(response.projects[0]);
-        apiService.setProjectId(response.projects[0].id);
-      }
     } catch (err) {
       console.error('Failed to fetch projects:', err);
       setError('Failed to load projects');
@@ -110,7 +104,7 @@ export function ProjectSelector() {
           disabled={isLoading}
         >
           <span class="project-name">
-            {selectedProject?.name || 'Select Project'}
+            {selectedProject?.name || 'No project selected'}
           </span>
           <span class={`dropdown-arrow ${isOpen ? 'open' : ''}`} aria-hidden="true">
             ▼
