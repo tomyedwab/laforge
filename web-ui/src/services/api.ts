@@ -54,6 +54,7 @@ class ApiService {
     include_reviews?: boolean;
     page?: number;
     limit?: number;
+    search?: string;
   }): Promise<{ tasks: Task[]; pagination: any }> {
     const searchParams = new URLSearchParams();
     Object.entries(params || {}).forEach(([key, value]) => {

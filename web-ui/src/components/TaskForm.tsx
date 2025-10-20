@@ -2,6 +2,7 @@
 import { useState, useEffect } from 'preact/hooks';
 import type { Task, TaskType, TaskStatus } from '../types';
 import { apiService } from '../services/api';
+import { Autocomplete } from './Autocomplete';
 
 interface TaskFormProps {
   task?: Task;
@@ -48,21 +49,18 @@ export function TaskForm({ task, onSave, onCancel }: TaskFormProps) {
 
   const [errors, setErrors] = useState<FormErrors>({});
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [availableParents, setAvailableParents] = useState<Task[]>([]);
-  const [availableDependencies, setAvailableDependencies] = useState<Task[]>([]);
 
   const taskTypes: TaskType[] = ['EPIC', 'FEAT', 'BUG', 'PLAN', 'DOC', 'ARCH', 'DESIGN', 'TEST'];
   const taskStatuses: TaskStatus[] = ['todo', 'in-progress', 'in-review', 'completed'];
 
-  useEffect(() => {
-    loadAvailableTasks();
-  }, []);
+  // No need to preload tasks anymore since we search on demand
 
-  const loadAvailableTasks = async () => {
+  const searchParentTasks = async (search: string): Promise<Array<{id: number, label: string}>> => {
     try {
       const response = await apiService.getTasks({
         status: 'todo,in-progress,in-review',
-        limit: 100,
+        limit: 20,
+        search: search,
       });
       
       // Filter out the current task if editing
@@ -70,10 +68,36 @@ export function TaskForm({ task, onSave, onCancel }: TaskFormProps) {
         ? response.tasks.filter(t => t.id !== task.id)
         : response.tasks;
       
-      setAvailableParents(availableTasks);
-      setAvailableDependencies(availableTasks);
+      return availableTasks.map(task => ({
+        id: task.id,
+        label: `${task.title} (${task.type})`
+      }));
     } catch (error) {
-      console.error('Failed to load available tasks:', error);
+      console.error('Failed to search parent tasks:', error);
+      return [];
+    }
+  };
+
+  const searchDependencyTasks = async (search: string): Promise<Array<{id: number, label: string}>> => {
+    try {
+      const response = await apiService.getTasks({
+        status: 'todo,in-progress,in-review',
+        limit: 20,
+        search: search,
+      });
+      
+      // Filter out the current task if editing
+      const availableTasks = task 
+        ? response.tasks.filter(t => t.id !== task.id)
+        : response.tasks;
+      
+      return availableTasks.map(task => ({
+        id: task.id,
+        label: `${task.title} (${task.type})`
+      }));
+    } catch (error) {
+      console.error('Failed to search dependency tasks:', error);
+      return [];
     }
   };
 
@@ -260,36 +284,24 @@ export function TaskForm({ task, onSave, onCancel }: TaskFormProps) {
           <div class="form-row">
             <div class="form-group">
               <label htmlFor="parent_id">Parent Task</label>
-              <select
-                id="parent_id"
-                value={formData.parent_id || ''}
-                onChange={(e) => handleNumberInputChange('parent_id', (e.target as HTMLSelectElement).value)}
+              <Autocomplete
+                value={formData.parent_id}
+                onChange={(value) => handleInputChange('parent_id', value)}
+                placeholder="Search for parent task..."
                 disabled={isSubmitting}
-              >
-                <option value="">No parent</option>
-                {availableParents.map(parent => (
-                  <option key={parent.id} value={parent.id}>
-                    {parent.title} ({parent.type})
-                  </option>
-                ))}
-              </select>
+                loadOptions={searchParentTasks}
+              />
             </div>
 
             <div class="form-group">
               <label htmlFor="upstream_dependency_id">Depends On</label>
-              <select
-                id="upstream_dependency_id"
-                value={formData.upstream_dependency_id || ''}
-                onChange={(e) => handleNumberInputChange('upstream_dependency_id', (e.target as HTMLSelectElement).value)}
+              <Autocomplete
+                value={formData.upstream_dependency_id}
+                onChange={(value) => handleInputChange('upstream_dependency_id', value)}
+                placeholder="Search for dependency task..."
                 disabled={isSubmitting}
-              >
-                <option value="">No dependency</option>
-                {availableDependencies.map(dep => (
-                  <option key={dep.id} value={dep.id}>
-                    {dep.title} ({dep.type})
-                  </option>
-                ))}
-              </select>
+                loadOptions={searchDependencyTasks}
+              />
             </div>
           </div>
 
