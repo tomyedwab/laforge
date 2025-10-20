@@ -263,7 +263,18 @@ func (h *TaskHandler) GetTask(w http.ResponseWriter, r *http.Request) {
 	includeLogs := r.URL.Query().Get("include_logs") == "true"
 	includeReviews := r.URL.Query().Get("include_reviews") == "true"
 
-	task, err := tasks.GetTask(h.db, taskID)
+	// Get project ID from URL
+	projectID := vars["project_id"]
+
+	// Open project database
+	db, err := h.getProjectDB(projectID)
+	if err != nil {
+		http.Error(w, `{"error":{"code":"INTERNAL_ERROR","message":"Failed to open project database"}}`, http.StatusInternalServerError)
+		return
+	}
+	defer db.Close()
+
+	task, err := tasks.GetTask(db, taskID)
 	if err != nil {
 		if err == sql.ErrNoRows {
 			http.Error(w, `{"error":{"code":"NOT_FOUND","message":"Task not found"}}`, http.StatusNotFound)
@@ -381,8 +392,19 @@ func (h *TaskHandler) UpdateTask(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Get project ID from URL
+	projectID := vars["project_id"]
+
+	// Open project database
+	db, err := h.getProjectDB(projectID)
+	if err != nil {
+		http.Error(w, `{"error":{"code":"INTERNAL_ERROR","message":"Failed to open project database"}}`, http.StatusInternalServerError)
+		return
+	}
+	defer db.Close()
+
 	// Get existing task
-	existingTask, err := tasks.GetTask(h.db, taskID)
+	existingTask, err := tasks.GetTask(db, taskID)
 	if err != nil {
 		if err == sql.ErrNoRows {
 			http.Error(w, `{"error":{"code":"NOT_FOUND","message":"Task not found"}}`, http.StatusNotFound)
@@ -449,8 +471,19 @@ func (h *TaskHandler) UpdateTaskStatus(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Get project ID from URL
+	projectID := vars["project_id"]
+
+	// Open project database
+	db, err := h.getProjectDB(projectID)
+	if err != nil {
+		http.Error(w, `{"error":{"code":"INTERNAL_ERROR","message":"Failed to open project database"}}`, http.StatusInternalServerError)
+		return
+	}
+	defer db.Close()
+
 	// Update task status in database
-	err = tasks.UpdateTaskStatus(h.db, taskID, req.Status)
+	err = tasks.UpdateTaskStatus(db, taskID, req.Status)
 	if err != nil {
 		if err == sql.ErrNoRows {
 			http.Error(w, `{"error":{"code":"NOT_FOUND","message":"Task not found"}}`, http.StatusNotFound)
@@ -468,7 +501,7 @@ func (h *TaskHandler) UpdateTaskStatus(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Fetch updated task
-	updatedTask, err := tasks.GetTask(h.db, taskID)
+	updatedTask, err := tasks.GetTask(db, taskID)
 	if err != nil {
 		http.Error(w, `{"error":{"code":"INTERNAL_ERROR","message":"Failed to fetch updated task"}}`, http.StatusInternalServerError)
 		return
@@ -501,8 +534,19 @@ func (h *TaskHandler) DeleteTask(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Get project ID from URL
+	projectID := vars["project_id"]
+
+	// Open project database
+	db, err := h.getProjectDB(projectID)
+	if err != nil {
+		http.Error(w, `{"error":{"code":"INTERNAL_ERROR","message":"Failed to open project database"}}`, http.StatusInternalServerError)
+		return
+	}
+	defer db.Close()
+
 	// Check if task exists
-	_, err = tasks.GetTask(h.db, taskID)
+	_, err = tasks.GetTask(db, taskID)
 	if err != nil {
 		if err == sql.ErrNoRows {
 			http.Error(w, `{"error":{"code":"NOT_FOUND","message":"Task not found"}}`, http.StatusNotFound)
@@ -513,7 +557,7 @@ func (h *TaskHandler) DeleteTask(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Delete task and all children
-	err = tasks.DeleteTask(h.db, taskID)
+	err = tasks.DeleteTask(db, taskID)
 	if err != nil {
 		http.Error(w, `{"error":{"code":"INTERNAL_ERROR","message":"Failed to delete task"}}`, http.StatusInternalServerError)
 		return
@@ -557,6 +601,17 @@ func (h *TaskHandler) GetTaskLogs(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Get project ID from URL
+	projectID := vars["project_id"]
+
+	// Open project database
+	db, err := h.getProjectDB(projectID)
+	if err != nil {
+		http.Error(w, `{"error":{"code":"INTERNAL_ERROR","message":"Failed to open project database"}}`, http.StatusInternalServerError)
+		return
+	}
+	defer db.Close()
+
 	// Parse pagination parameters
 	page := 1
 	if p := r.URL.Query().Get("page"); p != "" {
@@ -573,7 +628,7 @@ func (h *TaskHandler) GetTaskLogs(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Get task logs from database
-	dbLogs, err := tasks.GetTaskLogs(h.db, taskID)
+	dbLogs, err := tasks.GetTaskLogs(db, taskID)
 	if err != nil {
 		http.Error(w, `{"error":{"code":"INTERNAL_ERROR","message":"Failed to fetch task logs"}}`, http.StatusInternalServerError)
 		return
@@ -645,8 +700,19 @@ func (h *TaskHandler) CreateTaskLog(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Get project ID from URL
+	projectID := vars["project_id"]
+
+	// Open project database
+	db, err := h.getProjectDB(projectID)
+	if err != nil {
+		http.Error(w, `{"error":{"code":"INTERNAL_ERROR","message":"Failed to open project database"}}`, http.StatusInternalServerError)
+		return
+	}
+	defer db.Close()
+
 	// Check if task exists
-	_, err = tasks.GetTask(h.db, taskID)
+	_, err = tasks.GetTask(db, taskID)
 	if err != nil {
 		if err == sql.ErrNoRows {
 			http.Error(w, `{"error":{"code":"NOT_FOUND","message":"Task not found"}}`, http.StatusNotFound)
@@ -657,7 +723,7 @@ func (h *TaskHandler) CreateTaskLog(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Create log entry
-	err = tasks.AddTaskLog(h.db, taskID, req.Message)
+	err = tasks.AddTaskLog(db, taskID, req.Message)
 	if err != nil {
 		http.Error(w, `{"error":{"code":"INTERNAL_ERROR","message":"Failed to create task log"}}`, http.StatusInternalServerError)
 		return
@@ -689,7 +755,19 @@ func (h *TaskHandler) CreateTaskLog(w http.ResponseWriter, r *http.Request) {
 
 // GetNextTask handles GET /tasks/next
 func (h *TaskHandler) GetNextTask(w http.ResponseWriter, r *http.Request) {
-	nextTask, err := tasks.GetNextTask(h.db)
+	// Get project ID from URL
+	vars := mux.Vars(r)
+	projectID := vars["project_id"]
+
+	// Open project database
+	db, err := h.getProjectDB(projectID)
+	if err != nil {
+		http.Error(w, `{"error":{"code":"INTERNAL_ERROR","message":"Failed to open project database"}}`, http.StatusInternalServerError)
+		return
+	}
+	defer db.Close()
+
+	nextTask, err := tasks.GetNextTask(db)
 	if err != nil {
 		if err == sql.ErrNoRows {
 			// No tasks ready for work
@@ -757,8 +835,19 @@ func (h *TaskHandler) GetTaskReviews(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Get project ID from URL
+	projectID := vars["project_id"]
+
+	// Open project database
+	db, err := h.getProjectDB(projectID)
+	if err != nil {
+		http.Error(w, `{"error":{"code":"INTERNAL_ERROR","message":"Failed to open project database"}}`, http.StatusInternalServerError)
+		return
+	}
+	defer db.Close()
+
 	// Check if task exists
-	_, err = tasks.GetTask(h.db, taskID)
+	_, err = tasks.GetTask(db, taskID)
 	if err != nil {
 		if err == sql.ErrNoRows {
 			http.Error(w, `{"error":{"code":"NOT_FOUND","message":"Task not found"}}`, http.StatusNotFound)
@@ -769,7 +858,7 @@ func (h *TaskHandler) GetTaskReviews(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Get task reviews from database
-	dbReviews, err := tasks.GetTaskReviews(h.db, taskID)
+	dbReviews, err := tasks.GetTaskReviews(db, taskID)
 	if err != nil {
 		http.Error(w, `{"error":{"code":"INTERNAL_ERROR","message":"Failed to fetch task reviews"}}`, http.StatusInternalServerError)
 		return
@@ -827,8 +916,19 @@ func (h *TaskHandler) CreateTaskReview(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Get project ID from URL
+	projectID := vars["project_id"]
+
+	// Open project database
+	db, err := h.getProjectDB(projectID)
+	if err != nil {
+		http.Error(w, `{"error":{"code":"INTERNAL_ERROR","message":"Failed to open project database"}}`, http.StatusInternalServerError)
+		return
+	}
+	defer db.Close()
+
 	// Check if task exists
-	_, err = tasks.GetTask(h.db, taskID)
+	_, err = tasks.GetTask(db, taskID)
 	if err != nil {
 		if err == sql.ErrNoRows {
 			http.Error(w, `{"error":{"code":"NOT_FOUND","message":"Task not found"}}`, http.StatusNotFound)
@@ -839,7 +939,7 @@ func (h *TaskHandler) CreateTaskReview(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Create review
-	err = tasks.CreateReview(h.db, taskID, req.Message, req.Attachment)
+	err = tasks.CreateReview(db, taskID, req.Message, req.Attachment)
 	if err != nil {
 		http.Error(w, `{"error":{"code":"INTERNAL_ERROR","message":"Failed to create task review"}}`, http.StatusInternalServerError)
 		return

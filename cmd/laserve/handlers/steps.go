@@ -3,22 +3,32 @@ package handlers
 import (
 	"database/sql"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"strconv"
 	"time"
 
 	"github.com/gorilla/mux"
 	"github.com/tomyedwab/laforge/cmd/laserve/websocket"
+	"github.com/tomyedwab/laforge/projects"
 	"github.com/tomyedwab/laforge/steps"
 )
 
 type StepHandler struct {
-	db       *steps.StepDatabase
 	wsServer *websocket.Server
 }
 
-func NewStepHandler(db *steps.StepDatabase, wsServer *websocket.Server) *StepHandler {
-	return &StepHandler{db: db, wsServer: wsServer}
+func NewStepHandler(wsServer *websocket.Server) *StepHandler {
+	return &StepHandler{wsServer: wsServer}
+}
+
+// getProjectStepDB opens the step database for the specified project
+func (h *StepHandler) getProjectStepDB(projectID string) (*steps.StepDatabase, error) {
+	sdb, err := projects.OpenProjectStepDatabase(projectID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to open project step database: %w", err)
+	}
+	return sdb, nil
 }
 
 // StepResponse represents the API response format for steps
@@ -83,8 +93,16 @@ func (h *StepHandler) ListSteps(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// Open project step database
+	sdb, err := h.getProjectStepDB(projectID)
+	if err != nil {
+		http.Error(w, `{"error":{"code":"INTERNAL_ERROR","message":"Failed to open project step database"}}`, http.StatusInternalServerError)
+		return
+	}
+	defer sdb.Close()
+
 	// Get steps from database
-	dbSteps, err := h.db.ListSteps(projectID, activeOnly)
+	dbSteps, err := sdb.ListSteps(projectID, activeOnly)
 	if err != nil {
 		http.Error(w, `{"error":{"code":"INTERNAL_ERROR","message":"Failed to fetch steps"}}`, http.StatusInternalServerError)
 		return
@@ -139,7 +157,18 @@ func (h *StepHandler) GetStep(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	step, err := h.db.GetStep(stepID)
+	// Get project ID from URL
+	projectID := vars["project_id"]
+
+	// Open project step database
+	sdb, err := h.getProjectStepDB(projectID)
+	if err != nil {
+		http.Error(w, `{"error":{"code":"INTERNAL_ERROR","message":"Failed to open project step database"}}`, http.StatusInternalServerError)
+		return
+	}
+	defer sdb.Close()
+
+	step, err := sdb.GetStep(stepID)
 	if err != nil {
 		if err == sql.ErrNoRows {
 			http.Error(w, `{"error":{"code":"NOT_FOUND","message":"Step not found"}}`, http.StatusNotFound)

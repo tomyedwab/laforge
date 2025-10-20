@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"database/sql"
 	"flag"
 	"fmt"
 	"log"
@@ -17,7 +16,6 @@ import (
 	"github.com/tomyedwab/laforge/cmd/laserve/auth"
 	"github.com/tomyedwab/laforge/cmd/laserve/handlers"
 	"github.com/tomyedwab/laforge/cmd/laserve/websocket"
-	"github.com/tomyedwab/laforge/steps"
 )
 
 const (
@@ -26,11 +24,10 @@ const (
 )
 
 type Config struct {
-	Host         string
-	Port         string
-	DatabasePath string
-	JWTSecret    string
-	Environment  string
+	Host        string
+	Port        string
+	JWTSecret   string
+	Environment string
 }
 
 func main() {
@@ -46,7 +43,6 @@ func parseFlags() *Config {
 
 	flag.StringVar(&config.Host, "host", defaultHost, "Server host")
 	flag.StringVar(&config.Port, "port", defaultPort, "Server port")
-	flag.StringVar(&config.DatabasePath, "db", "", "Path to tasks database")
 	flag.StringVar(&config.JWTSecret, "jwt-secret", "", "JWT secret for authentication")
 	flag.StringVar(&config.Environment, "env", "development", "Environment (development, staging, production)")
 
@@ -56,9 +52,6 @@ func parseFlags() *Config {
 }
 
 func validateConfig(config *Config) error {
-	if config.DatabasePath == "" {
-		return fmt.Errorf("database path is required")
-	}
 	if config.JWTSecret == "" {
 		return fmt.Errorf("JWT secret is required")
 	}
@@ -71,25 +64,6 @@ func run(config *Config) error {
 		return err
 	}
 
-	// Initialize database connection
-	db, err := sql.Open("sqlite3", config.DatabasePath)
-	if err != nil {
-		return fmt.Errorf("failed to open database: %v", err)
-	}
-	defer db.Close()
-
-	// Test database connection
-	if err := db.Ping(); err != nil {
-		return fmt.Errorf("failed to connect to database: %v", err)
-	}
-
-	// Initialize step database
-	stepDB, err := steps.InitStepDB(config.DatabasePath)
-	if err != nil {
-		return fmt.Errorf("failed to initialize step database: %v", err)
-	}
-	defer stepDB.Close()
-
 	// Create JWT manager
 	jwtManager := auth.NewJWTManager(config.JWTSecret)
 
@@ -97,11 +71,11 @@ func run(config *Config) error {
 	wsServer := websocket.NewServer()
 	go wsServer.Run() // Start WebSocket server in background
 
-	// Create task handler
-	taskHandler := handlers.NewTaskHandler(db, wsServer)
+	// Create task handler (without database - will be opened per project)
+	taskHandler := handlers.NewTaskHandler(nil, wsServer)
 
-	// Create step handler
-	stepHandler := handlers.NewStepHandler(stepDB, wsServer)
+	// Create step handler (without database - will be opened per project)
+	stepHandler := handlers.NewStepHandler(wsServer)
 
 	// Create router
 	router := setupRouter(jwtManager, taskHandler, stepHandler, wsServer, config)
@@ -192,9 +166,18 @@ func setupRouter(jwtManager *auth.JWTManager, taskHandler *handlers.TaskHandler,
 	public.HandleFunc("/login", makeLoginHandler(jwtManager)).Methods("POST")
 	public.HandleFunc("/login", corsPreflightHandler).Methods("OPTIONS")
 
+	// Create project handler
+	projectHandler := handlers.NewProjectHandler()
+
 	// Protected routes (authentication required)
 	protected := api.PathPrefix("/projects").Subrouter()
 	protected.Use(jwtManager.AuthMiddleware)
+
+	// Project management routes
+	protected.HandleFunc("", projectHandler.ListProjects).Methods("GET")
+	protected.HandleFunc("", corsPreflightHandler).Methods("OPTIONS")
+	protected.HandleFunc("/{project_id}", projectHandler.GetProject).Methods("GET")
+	protected.HandleFunc("/{project_id}", corsPreflightHandler).Methods("OPTIONS")
 
 	// Task management routes
 	protected.HandleFunc("/{project_id}/tasks", taskHandler.ListTasks).Methods("GET")

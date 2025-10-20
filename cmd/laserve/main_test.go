@@ -72,12 +72,9 @@ func TestParseFlags(t *testing.T) {
 	}()
 
 	// Test with required flags
-	os.Args = []string{"cmd", "-db", "/path/to/db", "-jwt-secret", "secret"}
+	os.Args = []string{"cmd", "-jwt-secret", "secret"}
 	config := parseFlags()
 
-	if config.DatabasePath != "/path/to/db" {
-		t.Errorf("expected database path '/path/to/db', got %s", config.DatabasePath)
-	}
 	if config.JWTSecret != "secret" {
 		t.Errorf("expected JWT secret 'secret', got %s", config.JWTSecret)
 	}
@@ -96,16 +93,17 @@ func TestRunValidation(t *testing.T) {
 		wantErr bool
 	}{
 		{
-			name: "missing database path",
+			name: "valid config without database path",
 			config: &Config{
 				JWTSecret: "secret",
 			},
-			wantErr: true,
+			wantErr: false,
 		},
 		{
 			name: "missing JWT secret",
 			config: &Config{
-				DatabasePath: "/path/to/db",
+				Host: defaultHost,
+				Port: defaultPort,
 			},
 			wantErr: true,
 		},
