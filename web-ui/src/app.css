@@ -52,6 +52,14 @@ body {
   max-width: 1200px;
   margin: 0 auto;
   padding: 1rem 2rem;
+  gap: 2rem;
+}
+
+.header-middle {
+  flex: 1;
+  display: flex;
+  justify-content: center;
+  align-items: center;
 }
 
 .app-title {
@@ -1013,7 +1021,7 @@ button[type="submit"]:disabled {
 .header-actions {
   display: flex;
   align-items: center;
-  gap: 2rem;
+  gap: 1rem;
 }
 
 .view-navigation {

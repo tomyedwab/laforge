@@ -1,5 +1,6 @@
 import { h } from 'preact';
 import { useAuth, useUser } from '../hooks/useAuth';
+import { ProjectSelector } from './ProjectSelector';
 
 interface HeaderProps {
   title?: string;
@@ -28,6 +29,12 @@ export function Header({ title = 'LaForge', currentView = 'tasks', onViewChange 
     <header class="app-header" role="banner">
       <div class="header-content">
         <h1 class="app-title">{title}</h1>
+         
+        {user && (
+          <div class="header-middle">
+            <ProjectSelector />
+          </div>
+        )}
         
         {user && (
           <div class="header-actions">

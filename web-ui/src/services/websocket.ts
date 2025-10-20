@@ -2,13 +2,24 @@ import type { WebSocketMessage, WebSocketSubscribeMessage } from '../types';
 
 export class WebSocketService {
   private ws: WebSocket | null = null;
-  private url: string;
+  private baseUrl: string;
+  private projectId: string;
   private reconnectInterval = 5000;
   private shouldReconnect = true;
   private messageHandlers: Map<string, Set<(message: any) => void>> = new Map();
 
-  constructor(url: string) {
-    this.url = url;
+  constructor(baseUrl: string, projectId: string = 'laforge-main') {
+    this.baseUrl = baseUrl;
+    this.projectId = projectId;
+  }
+
+  setProjectId(projectId: string): void {
+    this.projectId = projectId;
+    // Reconnect with new project ID
+    if (this.ws?.readyState === WebSocket.OPEN) {
+      this.disconnect();
+      this.connect();
+    }
   }
 
   connect(token?: string): void {
@@ -16,7 +27,9 @@ export class WebSocketService {
       return;
     }
 
-    const wsUrl = token ? `${this.url}?token=${token}` : this.url;
+    const wsUrl = token ? 
+      `${this.baseUrl}/projects/${this.projectId}/ws?token=${token}` : 
+      `${this.baseUrl}/projects/${this.projectId}/ws`;
 
     try {
       this.ws = new WebSocket(wsUrl);
@@ -106,7 +119,4 @@ export class WebSocketService {
 
 // Create singleton instance
 const WS_URL = import.meta.env.VITE_WS_URL || 'ws://localhost:8080/api/v1';
-const PROJECT_ID = import.meta.env.VITE_PROJECT_ID || 'laforge-main';
-export const websocketService = new WebSocketService(
-  `${WS_URL}/projects/${PROJECT_ID}/ws`
-);
+export const websocketService = new WebSocketService(WS_URL);
