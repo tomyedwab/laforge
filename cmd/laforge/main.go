@@ -585,7 +585,7 @@ func runStep(cmd *cobra.Command, args []string) error {
 			}
 
 			stepLogger.LogGitCommit(commitMessage, worktree.Path)
-			if err := commitChanges(worktree.Path, commitMessage); err != nil {
+			if err := commitChanges(worktree.Path, commitMessage, dbStepID); err != nil {
 				stepLogger.LogError("git", "Failed to commit changes", err, map[string]interface{}{
 					"repo_path": worktree.Path,
 				})
@@ -750,8 +750,8 @@ func hasGitChangesExcludingCommitMD(repoDir string) (bool, error) {
 }
 
 // commitChanges commits all changes in the repository with the given message,
-// excluding COMMIT.md if it exists
-func commitChanges(repoDir string, message string) error {
+// excluding COMMIT.md if it exists, and adds a git note with the step ID
+func commitChanges(repoDir string, message string, stepID string) error {
 	// Add all changes
 	cmd := exec.Command("git", "add", "-A")
 	cmd.Dir = repoDir
@@ -774,6 +774,14 @@ func commitChanges(repoDir string, message string) error {
 			return nil
 		}
 		return fmt.Errorf("failed to commit changes: %w\nOutput: %s", err, string(output))
+	}
+
+	// Add git note with step ID
+	noteMessage := fmt.Sprintf("Step-id: %s", stepID)
+	cmd = exec.Command("git", "notes", "add", "-m", noteMessage)
+	cmd.Dir = repoDir
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("failed to add git note: %w", err)
 	}
 
 	return nil
@@ -1051,6 +1059,25 @@ func runStepRollback(cmd *cobra.Command, args []string) error {
 	fmt.Printf("Resetting repository to commit %s...\n", targetStep.CommitSHABefore)
 	if err := git.ResetToCommit(repoDir, targetStep.CommitSHABefore); err != nil {
 		return errors.Wrap(errors.ErrUnknown, err, "failed to reset repository to target commit")
+	}
+
+	// Step 3: Restore task database from backup
+	taskDBPath, err := projects.GetProjectTaskDatabase(projectID)
+	if err != nil {
+		return errors.Wrap(errors.ErrUnknown, err, "failed to get project task database path")
+	}
+
+	backupDBPath := filepath.Join(filepath.Dir(taskDBPath), fmt.Sprintf("tasks-S%d.db", stepID))
+	if _, err := os.Stat(backupDBPath); err == nil {
+		// Backup exists, restore it
+		fmt.Printf("Restoring task database from backup: %s...\n", backupDBPath)
+		_ = os.Remove(taskDBPath) // Remove current database
+		if err := database.CopyDatabase(backupDBPath, taskDBPath); err != nil {
+			return errors.Wrap(errors.ErrUnknown, err, "failed to restore task database from backup")
+		}
+		fmt.Printf("Task database restored from backup\n")
+	} else {
+		fmt.Printf("Warning: Task database backup not found at %s\n", backupDBPath)
 	}
 
 	fmt.Printf("Successfully rolled back to step S%d\n", stepID)
