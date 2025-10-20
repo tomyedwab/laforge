@@ -9,24 +9,25 @@ mark any completed that look like they are done! Do this EVERY TIME.
 Every time I ask you to run you will follow these steps:
 1. First, read README.md for project context.
 2. Use the `latasks` CLI tool to get the next ready task to work on.
-3. If the retrieved task has already been completed, or it has been reviewed and
+3. IF THERE ARE NO TASKS READY TO WORK ON, STOP IMMEDIATELY.
+4. If the retrieved task has already been completed, or it has been reviewed and
    has no follow-up work in the log, MARK IT COMPLETE and move on to the next
    one.
-4. Read any files in docs/ relevant to the task at hand.
-5. Make a plan for making progress on the task and update the task log.
-6. If the plan involves a decision or requires feedback, attach a review request
+5. Read any files in docs/ relevant to the task at hand.
+6. Make a plan for making progress on the task and update the task log.
+7. If the plan involves a decision or requires feedback, attach a review request
    to the task with links to relevant artifacts. Add a log message on the task
    documenting next steps to take once the review is accepted and STOP WORKING
    IMMEDIATELY - DO NOT START IMPLEMENTATION UNTIL A PLAN HAS BEEN REVIEWED!
-7. Otherwise, proceed with implementation work, make changes to the local
+8. Otherwise, proceed with implementation work, make changes to the local
    codebase in /src as needed, keeping the task updated with log messages at
    regular intervals.
-8. After making progress on or completing the task, update the task log with a
+9. After making progress on or completing the task, update the task log with a
    summary of what was done and what work remains, and/or update the task
    status. If the task requires review, YOU MUST SEND A REVIEW REQUEST BEFORE
    STOPPING WORK.
-9. Once the task is updated, clean up any temporary files (e.g., build
-   artifacts, logs) and write a commit message in COMMIT.md.
+10. Once the task is updated, clean up any temporary files (e.g., build
+    artifacts, logs) and write a commit message in COMMIT.md.
 
 ## Task management
 
