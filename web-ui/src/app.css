@@ -813,10 +813,21 @@ button[type="submit"]:disabled {
   padding: 0;
   line-height: 1;
   transition: color 0.2s;
+  border-radius: 4px;
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .close-button:hover {
   color: var(--color-error);
+}
+
+.close-button:focus {
+  outline: 2px solid var(--color-focus);
+  outline-offset: 2px;
 }
 
 .task-detail-content {
@@ -1938,6 +1949,19 @@ button[type="submit"]:disabled {
   .artifact-viewer-modal {
     width: 95%;
     margin: 0.5rem;
+    max-height: calc(100vh - 1rem);
+  }
+  
+  .review-request-header,
+  .review-detail-header,
+  .artifact-viewer-header {
+    padding: 1rem;
+  }
+  
+  .review-request-content,
+  .review-detail-content,
+  .artifact-viewer-content {
+    padding: 1rem;
   }
 }
 
@@ -2530,32 +2554,57 @@ button[type="submit"]:disabled {
   left: 0;
   right: 0;
   bottom: 0;
-  background-color: rgba(0, 0, 0, 0.5);
+  background-color: var(--color-overlay);
   display: flex;
   align-items: center;
   justify-content: center;
   z-index: 1000;
+  animation: fadeIn 0.2s ease;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
 }
 
 .review-request-modal,
 .review-detail-modal {
-  background: white;
+  background: var(--color-surface);
   border-radius: 8px;
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
+  box-shadow: 0 10px 30px var(--color-shadow);
   max-width: 600px;
   width: 90%;
   max-height: 90vh;
   overflow-y: auto;
+  border: 1px solid var(--color-border);
+  animation: slideUp 0.3s ease;
 }
 
 .artifact-viewer-modal {
-  background: white;
+  background: var(--color-surface);
   border-radius: 8px;
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
+  box-shadow: 0 10px 30px var(--color-shadow);
   max-width: 900px;
   width: 95%;
   max-height: 95vh;
   overflow-y: auto;
+  border: 1px solid var(--color-border);
+  animation: slideUp 0.3s ease;
+}
+
+@keyframes slideUp {
+  from {
+    transform: translateY(20px);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
 }
 
 .review-request-header,
@@ -2565,29 +2614,32 @@ button[type="submit"]:disabled {
   justify-content: space-between;
   align-items: center;
   padding: 1.5rem;
-  border-bottom: 1px solid #e0e0e0;
+  border-bottom: 1px solid var(--color-border);
+  background-color: var(--color-border-light);
 }
 
 .review-request-content,
 .review-detail-content,
 .artifact-viewer-content {
   padding: 1.5rem;
+  background-color: var(--color-surface);
 }
 
 .task-info {
-  background-color: #f8f9fa;
+  background-color: var(--color-border-light);
   padding: 1rem;
   border-radius: 4px;
   margin-bottom: 1.5rem;
+  border: 1px solid var(--color-border);
 }
 
 .task-info h4 {
   margin: 0 0 0.5rem 0;
-  color: #2c3e50;
+  color: var(--color-text);
 }
 
 .task-type {
-  color: #7f8c8d;
+  color: var(--color-text-light);
   font-size: 0.9rem;
   margin: 0;
 }
@@ -2595,7 +2647,7 @@ button[type="submit"]:disabled {
 .attachment-help {
   margin-top: 0.5rem;
   font-size: 0.9rem;
-  color: #7f8c8d;
+  color: var(--color-text-light);
 }
 
 .common-paths {
@@ -2606,17 +2658,18 @@ button[type="submit"]:disabled {
 }
 
 .path-suggestion {
-  background: #ecf0f1;
-  border: 1px solid #bdc3c7;
+  background: var(--color-border-light);
+  border: 1px solid var(--color-border);
   border-radius: 4px;
   padding: 0.25rem 0.5rem;
   font-size: 0.8rem;
   cursor: pointer;
   transition: background-color 0.2s;
+  color: var(--color-text);
 }
 
 .path-suggestion:hover {
-  background: #d5dbdb;
+  background: var(--color-border);
 }
 
 .review-info {
@@ -2636,7 +2689,7 @@ button[type="submit"]:disabled {
 
 .meta-item label {
   font-weight: 600;
-  color: #7f8c8d;
+  color: var(--color-text-light);
   font-size: 0.9rem;
 }
 
@@ -2655,10 +2708,11 @@ button[type="submit"]:disabled {
 
 .attachment-path {
   font-family: monospace;
-  background-color: #ecf0f1;
+  background-color: var(--color-border-light);
   padding: 0.25rem 0.5rem;
   border-radius: 4px;
   font-size: 0.9rem;
+  color: var(--color-text);
 }
 
 .view-artifact-button {
@@ -2676,14 +2730,14 @@ button[type="submit"]:disabled {
 }
 
 .review-feedback {
-  background-color: #e8f5e8;
+  background-color: var(--color-border-light);
   padding: 1rem;
   border-radius: 4px;
-  border-left: 4px solid #27ae60;
+  border-left: 4px solid var(--color-success);
 }
 
 .review-response {
-  border-top: 1px solid #e0e0e0;
+  border-top: 1px solid var(--color-border);
   padding-top: 1.5rem;
   margin-top: 1.5rem;
 }
@@ -2706,26 +2760,27 @@ button[type="submit"]:disabled {
   align-items: center;
   gap: 0.5rem;
   padding: 0.75rem 1rem;
-  border: 2px solid #ddd;
+  border: 2px solid var(--color-border);
   border-radius: 4px;
   cursor: pointer;
   transition: all 0.2s;
+  color: var(--color-text);
 }
 
 .option-label.approve:hover {
-  border-color: #27ae60;
-  background-color: #e8f5e8;
+  border-color: var(--color-success);
+  background-color: var(--color-border-light);
 }
 
 .option-label.reject:hover {
-  border-color: #e74c3c;
-  background-color: #fadbd8;
+  border-color: var(--color-error);
+  background-color: var(--color-border-light);
 }
 
 .review-completed {
   text-align: center;
   padding: 2rem;
-  background-color: #f8f9fa;
+  background-color: var(--color-border-light);
   border-radius: 4px;
 }
 
@@ -2794,28 +2849,116 @@ button[type="submit"]:disabled {
   margin-right: 0.5rem;
 }
 
-/* Artifact Viewer */
-.artifact-info {
-  display: flex;
-  flex-direction: column;
+/* Modal Form Elements */
+.review-request-content .form-group,
+.review-detail-content .form-group {
+  margin-bottom: 1.5rem;
 }
 
-.artifact-actions {
+.review-request-content .form-group label,
+.review-detail-content .form-group label {
+  display: block;
+  margin-bottom: 0.5rem;
+  font-weight: 500;
+  color: var(--color-text);
+}
+
+.review-request-content .form-group input,
+.review-request-content .form-group textarea,
+.review-detail-content .form-group input,
+.review-detail-content .form-group textarea {
+  width: 100%;
+  padding: 0.75rem;
+  border: 1px solid var(--color-border);
+  border-radius: 4px;
+  font-size: 0.95rem;
+  transition: border-color 0.2s, box-shadow 0.2s;
+  background-color: var(--color-surface);
+  color: var(--color-text);
+}
+
+.review-request-content .form-group input:focus,
+.review-request-content .form-group textarea:focus,
+.review-detail-content .form-group input:focus,
+.review-detail-content .form-group textarea:focus {
+  outline: none;
+  border-color: var(--color-focus);
+  box-shadow: 0 0 0 2px var(--color-border-light);
+}
+
+.review-request-content .form-group input:disabled,
+.review-request-content .form-group textarea:disabled,
+.review-detail-content .form-group input:disabled,
+.review-detail-content .form-group textarea:disabled {
+  background-color: var(--color-border-light);
+  cursor: not-allowed;
+}
+
+.review-request-content .form-actions,
+.review-detail-content .form-actions {
   display: flex;
-  gap: 0.5rem;
+  justify-content: flex-end;
+  gap: 1rem;
+  margin-top: 2rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--color-border);
+}
+
+.review-request-content .cancel-button,
+.review-request-content .submit-button,
+.review-detail-content .cancel-button,
+.review-detail-content .submit-button {
+  padding: 0.75rem 1.5rem;
+  border: none;
+  border-radius: 4px;
+  font-size: 0.95rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background-color 0.2s;
+}
+
+.review-request-content .cancel-button,
+.review-detail-content .cancel-button {
+  background-color: var(--color-text-light);
+  color: white;
+}
+
+.review-request-content .cancel-button:hover:not(:disabled),
+.review-detail-content .cancel-button:hover:not(:disabled) {
+  background-color: var(--color-primary);
+}
+
+.review-request-content .submit-button,
+.review-detail-content .submit-button {
+  background-color: var(--color-button-primary);
+  color: white;
+}
+
+.review-request-content .submit-button:hover:not(:disabled),
+.review-detail-content .submit-button:hover:not(:disabled) {
+  background-color: var(--color-button-primary-hover);
+}
+
+.review-request-content .cancel-button:disabled,
+.review-request-content .submit-button:disabled,
+.review-detail-content .cancel-button:disabled,
+.review-detail-content .submit-button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
 }
 
 .refresh-button {
   background: none;
-  border: 1px solid #ddd;
+  border: 1px solid var(--color-border);
   padding: 0.5rem;
   border-radius: 4px;
   cursor: pointer;
   font-size: 1rem;
+  color: var(--color-text);
 }
 
 .refresh-button:hover {
-  background-color: #f8f9fa;
+  background-color: var(--color-border-light);
 }
 
 .artifact-loading,
@@ -2823,13 +2966,14 @@ button[type="submit"]:disabled {
 .artifact-empty {
   text-align: center;
   padding: 3rem;
+  color: var(--color-text);
 }
 
 .loading-spinner {
   width: 40px;
   height: 40px;
-  border: 4px solid #f3f3f3;
-  border-top: 4px solid #3498db;
+  border: 4px solid var(--color-border-light);
+  border-top: 4px solid var(--color-primary);
   border-radius: 50%;
   animation: spin 1s linear infinite;
   margin: 0 auto 1rem;
@@ -2846,7 +2990,7 @@ button[type="submit"]:disabled {
 }
 
 .retry-button {
-  background-color: #3498db;
+  background-color: var(--color-primary);
   color: white;
   border: none;
   padding: 0.75rem 1.5rem;
@@ -2856,7 +3000,7 @@ button[type="submit"]:disabled {
 }
 
 .retry-button:hover {
-  background-color: #2980b9;
+  background-color: var(--color-primary-light);
 }
 
 .artifact-image {
@@ -2868,7 +3012,7 @@ button[type="submit"]:disabled {
   max-width: 100%;
   max-height: 70vh;
   border-radius: 4px;
-  box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+  box-shadow: 0 2px 8px var(--color-shadow);
 }
 
 .artifact-markdown {
@@ -2881,19 +3025,20 @@ button[type="submit"]:disabled {
 .markdown-content h3 {
   margin-top: 1.5rem;
   margin-bottom: 1rem;
-  color: #2c3e50;
+  color: var(--color-text);
 }
 
 .markdown-content code {
-  background-color: #f4f4f4;
+  background-color: var(--color-border-light);
   padding: 0.2rem 0.4rem;
   border-radius: 3px;
   font-family: 'Courier New', monospace;
   font-size: 0.9rem;
+  color: var(--color-text);
 }
 
 .markdown-content pre {
-  background-color: #f4f4f4;
+  background-color: var(--color-border-light);
   padding: 1rem;
   border-radius: 4px;
   overflow-x: auto;
@@ -2906,7 +3051,7 @@ button[type="submit"]:disabled {
 }
 
 .artifact-text pre {
-  background-color: #f8f9fa;
+  background-color: var(--color-border-light);
   padding: 1rem;
   border-radius: 4px;
   overflow-x: auto;
@@ -2914,6 +3059,7 @@ button[type="submit"]:disabled {
   font-size: 0.9rem;
   line-height: 1.5;
   margin: 0;
+  color: var(--color-text);
 }
 
 .artifact-unknown {
@@ -2923,11 +3069,12 @@ button[type="submit"]:disabled {
 
 .artifact-unknown .artifact-path {
   font-family: monospace;
-  background-color: #f4f4f4;
+  background-color: var(--color-border-light);
   padding: 0.5rem;
   border-radius: 4px;
   margin-top: 1rem;
   display: inline-block;
+  color: var(--color-text);
 }
 
 /* Reviews Dashboard */
