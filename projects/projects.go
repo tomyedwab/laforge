@@ -16,20 +16,22 @@ import (
 
 // Project represents a LaForge project
 type Project struct {
-	ID          string    `json:"id"`
-	Name        string    `json:"name"`
-	Description string    `json:"description"`
-	CreatedAt   time.Time `json:"created_at"`
-	UpdatedAt   time.Time `json:"updated_at"`
+	ID             string    `json:"id"`
+	Name           string    `json:"name"`
+	Description    string    `json:"description"`
+	RepositoryPath string    `json:"repository_path"`
+	CreatedAt      time.Time `json:"created_at"`
+	UpdatedAt      time.Time `json:"updated_at"`
 }
 
 // ProjectConfig represents the project configuration file
 type ProjectConfig struct {
-	ID          string `json:"id"`
-	Name        string `json:"name"`
-	Description string `json:"description"`
-	CreatedAt   string `json:"created_at"`
-	UpdatedAt   string `json:"updated_at"`
+	ID             string `json:"id"`
+	Name           string `json:"name"`
+	Description    string `json:"description"`
+	RepositoryPath string `json:"repository_path"`
+	CreatedAt      string `json:"created_at"`
+	UpdatedAt      string `json:"updated_at"`
 }
 
 // GetLaForgeDir returns the LaForge directory path (~/.laforge)
@@ -77,7 +79,7 @@ func ProjectExists(projectID string) (bool, error) {
 }
 
 // CreateProject creates a new LaForge project with the specified ID and configuration
-func CreateProject(projectID string, name string, description string) (*Project, error) {
+func CreateProject(projectID string, name string, description string, repositoryPath string) (*Project, error) {
 	// Validate project ID
 	if projectID == "" {
 		return nil, errors.NewInvalidInputError("project ID cannot be empty")
@@ -115,11 +117,12 @@ func CreateProject(projectID string, name string, description string) (*Project,
 	// Create project metadata
 	now := time.Now()
 	project := &Project{
-		ID:          projectID,
-		Name:        name,
-		Description: description,
-		CreatedAt:   now,
-		UpdatedAt:   now,
+		ID:             projectID,
+		Name:           name,
+		Description:    description,
+		RepositoryPath: repositoryPath,
+		CreatedAt:      now,
+		UpdatedAt:      now,
 	}
 
 	// Create project configuration file
@@ -158,11 +161,12 @@ func createProjectConfig(projectDir string, project *Project) error {
 	configPath := filepath.Join(projectDir, "project.json")
 
 	config := ProjectConfig{
-		ID:          project.ID,
-		Name:        project.Name,
-		Description: project.Description,
-		CreatedAt:   project.CreatedAt.Format(time.RFC3339),
-		UpdatedAt:   project.UpdatedAt.Format(time.RFC3339),
+		ID:             project.ID,
+		Name:           project.Name,
+		Description:    project.Description,
+		RepositoryPath: project.RepositoryPath,
+		CreatedAt:      project.CreatedAt.Format(time.RFC3339),
+		UpdatedAt:      project.UpdatedAt.Format(time.RFC3339),
 	}
 
 	file, err := os.Create(configPath)
@@ -249,11 +253,12 @@ func LoadProject(projectID string) (*Project, error) {
 	}
 
 	project := &Project{
-		ID:          config.ID,
-		Name:        config.Name,
-		Description: config.Description,
-		CreatedAt:   createdAt,
-		UpdatedAt:   updatedAt,
+		ID:             config.ID,
+		Name:           config.Name,
+		Description:    config.Description,
+		RepositoryPath: config.RepositoryPath,
+		CreatedAt:      createdAt,
+		UpdatedAt:      updatedAt,
 	}
 
 	return project, nil

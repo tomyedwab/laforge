@@ -49,10 +49,12 @@ export function ArtifactViewer({ artifactPath, onClose }: ArtifactViewerProps) {
         setArtifactType('text');
       }
 
-      // Try to fetch the artifact content
-      // For now, we'll try to fetch from the repository
-      // In a real implementation, this would be an API endpoint
-      const response = await fetch(`/api/v1/projects/laforge-main/artifacts/${encodeURIComponent(artifactPath)}`);
+      // Try to fetch the artifact content from the API
+      const projectId = localStorage.getItem('laforge_selected_project');
+      const project = projectId ? JSON.parse(projectId) : null;
+      const projectIdValue = project?.id || 'laforge-main';
+      
+      const response = await fetch(`${import.meta.env.VITE_API_BASE_URL || 'http://localhost:8080/api/v1'}/projects/${projectIdValue}/artifacts/${encodeURIComponent(artifactPath)}`);
       
       if (!response.ok) {
         throw new Error(`Failed to load artifact: ${response.statusText}`);

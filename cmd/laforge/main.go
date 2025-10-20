@@ -203,8 +203,14 @@ func runInit(cmd *cobra.Command, args []string) error {
 		name = projectID
 	}
 
+	// Get current working directory as repository path
+	repositoryPath, err := os.Getwd()
+	if err != nil {
+		return errors.Wrap(errors.ErrUnknown, err, "failed to get current working directory")
+	}
+
 	// Create the project
-	project, err := projects.CreateProject(projectID, name, description)
+	project, err := projects.CreateProject(projectID, name, description, repositoryPath)
 	if err != nil {
 		return errors.Wrap(errors.ErrProjectAlreadyExists, err, "failed to create project")
 	}

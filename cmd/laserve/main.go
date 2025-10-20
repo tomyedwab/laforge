@@ -169,6 +169,9 @@ func setupRouter(jwtManager *auth.JWTManager, taskHandler *handlers.TaskHandler,
 	// Create project handler
 	projectHandler := handlers.NewProjectHandler()
 
+	// Create artifact handler
+	artifactHandler := handlers.NewArtifactHandler()
+
 	// Protected routes (authentication required)
 	protected := api.PathPrefix("/projects").Subrouter()
 	protected.Use(jwtManager.AuthMiddleware)
@@ -209,6 +212,10 @@ func setupRouter(jwtManager *auth.JWTManager, taskHandler *handlers.TaskHandler,
 	protected.HandleFunc("/{project_id}/steps", corsPreflightHandler).Methods("OPTIONS")
 	protected.HandleFunc("/{project_id}/steps/{step_id}", stepHandler.GetStep).Methods("GET")
 	protected.HandleFunc("/{project_id}/steps/{step_id}", corsPreflightHandler).Methods("OPTIONS")
+
+	// Artifact serving routes
+	protected.HandleFunc("/{project_id}/artifacts/{artifact_path:.*}", artifactHandler.ServeArtifact).Methods("GET")
+	protected.HandleFunc("/{project_id}/artifacts/{artifact_path:.*}", corsPreflightHandler).Methods("OPTIONS")
 
 	// WebSocket route for real-time updates
 	protected.HandleFunc("/{project_id}/ws", wsServer.HandleWebSocket)
