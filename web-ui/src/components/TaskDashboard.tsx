@@ -16,7 +16,10 @@ interface TaskDashboardProps {
 }
 
 export function TaskDashboard({ onTaskClick }: TaskDashboardProps) {
-  const [tasks, setTasks] = useState<Task[]>([]);
+  const [upcomingTasks, setUpcomingTasks] = useState<Task[]>([]);
+  const [completedTasks, setCompletedTasks] = useState<Task[]>([]);
+  const [upcomingPagination, setUpcomingPagination] = useState({ page: 1, limit: 25, total: 0, pages: 1 });
+  const [completedPagination, setCompletedPagination] = useState({ page: 1, limit: 25, total: 0, pages: 1 });
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [selectedTask, setSelectedTask] = useState<Task | null>(null);
@@ -25,19 +28,52 @@ export function TaskDashboard({ onTaskClick }: TaskDashboardProps) {
     sortBy: 'created_at',
     sortOrder: 'desc',
   });
-  const [currentPage, setCurrentPage] = useState(1);
+  const [upcomingPage, setUpcomingPage] = useState(1);
+  const [completedPage, setCompletedPage] = useState(1);
   const [itemsPerPage, setItemsPerPage] = useState(25);
   const [isCreatingTask, setIsCreatingTask] = useState(false);
 
   // Set up WebSocket connection for real-time updates
   const { isConnected, connectionError } = useWebSocket({
     onTaskUpdate: (updatedTask) => {
-      // Update the task in the local state
-      setTasks(prevTasks => 
-        prevTasks.map(task => 
-          task.id === updatedTask.id ? updatedTask : task
-        )
-      );
+      // Update the task in the appropriate local state
+      if (updatedTask.status === 'completed') {
+        // Remove from upcoming if it exists there
+        setUpcomingTasks(prevTasks => {
+          const filtered = prevTasks.filter(task => task.id !== updatedTask.id);
+          if (filtered.length < prevTasks.length) {
+            // Task was removed from upcoming, add to completed and update pagination
+            setCompletedTasks(prev => [updatedTask, ...prev]);
+            setUpcomingPagination(prev => ({ ...prev, total: prev.total - 1 }));
+            setCompletedPagination(prev => ({ ...prev, total: prev.total + 1 }));
+          }
+          return filtered;
+        });
+        // Update in completed if it exists there
+        setCompletedTasks(prevTasks => 
+          prevTasks.map(task => 
+            task.id === updatedTask.id ? updatedTask : task
+          )
+        );
+      } else {
+        // Remove from completed if it exists there
+        setCompletedTasks(prevTasks => {
+          const filtered = prevTasks.filter(task => task.id !== updatedTask.id);
+          if (filtered.length < prevTasks.length) {
+            // Task was removed from completed, add to upcoming and update pagination
+            setUpcomingTasks(prev => [updatedTask, ...prev]);
+            setCompletedPagination(prev => ({ ...prev, total: prev.total - 1 }));
+            setUpcomingPagination(prev => ({ ...prev, total: prev.total + 1 }));
+          }
+          return filtered;
+        });
+        // Update in upcoming if it exists there
+        setUpcomingTasks(prevTasks => 
+          prevTasks.map(task => 
+            task.id === updatedTask.id ? updatedTask : task
+          )
+        );
+      }
     },
     onReviewUpdate: (updatedReview) => {
       // If a review is updated, we might need to refresh the task data
@@ -55,29 +91,36 @@ export function TaskDashboard({ onTaskClick }: TaskDashboardProps) {
       setIsLoading(true);
       setError(null);
       
-      // Determine status filter based on active tab
-      let statusFilter: string | undefined;
-      if (filters.status) {
-        // If user has selected a specific status in filters, use that
-        statusFilter = filters.status;
-      } else if (activeTab === 'completed') {
-        // For completed tab, only show completed tasks
-        statusFilter = 'completed';
+      // Load tasks based on active tab
+      if (activeTab === 'upcoming') {
+        // Load upcoming tasks (todo, in-progress, in-review)
+        const response = await apiService.getTasks({
+          include_children: true,
+          include_logs: false,
+          include_reviews: false,
+          page: upcomingPage,
+          limit: itemsPerPage,
+          status: 'todo,in-progress,in-review',
+          type: filters.type,
+        });
+        
+        setUpcomingTasks(response.tasks);
+        setUpcomingPagination(response.pagination);
+      } else {
+        // Load completed tasks
+        const response = await apiService.getTasks({
+          include_children: true,
+          include_logs: false,
+          include_reviews: false,
+          page: completedPage,
+          limit: itemsPerPage,
+          status: 'completed',
+          type: filters.type,
+        });
+        
+        setCompletedTasks(response.tasks);
+        setCompletedPagination(response.pagination);
       }
-      // For upcoming tab, we don't set a status filter to show all non-completed tasks
-      // The API will return all tasks and we can filter them client-side if needed
-      
-      const response = await apiService.getTasks({
-        include_children: true,
-        include_logs: false,
-        include_reviews: false,
-        page: currentPage,
-        limit: itemsPerPage,
-        status: statusFilter,
-        type: filters.type,
-      });
-      
-      setTasks(response.tasks);
     } catch (error) {
       console.error('Failed to load tasks:', error);
       setError('Failed to load tasks. Please try again.');
@@ -86,16 +129,14 @@ export function TaskDashboard({ onTaskClick }: TaskDashboardProps) {
     }
   };
 
-  // Filter and sort tasks locally for more responsive UI
-  const processedTasks = useMemo(() => {
-    let filtered = tasks;
+  // Get current tasks and pagination based on active tab
+  const currentTasks = activeTab === 'upcoming' ? upcomingTasks : completedTasks;
+  const currentPagination = activeTab === 'upcoming' ? upcomingPagination : completedPagination;
+  const currentPage = activeTab === 'upcoming' ? upcomingPage : completedPage;
 
-    // Apply tab-based filtering
-    if (activeTab === 'upcoming') {
-      filtered = filtered.filter(task => task.status !== 'completed');
-    } else if (activeTab === 'completed') {
-      filtered = filtered.filter(task => task.status === 'completed');
-    }
+  // Apply local filtering and sorting for more responsive UI
+  const processedTasks = useMemo(() => {
+    let filtered = currentTasks;
 
     // Apply search filter
     if (filters.search) {
@@ -124,7 +165,7 @@ export function TaskDashboard({ onTaskClick }: TaskDashboardProps) {
     }
 
     return filtered;
-  }, [tasks, filters, activeTab]);
+  }, [currentTasks, filters]);
 
   const handleTaskClick = (task: Task) => {
     if (onTaskClick) {
@@ -149,23 +190,47 @@ export function TaskDashboard({ onTaskClick }: TaskDashboardProps) {
   };
 
   const handleTaskUpdated = (updatedTask: Task) => {
-    // Update the task in the local state
-    setTasks(prevTasks => 
-      prevTasks.map(task => 
-        task.id === updatedTask.id ? updatedTask : task
-      )
-    );
+    // Update the task in the appropriate local state
+    if (updatedTask.status === 'completed') {
+      setCompletedTasks(prevTasks => 
+        prevTasks.map(task => 
+          task.id === updatedTask.id ? updatedTask : task
+        )
+      );
+    } else {
+      setUpcomingTasks(prevTasks => 
+        prevTasks.map(task => 
+          task.id === updatedTask.id ? updatedTask : task
+        )
+      );
+    }
   };
 
   const handleStatusChange = async (taskId: number, status: TaskStatus) => {
     try {
       await apiService.updateTaskStatus(taskId, status);
-      // Update the task in the local state
-      setTasks(prevTasks => 
-        prevTasks.map(task => 
-          task.id === taskId ? { ...task, status } : task
-        )
-      );
+      
+      // If status changed to completed, move task from upcoming to completed
+      if (status === 'completed') {
+        const task = upcomingTasks.find(t => t.id === taskId);
+        if (task) {
+          setUpcomingTasks(prev => prev.filter(t => t.id !== taskId));
+          setCompletedTasks(prev => [{ ...task, status }, ...prev]);
+          // Update pagination totals
+          setUpcomingPagination(prev => ({ ...prev, total: prev.total - 1 }));
+          setCompletedPagination(prev => ({ ...prev, total: prev.total + 1 }));
+        }
+      } else {
+        // If status changed from completed, move task from completed to upcoming
+        const task = completedTasks.find(t => t.id === taskId);
+        if (task) {
+          setCompletedTasks(prev => prev.filter(t => t.id !== taskId));
+          setUpcomingTasks(prev => [{ ...task, status }, ...prev]);
+          // Update pagination totals
+          setCompletedPagination(prev => ({ ...prev, total: prev.total - 1 }));
+          setUpcomingPagination(prev => ({ ...prev, total: prev.total + 1 }));
+        }
+      }
     } catch (error) {
       console.error('Failed to update task status:', error);
       setError('Failed to update task status');
@@ -173,13 +238,18 @@ export function TaskDashboard({ onTaskClick }: TaskDashboardProps) {
   };
 
   const handlePageChange = (page: number) => {
-    setCurrentPage(page);
+    if (activeTab === 'upcoming') {
+      setUpcomingPage(page);
+    } else {
+      setCompletedPage(page);
+    }
     loadTasks();
   };
 
   const handleItemsPerPageChange = (items: number) => {
     setItemsPerPage(items);
-    setCurrentPage(1);
+    setUpcomingPage(1);
+    setCompletedPage(1);
     loadTasks();
   };
 
@@ -190,7 +260,7 @@ export function TaskDashboard({ onTaskClick }: TaskDashboardProps) {
     }, 300);
     
     return () => clearTimeout(timeoutId);
-  }, [filters.status, filters.type, currentPage, itemsPerPage, activeTab]);
+  }, [filters.status, filters.type, upcomingPage, completedPage, itemsPerPage, activeTab]);
 
   if (isLoading) {
     return (
@@ -210,11 +280,11 @@ export function TaskDashboard({ onTaskClick }: TaskDashboardProps) {
         <div class="task-tabs">
           <button class="tab-button active" disabled>
             Upcoming
-            <span class="tab-count">-</span>
+            <span class="tab-count">{upcomingPagination.total}</span>
           </button>
           <button class="tab-button" disabled>
             Completed
-            <span class="tab-count">-</span>
+            <span class="tab-count">{completedPagination.total}</span>
           </button>
         </div>
         
@@ -253,14 +323,14 @@ export function TaskDashboard({ onTaskClick }: TaskDashboardProps) {
           onClick={() => setActiveTab('upcoming')}
         >
           Upcoming
-          <span class="tab-count">{tasks.filter(t => t.status !== 'completed').length}</span>
+          <span class="tab-count">{upcomingPagination.total}</span>
         </button>
         <button
           class={`tab-button ${activeTab === 'completed' ? 'active' : ''}`}
           onClick={() => setActiveTab('completed')}
         >
           Completed
-          <span class="tab-count">{tasks.filter(t => t.status === 'completed').length}</span>
+          <span class="tab-count">{completedPagination.total}</span>
         </button>
       </div>
       
@@ -287,8 +357,8 @@ export function TaskDashboard({ onTaskClick }: TaskDashboardProps) {
           
           <Pagination
             currentPage={currentPage}
-            totalPages={Math.ceil(processedTasks.length / itemsPerPage)}
-            totalItems={processedTasks.length}
+            totalPages={currentPagination.pages}
+            totalItems={currentPagination.total}
             itemsPerPage={itemsPerPage}
             onPageChange={handlePageChange}
             onItemsPerPageChange={handleItemsPerPageChange}
