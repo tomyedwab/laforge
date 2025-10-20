@@ -217,6 +217,24 @@ class ApiService {
     );
   }
 
+  async getAllProjectReviews(params?: {
+    status?: string;
+    page?: number;
+    limit?: number;
+  }): Promise<{ reviews: TaskReview[]; pagination: any }> {
+    const searchParams = new URLSearchParams();
+    Object.entries(params || {}).forEach(([key, value]) => {
+      if (value !== undefined) {
+        searchParams.append(key, String(value));
+      }
+    });
+
+    const queryString = searchParams.toString();
+    return this.request<{ reviews: TaskReview[]; pagination: any }>(
+      `/projects/${this.projectId}/reviews${queryString ? `?${queryString}` : ''}`
+    );
+  }
+
   // Steps
   async getSteps(params?: {
     active?: boolean;

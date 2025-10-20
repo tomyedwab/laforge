@@ -200,6 +200,10 @@ func setupRouter(jwtManager *auth.JWTManager, taskHandler *handlers.TaskHandler,
 	protected.HandleFunc("/{project_id}/tasks/{task_id}/reviews", taskHandler.CreateTaskReview).Methods("POST")
 	protected.HandleFunc("/{project_id}/tasks/{task_id}/reviews", corsPreflightHandler).Methods("OPTIONS")
 
+	// Project reviews routes
+	protected.HandleFunc("/{project_id}/reviews", taskHandler.GetProjectReviews).Methods("GET")
+	protected.HandleFunc("/{project_id}/reviews", corsPreflightHandler).Methods("OPTIONS")
+
 	// Step history routes
 	protected.HandleFunc("/{project_id}/steps", stepHandler.ListSteps).Methods("GET")
 	protected.HandleFunc("/{project_id}/steps", corsPreflightHandler).Methods("OPTIONS")

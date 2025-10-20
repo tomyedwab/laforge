@@ -978,3 +978,100 @@ func (h *TaskHandler) CreateTaskReview(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusCreated)
 	json.NewEncoder(w).Encode(response)
 }
+
+// GetProjectReviews handles GET /projects/{project_id}/reviews
+func (h *TaskHandler) GetProjectReviews(w http.ResponseWriter, r *http.Request) {
+	vars := mux.Vars(r)
+	projectID := vars["project_id"]
+
+	// Get query parameters for filtering and pagination
+	status := r.URL.Query().Get("status")
+	pageStr := r.URL.Query().Get("page")
+	limitStr := r.URL.Query().Get("limit")
+
+	page := 1
+	limit := 100
+
+	if pageStr != "" {
+		if p, err := strconv.Atoi(pageStr); err == nil && p > 0 {
+			page = p
+		}
+	}
+
+	if limitStr != "" {
+		if l, err := strconv.Atoi(limitStr); err == nil && l > 0 && l <= 1000 {
+			limit = l
+		}
+	}
+
+	// Open project database
+	db, err := h.getProjectDB(projectID)
+	if err != nil {
+		http.Error(w, `{"error":{"code":"INTERNAL_ERROR","message":"Failed to open project database"}}`, http.StatusInternalServerError)
+		return
+	}
+	defer db.Close()
+
+	// Get reviews from database
+	var statusFilter *string
+	if status != "" && (status == "pending" || status == "approved" || status == "rejected") {
+		statusFilter = &status
+	}
+
+	dbReviews, err := tasks.GetAllReviews(db, statusFilter)
+	if err != nil {
+		http.Error(w, `{"error":{"code":"INTERNAL_ERROR","message":"Failed to fetch reviews"}}`, http.StatusInternalServerError)
+		return
+	}
+
+	// Apply pagination
+	totalCount := len(dbReviews)
+	startIdx := (page - 1) * limit
+	endIdx := startIdx + limit
+
+	if startIdx >= totalCount {
+		startIdx = totalCount
+		endIdx = totalCount
+	}
+	if endIdx > totalCount {
+		endIdx = totalCount
+	}
+
+	paginatedReviews := dbReviews[startIdx:endIdx]
+
+	// Convert to response format
+	reviews := make([]*TaskReviewResponse, len(paginatedReviews))
+	for i, review := range paginatedReviews {
+		reviews[i] = &TaskReviewResponse{
+			ID:         review.ID,
+			TaskID:     review.TaskID,
+			Message:    review.Message,
+			Attachment: review.Attachment,
+			Status:     review.Status,
+			Feedback:   review.Feedback,
+			CreatedAt:  review.CreatedAt,
+			UpdatedAt:  review.UpdatedAt,
+		}
+	}
+
+	pagination := map[string]interface{}{
+		"page":       page,
+		"limit":      limit,
+		"total":      totalCount,
+		"total_pages": (totalCount + limit - 1) / limit,
+	}
+
+	response := map[string]interface{}{
+		"data": map[string]interface{}{
+			"reviews": reviews,
+		},
+		"pagination": pagination,
+		"meta": map[string]interface{}{
+			"timestamp": time.Now().Format(time.RFC3339),
+			"version":   "1.0.0",
+		},
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(response)
+}

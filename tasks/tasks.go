@@ -408,6 +408,35 @@ func GetPendingReviews(db *sql.DB) ([]TaskReview, error) {
 	return reviews, nil
 }
 
+func GetAllReviews(db *sql.DB, status *string) ([]TaskReview, error) {
+	var query string
+	var args []interface{}
+
+	if status != nil {
+		query = "SELECT id, task_id, message, attachment, status, feedback, created_at, updated_at FROM task_reviews WHERE status = ? ORDER BY created_at DESC"
+		args = []interface{}{*status}
+	} else {
+		query = "SELECT id, task_id, message, attachment, status, feedback, created_at, updated_at FROM task_reviews ORDER BY created_at DESC"
+	}
+
+	rows, err := db.Query(query, args...)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query reviews: %w", err)
+	}
+	defer rows.Close()
+
+	var reviews []TaskReview
+	for rows.Next() {
+		var review TaskReview
+		if err := rows.Scan(&review.ID, &review.TaskID, &review.Message, &review.Attachment, &review.Status, &review.Feedback, &review.CreatedAt, &review.UpdatedAt); err != nil {
+			return nil, fmt.Errorf("failed to scan task review: %w", err)
+		}
+		reviews = append(reviews, review)
+	}
+
+	return reviews, nil
+}
+
 func UpdateReview(db *sql.DB, reviewID int, status string, feedback *string) error {
 	validStatuses := map[string]bool{
 		"pending":  true,

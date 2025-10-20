@@ -26,24 +26,30 @@ export function ReviewsDashboard({ onTaskClick }: ReviewsDashboardProps) {
       setLoading(true);
       setError(null);
 
-      // Get all tasks with their reviews
-      const tasksResponse = await apiService.getTasks({ 
-        include_reviews: true,
-        limit: 100 
+      // Get all reviews for the project
+      const reviewsResponse = await apiService.getAllProjectReviews({
+        limit: 100
       });
 
-      const allReviews: TaskReview[] = [];
-      const taskMap: Record<number, Task> = {};
+      setReviews(reviewsResponse.reviews);
 
-      tasksResponse.tasks.forEach(task => {
-        taskMap[task.id] = task;
-        if (task.reviews) {
-          allReviews.push(...task.reviews);
+      // Fetch tasks for the reviews to display task titles
+      if (reviewsResponse.reviews.length > 0) {
+        const taskIds = [...new Set(reviewsResponse.reviews.map(r => r.task_id))];
+        const tasksMap: Record<number, Task> = {};
+
+        // Fetch each task to get the full details
+        for (const taskId of taskIds) {
+          try {
+            const taskResponse = await apiService.getTask(taskId);
+            tasksMap[taskResponse.task.id] = taskResponse.task;
+          } catch (err) {
+            console.debug(`Failed to load task ${taskId}:`, err);
+          }
         }
-      });
 
-      setReviews(allReviews);
-      setTasks(taskMap);
+        setTasks(tasksMap);
+      }
     } catch (error) {
       console.error('Failed to load reviews:', error);
       setError('Failed to load reviews');
