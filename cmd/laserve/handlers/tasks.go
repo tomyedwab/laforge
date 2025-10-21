@@ -1075,3 +1075,99 @@ func (h *TaskHandler) GetProjectReviews(w http.ResponseWriter, r *http.Request) 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(response)
 }
+
+// SubmitReviewFeedbackRequest represents the request body for submitting review feedback
+type SubmitReviewFeedbackRequest struct {
+	Status   string  `json:"status"`
+	Feedback *string `json:"feedback"`
+}
+
+// SubmitReviewFeedback handles PUT /projects/{project_id}/reviews/{review_id}/feedback
+func (h *TaskHandler) SubmitReviewFeedback(w http.ResponseWriter, r *http.Request) {
+	vars := mux.Vars(r)
+	reviewIDStr := vars["review_id"]
+	projectID := vars["project_id"]
+
+	reviewID, err := strconv.Atoi(reviewIDStr)
+	if err != nil {
+		http.Error(w, `{"error":{"code":"VALIDATION_ERROR","message":"Invalid review ID"}}`, http.StatusBadRequest)
+		return
+	}
+
+	var req SubmitReviewFeedbackRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, `{"error":{"code":"VALIDATION_ERROR","message":"Invalid request body"}}`, http.StatusBadRequest)
+		return
+	}
+
+	// Validate status
+	if req.Status != "approved" && req.Status != "rejected" {
+		http.Error(w, `{"error":{"code":"VALIDATION_ERROR","message":"Status must be 'approved' or 'rejected'"}}`, http.StatusBadRequest)
+		return
+	}
+
+	// Open project database
+	db, err := h.getProjectDB(projectID)
+	if err != nil {
+		http.Error(w, `{"error":{"code":"INTERNAL_ERROR","message":"Failed to open project database"}}`, http.StatusInternalServerError)
+		return
+	}
+	defer db.Close()
+
+	// Update the review
+	err = tasks.UpdateReview(db, reviewID, req.Status, req.Feedback)
+	if err != nil {
+		http.Error(w, `{"error":{"code":"INTERNAL_ERROR","message":"Failed to update review"}}`, http.StatusInternalServerError)
+		return
+	}
+
+	// Fetch the updated review to return
+	dbReviews, err := tasks.GetAllReviews(db, nil)
+	if err != nil {
+		http.Error(w, `{"error":{"code":"INTERNAL_ERROR","message":"Failed to fetch updated review"}}`, http.StatusInternalServerError)
+		return
+	}
+
+	// Find the updated review in the results
+	var updatedReview *tasks.TaskReview
+	for i := range dbReviews {
+		if dbReviews[i].ID == reviewID {
+			updatedReview = &dbReviews[i]
+			break
+		}
+	}
+
+	if updatedReview == nil {
+		http.Error(w, `{"error":{"code":"NOT_FOUND","message":"Review not found"}}`, http.StatusNotFound)
+		return
+	}
+
+	// Broadcast review update via WebSocket
+	if h.wsServer != nil {
+		h.wsServer.BroadcastReviewUpdate(projectID, reviewID, req.Status)
+	}
+
+	responseReview := &TaskReviewResponse{
+		ID:         updatedReview.ID,
+		TaskID:     updatedReview.TaskID,
+		Message:    updatedReview.Message,
+		Attachment: updatedReview.Attachment,
+		Status:     updatedReview.Status,
+		Feedback:   updatedReview.Feedback,
+		CreatedAt:  updatedReview.CreatedAt,
+		UpdatedAt:  updatedReview.UpdatedAt,
+	}
+
+	response := map[string]interface{}{
+		"data": map[string]interface{}{
+			"review": responseReview,
+		},
+		"meta": map[string]interface{}{
+			"timestamp": time.Now().Format(time.RFC3339),
+			"version":   "1.0.0",
+		},
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(response)
+}
