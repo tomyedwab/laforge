@@ -1,4 +1,6 @@
 import { useState, useEffect } from 'preact/hooks';
+import { marked } from 'marked';
+import { apiService } from '../services/api';
 
 interface ArtifactViewerProps {
   artifactPath: string;
@@ -9,7 +11,9 @@ export function ArtifactViewer({ artifactPath, onClose }: ArtifactViewerProps) {
   const [content, setContent] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
-  const [artifactType, setArtifactType] = useState<'markdown' | 'image' | 'text' | 'unknown'>('unknown');
+  const [artifactType, setArtifactType] = useState<
+    'markdown' | 'image' | 'text' | 'unknown'
+  >('unknown');
 
   useEffect(() => {
     loadArtifact();
@@ -31,14 +35,20 @@ export function ArtifactViewer({ artifactPath, onClose }: ArtifactViewerProps) {
       setIsLoading(true);
       setError(null);
 
+      const trimmedArtifactPath = artifactPath.startsWith('/src/')
+        ? artifactPath.substring(5)
+        : artifactPath;
+
       // Determine artifact type based on file extension
-      const extension = artifactPath.split('.').pop()?.toLowerCase();
-      const isImage = ['jpg', 'jpeg', 'png', 'gif', 'svg', 'webp'].includes(extension || '');
+      const extension = trimmedArtifactPath.split('.').pop()?.toLowerCase();
+      const isImage = ['jpg', 'jpeg', 'png', 'gif', 'svg', 'webp'].includes(
+        extension || ''
+      );
       const isMarkdown = ['md', 'markdown'].includes(extension || '');
-      
+
       if (isImage) {
         setArtifactType('image');
-        setContent(artifactPath); // For images, we just store the path
+        setContent(trimmedArtifactPath); // For images, we just store the path
         setIsLoading(false);
         return;
       }
@@ -49,41 +59,28 @@ export function ArtifactViewer({ artifactPath, onClose }: ArtifactViewerProps) {
         setArtifactType('text');
       }
 
-      // Try to fetch the artifact content from the API
-      const projectId = localStorage.getItem('laforge_selected_project');
-      const project = projectId ? JSON.parse(projectId) : null;
-      const projectIdValue = project?.id || 'laforge-main';
-      
-      const response = await fetch(`${import.meta.env.VITE_API_BASE_URL || 'http://localhost:8080/api/v1'}/projects/${projectIdValue}/artifacts/${encodeURIComponent(artifactPath)}`);
-      
-      if (!response.ok) {
-        throw new Error(`Failed to load artifact: ${response.statusText}`);
-      }
-
-      const textContent = await response.text();
+      // Fetch the artifact content from the API
+      const textContent = await apiService.getArtifact(trimmedArtifactPath);
       setContent(textContent);
     } catch (error) {
       console.error('Failed to load artifact:', error);
-      setError('Failed to load artifact. The file may not exist or you may not have permission to view it.');
+      setError(
+        'Failed to load artifact. The file may not exist or you may not have permission to view it.'
+      );
     } finally {
       setIsLoading(false);
     }
   };
 
   const renderMarkdown = (markdownContent: string) => {
-    // Simple markdown to HTML conversion
-    // In a real implementation, you'd use a proper markdown library like marked
-    const html = markdownContent
-      .replace(/^### (.*$)/gim, '<h3>$1</h3>')
-      .replace(/^## (.*$)/gim, '<h2>$1</h2>')
-      .replace(/^# (.*$)/gim, '<h1>$1</h1>')
-      .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
-      .replace(/\*(.+?)\*/g, '<em>$1</em>')
-      .replace(/\`(.+?)\`/g, '<code>$1</code>')
-      .replace(/```([\s\S]*?)```/g, '<pre><code>$1</code></pre>')
-      .replace(/\n/g, '<br />');
+    const html = marked(markdownContent);
 
-    return <div class="markdown-content" dangerouslySetInnerHTML={{ __html: html }} />;
+    return (
+      <div
+        class="markdown-content"
+        dangerouslySetInnerHTML={{ __html: html }}
+      />
+    );
   };
 
   const renderContent = () => {
@@ -120,31 +117,27 @@ export function ArtifactViewer({ artifactPath, onClose }: ArtifactViewerProps) {
       case 'image':
         return (
           <div class="artifact-image">
-            <img 
-              src={content} 
+            <img
+              src={content}
               alt={artifactPath}
-              onError={(e) => {
+              onError={e => {
                 setError('Failed to load image');
                 setArtifactType('unknown');
               }}
             />
           </div>
         );
-      
+
       case 'markdown':
-        return (
-          <div class="artifact-markdown">
-            {renderMarkdown(content)}
-          </div>
-        );
-      
+        return <div class="artifact-markdown">{renderMarkdown(content)}</div>;
+
       case 'text':
         return (
           <div class="artifact-text">
             <pre>{content}</pre>
           </div>
         );
-      
+
       default:
         return (
           <div class="artifact-unknown">
@@ -160,15 +153,21 @@ export function ArtifactViewer({ artifactPath, onClose }: ArtifactViewerProps) {
   };
 
   return (
-    <div class="artifact-viewer-overlay" onClick={onClose} role="dialog" aria-modal="true" aria-labelledby="artifact-viewer-title">
-      <div class="artifact-viewer-modal" onClick={(e) => e.stopPropagation()}>
+    <div
+      class="artifact-viewer-overlay"
+      onClick={onClose}
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="artifact-viewer-title"
+    >
+      <div class="artifact-viewer-modal" onClick={e => e.stopPropagation()}>
         <div class="artifact-viewer-header">
           <div class="artifact-info">
             <h3 id="artifact-viewer-title">{getFileName()}</h3>
             <span class="artifact-path">{artifactPath}</span>
           </div>
           <div class="artifact-actions">
-            <button 
+            <button
               class="refresh-button"
               onClick={loadArtifact}
               disabled={isLoading}
@@ -177,13 +176,17 @@ export function ArtifactViewer({ artifactPath, onClose }: ArtifactViewerProps) {
             >
               🔄
             </button>
-            <button class="close-button" onClick={onClose} aria-label="Close artifact viewer">×</button>
+            <button
+              class="close-button"
+              onClick={onClose}
+              aria-label="Close artifact viewer"
+            >
+              ×
+            </button>
           </div>
         </div>
 
-        <div class="artifact-viewer-content">
-          {renderContent()}
-        </div>
+        <div class="artifact-viewer-content">{renderContent()}</div>
       </div>
     </div>
   );

@@ -268,6 +268,32 @@ class ApiService {
   async getProject(id: string): Promise<{ project: any }> {
     return this.request<{ project: any }>(`/projects/${id}`);
   }
+
+  // Artifacts
+  async getArtifact(artifactPath: string): Promise<string> {
+    const url = `${API_BASE_URL}/projects/${this.projectId}/artifacts/${encodeURIComponent(artifactPath)}`;
+    const token = localStorage.getItem(
+      import.meta.env.VITE_AUTH_TOKEN_KEY || 'laforge_auth_token'
+    );
+
+    const headers: HeadersInit = {
+      'Content-Type': 'application/json',
+    };
+
+    if (token) {
+      headers.Authorization = `Bearer ${token}`;
+    }
+
+    const response = await fetch(url, {
+      headers,
+    });
+
+    if (!response.ok) {
+      throw new Error(`Failed to load artifact: ${response.statusText}`);
+    }
+
+    return response.text();
+  }
 }
 
 export const apiService = new ApiService();
