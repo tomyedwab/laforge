@@ -1,10 +1,17 @@
-PHONY: build test test-all test-tasks test-cli test-integration test-coverage test-coverage-html test-verbose clean test-pattern test-bench test-race test-quick help ci-test
+.PHONY:
 
-build:
+build: .PHONY
+	mkdir -p build
+	go build -o build/laforge cmd/laforge/main.go
+	go build -o build/latools cmd/latools/main.go
 	docker build -t laforge-agent .
 	docker build -t laforge-self-agent -f Dockerfile.laforge .
 
-run-opencode:
+install: build
+	cp build/laforge ~/.local/bin/
+	cp build/latools ~/.local/bin/
+
+run-opencode: .PHONY
 	mkdir -p /tmp/laforge/log
 	docker run -it --rm \
 		-v $(HOME)/.config/opencode:/home/laforge/.config/opencode \
@@ -14,26 +21,26 @@ run-opencode:
 		-v $(PWD):/src \
 		laforge-self-agent
 
-# opencode -m moonshot/kimi-k2-0905-preview run "Work on the next task."
-# opencode -m moonshot/kimi-k2-0905-preview run --continue "Clean up any build artifacts and write a commit message to COMMIT.md"
+run-claudecode-login: .PHONY
+	mkdir -p ~/.claude-laforge
+	docker run -it --rm \
+        -v $(HOME)/.claude-laforge:/home/laforge/.claude-laforge \
+		-v $(HOME)/.laforge/projects/laforge:/state \
+		-v $(PWD):/src \
+		laforge-self-agent /bin/claude-login.sh
 
-# Test targets
-test: test-all
+run-claudecode: .PHONY
+	mkdir -p ~/.claude-laforge
+	docker run -it --rm \
+        -v $(HOME)/.claude-laforge:/home/laforge/.claude-laforge \
+		-v $(HOME)/.laforge/projects/laforge:/state \
+		-v $(PWD):/src \
+		laforge-self-agent
 
 # Run all tests
-test-all:
+test: .PHONY
 	@echo "Running all tests..."
 	go test ./... -v
-
-# Run only tasks package tests
-test-tasks:
-	@echo "Running tasks package tests..."
-	go test ./tasks -v
-
-# Run only CLI command tests
-test-cli:
-	@echo "Running CLI command tests..."
-	go test ./cmd/latasks -v
 
 # Run tests with coverage
 test-coverage:
@@ -57,11 +64,6 @@ test-integration:
 	chmod +x test_integration.sh
 	./test_integration.sh
 
-# Run specific test patterns
-test-pattern:
-	@echo "Usage: make test-pattern PATTERN=TestAddTask"
-	go test ./... -v -run $(PATTERN)
-
 # Benchmark tests
 test-bench:
 	go test ./... -bench=. -benchmem
@@ -77,10 +79,6 @@ clean:
 	rm -rf test_state
 	@echo "Test artifacts cleaned up"
 
-# Quick test (no verbose output)
-test-quick:
-	go test ./...
-
 # CI-friendly test target (no verbose, with coverage)
 ci-test:
 	@echo "Running CI tests..."
@@ -92,18 +90,13 @@ help:
 	@echo "Available targets:"
 	@echo "  build              - Build the Docker image"
 	@echo "  run                - Run the Docker container"
-	@echo "  test               - Run all tests (alias for test-all)"
-	@echo "  test-all           - Run all tests with verbose output"
-	@echo "  test-tasks         - Run only tasks package tests"
-	@echo "  test-cli           - Run only CLI command tests"
+	@echo "  test               - Run all tests"
 	@echo "  test-coverage      - Run tests with coverage report"
 	@echo "  test-coverage-html - Generate HTML coverage report"
 	@echo "  test-verbose       - Run tests in verbose mode"
 	@echo "  test-integration   - Run integration tests"
-	@echo "  test-pattern       - Run tests matching a pattern (use PATTERN=TestName)"
 	@echo "  test-bench         - Run benchmark tests"
 	@echo "  test-race          - Run race condition tests"
-	@echo "  test-quick         - Run tests without verbose output"
 	@echo "  ci-test            - Run CI-friendly tests with coverage"
 	@echo "  clean              - Clean test artifacts"
 	@echo "  help               - Show this help message"
