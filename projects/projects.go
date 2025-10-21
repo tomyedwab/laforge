@@ -20,6 +20,7 @@ type Project struct {
 	Name           string    `json:"name"`
 	Description    string    `json:"description"`
 	RepositoryPath string    `json:"repository_path"`
+	MainBranch     string    `json:"main_branch"`
 	CreatedAt      time.Time `json:"created_at"`
 	UpdatedAt      time.Time `json:"updated_at"`
 }
@@ -30,6 +31,7 @@ type ProjectConfig struct {
 	Name           string `json:"name"`
 	Description    string `json:"description"`
 	RepositoryPath string `json:"repository_path"`
+	MainBranch     string `json:"main_branch"`
 	CreatedAt      string `json:"created_at"`
 	UpdatedAt      string `json:"updated_at"`
 }
@@ -79,10 +81,15 @@ func ProjectExists(projectID string) (bool, error) {
 }
 
 // CreateProject creates a new LaForge project with the specified ID and configuration
-func CreateProject(projectID string, name string, description string, repositoryPath string) (*Project, error) {
+func CreateProject(projectID string, name string, description string, repositoryPath string, mainBranch string) (*Project, error) {
 	// Validate project ID
 	if projectID == "" {
 		return nil, errors.NewInvalidInputError("project ID cannot be empty")
+	}
+
+	// Default to "main" if mainBranch is not specified
+	if mainBranch == "" {
+		mainBranch = "main"
 	}
 
 	// Check if project already exists
@@ -121,6 +128,7 @@ func CreateProject(projectID string, name string, description string, repository
 		Name:           name,
 		Description:    description,
 		RepositoryPath: repositoryPath,
+		MainBranch:     mainBranch,
 		CreatedAt:      now,
 		UpdatedAt:      now,
 	}
@@ -165,6 +173,7 @@ func createProjectConfig(projectDir string, project *Project) error {
 		Name:           project.Name,
 		Description:    project.Description,
 		RepositoryPath: project.RepositoryPath,
+		MainBranch:     project.MainBranch,
 		CreatedAt:      project.CreatedAt.Format(time.RFC3339),
 		UpdatedAt:      project.UpdatedAt.Format(time.RFC3339),
 	}
@@ -252,11 +261,18 @@ func LoadProject(projectID string) (*Project, error) {
 		return nil, errors.Wrap(errors.ErrUnknown, err, "failed to parse updated_at timestamp")
 	}
 
+	// Default to "main" if MainBranch is not set (for backwards compatibility)
+	mainBranch := config.MainBranch
+	if mainBranch == "" {
+		mainBranch = "main"
+	}
+
 	project := &Project{
 		ID:             config.ID,
 		Name:           config.Name,
 		Description:    config.Description,
 		RepositoryPath: config.RepositoryPath,
+		MainBranch:     mainBranch,
 		CreatedAt:      createdAt,
 		UpdatedAt:      updatedAt,
 	}

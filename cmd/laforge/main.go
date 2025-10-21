@@ -177,6 +177,7 @@ func init() {
 	initCmd.Flags().String("description", "", "project description")
 	initCmd.Flags().String("agent-image", "", "default Docker image for the agent container")
 	initCmd.Flags().String("agent-config-file", "", "path to custom agents.yml configuration file")
+	initCmd.Flags().String("main-branch", "main", "main branch name for automerging step commits")
 
 	// Add flags for step command
 	stepCmd.Flags().String("agent-config", "", "agent configuration name from agents.yml (overrides --agent-image)")
@@ -197,6 +198,7 @@ func runInit(cmd *cobra.Command, args []string) error {
 	description, _ := cmd.Flags().GetString("description")
 	agentImage, _ := cmd.Flags().GetString("agent-image")
 	agentConfigFile, _ := cmd.Flags().GetString("agent-config-file")
+	mainBranch, _ := cmd.Flags().GetString("main-branch")
 
 	// Use project ID as name if name is not provided
 	if name == "" {
@@ -210,7 +212,7 @@ func runInit(cmd *cobra.Command, args []string) error {
 	}
 
 	// Create the project
-	project, err := projects.CreateProject(projectID, name, description, repositoryPath)
+	project, err := projects.CreateProject(projectID, name, description, repositoryPath, mainBranch)
 	if err != nil {
 		return errors.Wrap(errors.ErrProjectAlreadyExists, err, "failed to create project")
 	}
@@ -270,6 +272,12 @@ func runStep(cmd *cobra.Command, args []string) error {
 	}
 	if !exists {
 		return errors.NewProjectNotFoundError(projectID)
+	}
+
+	// Load project configuration to get main branch
+	project, err := projects.LoadProject(projectID)
+	if err != nil {
+		return errors.Wrap(errors.ErrUnknown, err, "failed to load project configuration")
 	}
 
 	// Get task database path
@@ -637,12 +645,12 @@ func runStep(cmd *cobra.Command, args []string) error {
 
 	// Step 8: Automerge step branch into main branch (only if step completed successfully)
 	if exitCode == 0 && hasChanges {
-		stepLogger.LogStepPhase("git", "Automerging step branch into main branch")
+		stepLogger.LogStepPhase("git", fmt.Sprintf("Automerging step branch into %s branch", project.MainBranch))
 
 		stepBranch := fmt.Sprintf("step-S%d", step.ID)
-		mergeMessage := fmt.Sprintf("Automerge %s into main", stepBranch)
+		mergeMessage := fmt.Sprintf("Automerge %s into %s", stepBranch, project.MainBranch)
 
-		if mergeErr := git.MergeBranch(sourceDir, stepBranch, "main", mergeMessage); mergeErr != nil {
+		if mergeErr := git.MergeBranch(sourceDir, stepBranch, project.MainBranch, mergeMessage); mergeErr != nil {
 			// Check if it's a merge conflict
 			if errors.IsErrorType(mergeErr, errors.ErrGitMergeConflict) {
 				// Log merge conflict but don't fail the step - keep branch for manual resolution
@@ -690,7 +698,7 @@ func runStep(cmd *cobra.Command, args []string) error {
 					"error":       deleteErr.Error(),
 				})
 			} else {
-				logger.Info("git", fmt.Sprintf("Successfully automerged %s into main and deleted step branch", stepBranch), map[string]interface{}{
+				logger.Info("git", fmt.Sprintf("Successfully automerged %s into %s and deleted step branch", stepBranch, project.MainBranch), map[string]interface{}{
 					"project_id":  projectID,
 					"step_id":     stepID,
 					"step_branch": stepBranch,
