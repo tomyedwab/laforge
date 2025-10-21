@@ -22,9 +22,11 @@ export function App() {
 
   return (
     <AuthProvider>
-      <ProjectProvider>
-        <AppContent currentView={currentView} onViewChange={handleViewChange} />
-      </ProjectProvider>
+      <ProtectedRoute>
+        <ProjectProvider>
+          <AppContent currentView={currentView} onViewChange={handleViewChange} />
+        </ProjectProvider>
+      </ProtectedRoute>
     </AuthProvider>
   );
 }
