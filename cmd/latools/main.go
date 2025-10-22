@@ -7,7 +7,7 @@ import (
 	"strings"
 
 	"github.com/spf13/cobra"
-	"github.com/tomyedwab/laforge/tasks"
+	"github.com/tomyedwab/laforge/lib/tasks"
 )
 
 var rootCmd = &cobra.Command{

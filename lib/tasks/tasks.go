@@ -372,10 +372,16 @@ func GetNextTask(db *sql.DB) (*Task, error) {
 	// A task is ready if:
 	// - Status is 'todo', 'in-progress', or 'in-review' (with no pending reviews)
 	// - All upstream dependencies are completed
+	// - Task is not currently leased
 	query := `
 		SELECT t.id, t.title, t.description, t.acceptance_criteria, t.upstream_dependency_id, t.review_required, t.parent_id, t.status, t.created_at, t.updated_at
 		FROM tasks t
 		WHERE t.status IN ('todo', 'in-progress', 'in-review')
+		AND NOT EXISTS (
+			SELECT 1 FROM task_leases tl
+			WHERE tl.task_id = t.id
+			AND datetime(tl.expires_at) > datetime('now')
+		)
 		ORDER BY
 			CASE WHEN t.parent_id IS NULL THEN 0 ELSE 1 END,
 			t.id`
@@ -444,6 +450,111 @@ func GetNextTask(db *sql.DB) (*Task, error) {
 func AddTaskLog(db *sql.DB, taskID int, message string) error {
 	_, err := db.Exec("INSERT INTO task_logs (task_id, message) VALUES (?, ?)", taskID, message)
 	return err
+}
+
+// LeaseTask creates a lease for a task with the given step ID.
+// The lease expires after 1 hour. Returns an error if the task is already leased
+// or if the task does not exist.
+func LeaseTask(db *sql.DB, taskID int, stepID int) error {
+	// Get the current task to check if it exists and get its status
+	task, err := GetTask(db, taskID)
+	if err != nil {
+		return fmt.Errorf("failed to get task: %w", err)
+	}
+	if task == nil {
+		return fmt.Errorf("task not found: T%d", taskID)
+	}
+
+	// Check if task is already leased (has an active lease)
+	var hasActiveLease bool
+	err = db.QueryRow(
+		"SELECT EXISTS(SELECT 1 FROM task_leases WHERE task_id = ? AND datetime(expires_at) > datetime('now'))",
+		taskID,
+	).Scan(&hasActiveLease)
+	if err != nil {
+		return fmt.Errorf("failed to check active leases: %w", err)
+	}
+
+	if hasActiveLease {
+		return fmt.Errorf("task T%d is already leased", taskID)
+	}
+
+	// Create a new lease with expiration time 1 hour in the future
+	expiresAt := time.Now().Add(1 * time.Hour)
+	_, err = db.Exec(
+		"INSERT INTO task_leases (task_id, step_id, task_status, expires_at) VALUES (?, ?, ?, ?)",
+		taskID, stepID, task.Status, expiresAt,
+	)
+	if err != nil {
+		return fmt.Errorf("failed to create task lease: %w", err)
+	}
+
+	return nil
+}
+
+// UnleaseTask removes the lease for a task and updates the lease entry's task_status
+// to match the current status of the task.
+func UnleaseTask(db *sql.DB, taskID int) error {
+	// Get the current task to get its status
+	task, err := GetTask(db, taskID)
+	if err != nil {
+		return fmt.Errorf("failed to get task: %w", err)
+	}
+	if task == nil {
+		return fmt.Errorf("task not found: T%d", taskID)
+	}
+
+	// Update the lease entry to clear expires_at and update task_status to current status
+	result, err := db.Exec(
+		"UPDATE task_leases SET expires_at = NULL, task_status = ? WHERE task_id = ?",
+		task.Status, taskID,
+	)
+	if err != nil {
+		return fmt.Errorf("failed to unlease task: %w", err)
+	}
+
+	// Check if any rows were affected
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("failed to get rows affected: %w", err)
+	}
+
+	if rowsAffected == 0 {
+		return fmt.Errorf("task T%d has no active lease", taskID)
+	}
+
+	return nil
+}
+
+// IsTaskLeased checks if a task is currently leased by the given step ID.
+// Returns true if an active lease exists for the task, false otherwise.
+func IsTaskLeased(db *sql.DB, taskID int, stepID int) (bool, error) {
+	var isLeased bool
+	err := db.QueryRow(
+		"SELECT EXISTS(SELECT 1 FROM task_leases WHERE task_id = ? AND step_id = ? AND datetime(expires_at) > datetime('now'))",
+		taskID, stepID,
+	).Scan(&isLeased)
+	if err != nil {
+		return false, fmt.Errorf("failed to check if task is leased: %w", err)
+	}
+
+	return isLeased, nil
+}
+
+// UnleaseTasksForStepID unleases all tasks that are currently leased by the given step ID.
+// It updates each lease entry's task_status to match the current task status and clears expires_at.
+func UnleaseTasksForStepID(db *sql.DB, stepID int) error {
+	_, err := db.Exec(`
+		UPDATE task_leases
+		SET expires_at = NULL,
+		    task_status = (SELECT status FROM tasks WHERE tasks.id = task_leases.task_id)
+		WHERE step_id = ?
+	`, stepID)
+	if err != nil {
+		return fmt.Errorf("failed to unlease tasks for step %d: %w", stepID, err)
+	}
+
+	return nil
 }
 
 func GetTaskLogs(db *sql.DB, taskID int) ([]TaskLog, error) {

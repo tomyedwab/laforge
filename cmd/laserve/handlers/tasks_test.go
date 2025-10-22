@@ -14,7 +14,7 @@ func TestConvertTask(t *testing.T) {
 	tests := []struct {
 		name     string
 		task     *tasks.Task
-		expected *TaskResponse
+		expected *tasks.TaskResponse
 	}{
 		{
 			name: "Basic task with FEAT type",
@@ -26,7 +26,7 @@ func TestConvertTask(t *testing.T) {
 				CreatedAt:   time.Now(),
 				UpdatedAt:   time.Now(),
 			},
-			expected: &TaskResponse{
+			expected: &tasks.TaskResponse{
 				ID:          1,
 				Title:       "[FEAT] Implement authentication",
 				Description: "Create auth system",
@@ -44,7 +44,7 @@ func TestConvertTask(t *testing.T) {
 				CreatedAt:   time.Now(),
 				UpdatedAt:   time.Now(),
 			},
-			expected: &TaskResponse{
+			expected: &tasks.TaskResponse{
 				ID:          2,
 				Title:       "[BUG] Fix login issue",
 				Description: "Login fails sometimes",
@@ -62,7 +62,7 @@ func TestConvertTask(t *testing.T) {
 				CreatedAt:   time.Now(),
 				UpdatedAt:   time.Now(),
 			},
-			expected: &TaskResponse{
+			expected: &tasks.TaskResponse{
 				ID:          3,
 				Title:       "[FEAT] Add logging",
 				Description: "Add logging system",
@@ -74,7 +74,7 @@ func TestConvertTask(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := convertTask(tt.task)
+			result := tasks.ConvertTask(tt.task)
 
 			if result.ID != tt.expected.ID {
 				t.Errorf("Expected ID %d, got %d", tt.expected.ID, result.ID)
@@ -196,7 +196,7 @@ func TestTaskTypeExtraction(t *testing.T) {
 				UpdatedAt:   time.Now(),
 			}
 
-			result := convertTask(task)
+			result := tasks.ConvertTask(task)
 			if result.Type != tt.expected {
 				t.Errorf("Expected type %s for title '%s', got %s", tt.expected, tt.title, result.Type)
 			}

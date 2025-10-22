@@ -35,22 +35,6 @@ func (h *TaskHandler) getProjectDB(projectID string) (*sql.DB, error) {
 	return db, nil
 }
 
-// TaskResponse represents the API response format for tasks
-type TaskResponse struct {
-	ID                   int        `json:"id"`
-	Title                string     `json:"title"`
-	Description          string     `json:"description"`
-	AcceptanceCriteria   string     `json:"acceptance_criteria"`
-	Type                 string     `json:"type"`
-	Status               string     `json:"status"`
-	ParentID             *int       `json:"parent_id"`
-	UpstreamDependencyID *int       `json:"upstream_dependency_id"`
-	ReviewRequired       bool       `json:"review_required"`
-	CreatedAt            time.Time  `json:"created_at"`
-	UpdatedAt            time.Time  `json:"updated_at"`
-	CompletedAt          *time.Time `json:"completed_at"`
-}
-
 // CreateTaskRequest represents the request body for creating a task
 type CreateTaskRequest struct {
 	Title                string `json:"title"`
@@ -71,44 +55,6 @@ type UpdateTaskRequest struct {
 	ParentID             *int   `json:"parent_id"`
 	UpstreamDependencyID *int   `json:"upstream_dependency_id"`
 	ReviewRequired       bool   `json:"review_required"`
-}
-
-// UpdateTaskStatusRequest represents the request body for updating task status
-type UpdateTaskStatusRequest struct {
-	Status string `json:"status"`
-}
-
-// convertTask converts a tasks.Task to TaskResponse
-func convertTask(task *tasks.Task) *TaskResponse {
-	// Extract task type from title if it follows the format "[TYPE] Title"
-	taskType := "FEAT" // default
-	if strings.HasPrefix(task.Title, "[") {
-		endIdx := strings.Index(task.Title, "]")
-		if endIdx > 1 {
-			taskType = task.Title[1:endIdx]
-		}
-	}
-
-	response := &TaskResponse{
-		ID:                   task.ID,
-		Title:                task.Title,
-		Description:          task.Description,
-		AcceptanceCriteria:   task.AcceptanceCriteria,
-		Type:                 taskType,
-		Status:               task.Status,
-		ParentID:             task.ParentID,
-		UpstreamDependencyID: task.UpstreamDependencyID,
-		ReviewRequired:       task.ReviewRequired,
-		CreatedAt:            task.CreatedAt,
-		UpdatedAt:            task.UpdatedAt,
-	}
-
-	// Set completed_at if status is completed
-	if task.Status == "completed" {
-		response.CompletedAt = &task.UpdatedAt
-	}
-
-	return response
 }
 
 // ListTasks handles GET /tasks
@@ -132,9 +78,6 @@ func (h *TaskHandler) ListTasks(w http.ResponseWriter, r *http.Request) {
 	search := r.URL.Query().Get("search")
 	sortBy := r.URL.Query().Get("sort_by")
 	sortOrder := r.URL.Query().Get("sort_order")
-	includeChildren := r.URL.Query().Get("include_children") == "true"
-	includeLogs := r.URL.Query().Get("include_logs") == "true"
-	includeReviews := r.URL.Query().Get("include_reviews") == "true"
 
 	// Parse status filter (handle comma-separated values)
 	var statusFilter []string
@@ -187,11 +130,6 @@ func (h *TaskHandler) ListTasks(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// TODO: Implement include_children, include_logs, include_reviews
-	_ = includeChildren
-	_ = includeLogs
-	_ = includeReviews
-
 	// Build options for database query
 	options := tasks.ListTasksOptions{
 		Status:    statusFilter,
@@ -212,26 +150,27 @@ func (h *TaskHandler) ListTasks(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Convert to response format
-	responseTasks := make([]*TaskResponse, len(dbTasks))
+	responseTasks := make([]*tasks.TaskResponse, len(dbTasks))
 	for i, task := range dbTasks {
-		responseTasks[i] = convertTask(&task)
+		responseTasks[i] = tasks.ConvertTask(&task)
 	}
 
-	// TODO: Implement include_children, include_logs, include_reviews
-
-	response := map[string]interface{}{
-		"data": map[string]interface{}{
-			"tasks": responseTasks,
-			"pagination": map[string]interface{}{
-				"page":  page,
-				"limit": limit,
-				"total": totalCount,
-				"pages": (totalCount + limit - 1) / limit,
+	response := tasks.TaskListResponse{
+		Data: struct {
+			Tasks      []*tasks.TaskResponse    `json:"tasks"`
+			Pagination tasks.PaginationResponse `json:"pagination"`
+		}{
+			Tasks: responseTasks,
+			Pagination: tasks.PaginationResponse{
+				Page:  page,
+				Limit: limit,
+				Total: totalCount,
+				Pages: (totalCount + limit - 1) / limit,
 			},
 		},
-		"meta": map[string]interface{}{
-			"timestamp": time.Now().Format(time.RFC3339),
-			"version":   "1.0.0",
+		Meta: tasks.MetaResponse{
+			Timestamp: time.Now(),
+			Version:   "1.0.0",
 		},
 	}
 
@@ -243,18 +182,6 @@ func (h *TaskHandler) ListTasks(w http.ResponseWriter, r *http.Request) {
 func (h *TaskHandler) GetTask(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	taskIDStr := vars["task_id"]
-
-	taskID, err := strconv.Atoi(taskIDStr)
-	if err != nil {
-		http.Error(w, `{"error":{"code":"VALIDATION_ERROR","message":"Invalid task ID"}}`, http.StatusBadRequest)
-		return
-	}
-
-	includeChildren := r.URL.Query().Get("include_children") == "true"
-	includeLogs := r.URL.Query().Get("include_logs") == "true"
-	includeReviews := r.URL.Query().Get("include_reviews") == "true"
-
-	// Get project ID from URL
 	projectID := vars["project_id"]
 
 	// Open project database
@@ -265,6 +192,29 @@ func (h *TaskHandler) GetTask(w http.ResponseWriter, r *http.Request) {
 	}
 	defer db.Close()
 
+	var taskID int
+	if taskIDStr == "next" {
+		nextTask, err := tasks.GetNextTask(db)
+		if err == sql.ErrNoRows || nextTask == nil {
+			http.Error(w, `{"error":{"code":"NOT_FOUND","message":"No tasks ready for work"}}`, http.StatusNotFound)
+			return
+		} else if err != nil {
+			http.Error(w, `{"error":{"code":"INTERNAL_ERROR","message":"Failed to fetch next task"}}`, http.StatusInternalServerError)
+			return
+		}
+		taskID = nextTask.ID
+	} else {
+		taskID, err = strconv.Atoi(taskIDStr)
+		if err != nil {
+			http.Error(w, `{"error":{"code":"VALIDATION_ERROR","message":"Invalid task ID"}}`, http.StatusBadRequest)
+			return
+		}
+	}
+
+	includeChildren := r.URL.Query().Get("include_children") == "true"
+	includeLogs := r.URL.Query().Get("include_logs") == "true"
+	includeReviews := r.URL.Query().Get("include_reviews") == "true"
+
 	task, err := tasks.GetTask(db, taskID)
 	if err != nil {
 		if err == sql.ErrNoRows {
@@ -273,22 +223,80 @@ func (h *TaskHandler) GetTask(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, `{"error":{"code":"INTERNAL_ERROR","message":"Failed to fetch task"}}`, http.StatusInternalServerError)
 		}
 		return
+	} else if task == nil {
+		http.Error(w, `{"error":{"code":"NOT_FOUND","message":"Task not found"}}`, http.StatusNotFound)
+		return
 	}
 
-	responseTask := convertTask(task)
+	responseTask := tasks.ConvertTask(task)
 
-	// TODO: Implement include_children, include_logs, include_reviews
-	_ = includeChildren
-	_ = includeLogs
-	_ = includeReviews
+	var children []*tasks.TaskResponse = nil
+	if includeChildren {
+		childTasks, err := tasks.GetChildTasks(db, taskID)
+		if err != nil {
+			http.Error(w, `{"error":{"code":"INTERNAL_ERROR","message":"Failed to fetch child tasks"}}`, http.StatusInternalServerError)
+			return
+		}
+		children = make([]*tasks.TaskResponse, len(childTasks))
+		for i, child := range childTasks {
+			children[i] = tasks.ConvertTask(&child)
+		}
+	}
 
-	response := map[string]interface{}{
-		"data": map[string]interface{}{
-			"task": responseTask,
-		},
-		"meta": map[string]interface{}{
-			"timestamp": time.Now().Format(time.RFC3339),
-			"version":   "1.0.0",
+	var logs []*tasks.TaskLogResponse = nil
+	if includeLogs {
+		// Get task logs from database
+		dbLogs, err := tasks.GetTaskLogs(db, taskID)
+		if err != nil {
+			http.Error(w, `{"error":{"code":"INTERNAL_ERROR","message":"Failed to fetch task logs"}}`, http.StatusInternalServerError)
+			return
+		}
+
+		// Convert to response format
+		logs = make([]*tasks.TaskLogResponse, len(dbLogs))
+		for i, log := range dbLogs {
+			logs[i] = &tasks.TaskLogResponse{
+				ID:        log.ID,
+				TaskID:    log.TaskID,
+				Message:   log.Message,
+				CreatedAt: log.CreatedAt,
+			}
+		}
+	}
+
+	var reviews []*tasks.TaskReviewResponse = nil
+	if includeReviews {
+		// Get task reviews from database
+		dbReviews, err := tasks.GetTaskReviews(db, taskID)
+		if err != nil {
+			http.Error(w, `{"error":{"code":"INTERNAL_ERROR","message":"Failed to fetch task reviews"}}`, http.StatusInternalServerError)
+			return
+		}
+
+		// Convert to response format
+		reviews = make([]*tasks.TaskReviewResponse, len(dbReviews))
+		for i, review := range dbReviews {
+			reviews[i] = &tasks.TaskReviewResponse{
+				ID:         review.ID,
+				TaskID:     review.TaskID,
+				Message:    review.Message,
+				Attachment: review.Attachment,
+				Status:     review.Status,
+				Feedback:   review.Feedback,
+				CreatedAt:  review.CreatedAt,
+				UpdatedAt:  review.UpdatedAt,
+			}
+		}
+	}
+
+	response := tasks.SingleTaskResponse{
+		Task:         responseTask,
+		TaskChildren: children,
+		TaskLogs:     logs,
+		TaskReviews:  reviews,
+		Meta: tasks.MetaResponse{
+			Timestamp: time.Now(),
+			Version:   "1.0.0",
 		},
 	}
 
@@ -336,7 +344,7 @@ func (h *TaskHandler) CreateTask(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	responseTask := convertTask(createdTask)
+	responseTask := tasks.ConvertTask(createdTask)
 
 	// Broadcast task creation via WebSocket
 	if h.wsServer != nil {
@@ -417,7 +425,7 @@ func (h *TaskHandler) UpdateTask(w http.ResponseWriter, r *http.Request) {
 	// For now, we'll just return the updated task
 	// This requires adding an UpdateTask function to the tasks package
 
-	responseTask := convertTask(existingTask)
+	responseTask := tasks.ConvertTask(existingTask)
 
 	response := map[string]interface{}{
 		"data": map[string]interface{}{
@@ -437,6 +445,7 @@ func (h *TaskHandler) UpdateTask(w http.ResponseWriter, r *http.Request) {
 func (h *TaskHandler) LeaseTask(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	taskIDStr := vars["task_id"]
+	projectID := vars["project_id"]
 
 	taskID, err := strconv.Atoi(taskIDStr)
 	if err != nil {
@@ -450,14 +459,34 @@ func (h *TaskHandler) LeaseTask(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Open project database
+	db, err := h.getProjectDB(projectID)
+	if err != nil {
+		http.Error(w, `{"error":{"code":"INTERNAL_ERROR","message":"Failed to open project database"}}`, http.StatusInternalServerError)
+		return
+	}
+	defer db.Close()
+
 	// TODO: Get current task status and attempt to lease it
 	log.Printf("Leasing task %d for step %d", taskID, stepID)
+	err = tasks.LeaseTask(db, taskID, stepID)
+	if err != nil {
+		if strings.Contains(err.Error(), "already leased") {
+			http.Error(w, `{"error":{"code":"ERROR","message":"Task is already leased"}}`, http.StatusBadRequest)
+		} else {
+			http.Error(w, `{"error":{"code":"ERROR","message":"Error leasing task"}}`, http.StatusUnauthorized)
+		}
+	}
+
+	w.WriteHeader(http.StatusOK)
+	w.Write([]byte(`{"status":"ok"}`))
 }
 
 // UpdateTaskStatus handles PUT /tasks/{task_id}/status
 func (h *TaskHandler) UpdateTaskStatus(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	taskIDStr := vars["task_id"]
+	projectID := vars["project_id"]
 
 	taskID, err := strconv.Atoi(taskIDStr)
 	if err != nil {
@@ -465,7 +494,29 @@ func (h *TaskHandler) UpdateTaskStatus(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var req UpdateTaskStatusRequest
+	// Open project database
+	db, err := h.getProjectDB(projectID)
+	if err != nil {
+		http.Error(w, `{"error":{"code":"INTERNAL_ERROR","message":"Failed to open project database"}}`, http.StatusInternalServerError)
+		return
+	}
+	defer db.Close()
+
+	if stepID, ok := auth.GetStepIDFromContext(r.Context()); ok {
+		// Permissions check: If this is done within a step context, does the
+		// step have the task leased?
+		leased, err := tasks.IsTaskLeased(db, taskID, stepID)
+		if err != nil {
+			http.Error(w, `{"error":{"code":"ERROR","message":"Error checking task lease"}}`, http.StatusInternalServerError)
+			return
+		}
+		if !leased {
+			http.Error(w, `{"error":{"code":"ERROR","message":"Task is not leased"}}`, http.StatusUnauthorized)
+			return
+		}
+	}
+
+	var req tasks.UpdateTaskStatusRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, `{"error":{"code":"VALIDATION_ERROR","message":"Invalid request body"}}`, http.StatusBadRequest)
 		return
@@ -482,17 +533,6 @@ func (h *TaskHandler) UpdateTaskStatus(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, `{"error":{"code":"VALIDATION_ERROR","message":"Invalid status"}}`, http.StatusBadRequest)
 		return
 	}
-
-	// Get project ID from URL
-	projectID := vars["project_id"]
-
-	// Open project database
-	db, err := h.getProjectDB(projectID)
-	if err != nil {
-		http.Error(w, `{"error":{"code":"INTERNAL_ERROR","message":"Failed to open project database"}}`, http.StatusInternalServerError)
-		return
-	}
-	defer db.Close()
 
 	// Update task status in database
 	err = tasks.UpdateTaskStatus(db, taskID, req.Status)
@@ -519,15 +559,16 @@ func (h *TaskHandler) UpdateTaskStatus(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	responseTask := convertTask(updatedTask)
+	responseTask := tasks.ConvertTask(updatedTask)
 
-	response := map[string]interface{}{
-		"data": map[string]interface{}{
-			"task": responseTask,
-		},
-		"meta": map[string]interface{}{
-			"timestamp": time.Now().Format(time.RFC3339),
-			"version":   "1.0.0",
+	response := tasks.SingleTaskResponse{
+		Task:         responseTask,
+		TaskChildren: nil,
+		TaskLogs:     nil,
+		TaskReviews:  nil,
+		Meta: tasks.MetaResponse{
+			Timestamp: time.Now(),
+			Version:   "1.0.0",
 		},
 	}
 
@@ -589,19 +630,6 @@ func (h *TaskHandler) DeleteTask(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(response)
 }
 
-// TaskLogResponse represents the API response format for task logs
-type TaskLogResponse struct {
-	ID        int       `json:"id"`
-	TaskID    int       `json:"task_id"`
-	Message   string    `json:"message"`
-	CreatedAt time.Time `json:"created_at"`
-}
-
-// CreateTaskLogRequest represents the request body for creating a task log
-type CreateTaskLogRequest struct {
-	Message string `json:"message"`
-}
-
 // GetTaskLogs handles GET /tasks/{task_id}/logs
 func (h *TaskHandler) GetTaskLogs(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
@@ -647,9 +675,9 @@ func (h *TaskHandler) GetTaskLogs(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Convert to response format
-	logs := make([]*TaskLogResponse, len(dbLogs))
+	logs := make([]*tasks.TaskLogResponse, len(dbLogs))
 	for i, log := range dbLogs {
-		logs[i] = &TaskLogResponse{
+		logs[i] = &tasks.TaskLogResponse{
 			ID:        log.ID,
 			TaskID:    log.TaskID,
 			Message:   log.Message,
@@ -662,7 +690,7 @@ func (h *TaskHandler) GetTaskLogs(w http.ResponseWriter, r *http.Request) {
 	start := (page - 1) * limit
 	end := start + limit
 	if start >= total {
-		logs = []*TaskLogResponse{}
+		logs = []*tasks.TaskLogResponse{}
 	} else if end > total {
 		logs = logs[start:]
 	} else {
@@ -693,6 +721,7 @@ func (h *TaskHandler) GetTaskLogs(w http.ResponseWriter, r *http.Request) {
 func (h *TaskHandler) CreateTaskLog(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	taskIDStr := vars["task_id"]
+	projectID := vars["project_id"]
 
 	taskID, err := strconv.Atoi(taskIDStr)
 	if err != nil {
@@ -700,7 +729,29 @@ func (h *TaskHandler) CreateTaskLog(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var req CreateTaskLogRequest
+	// Open project database
+	db, err := h.getProjectDB(projectID)
+	if err != nil {
+		http.Error(w, `{"error":{"code":"INTERNAL_ERROR","message":"Failed to open project database"}}`, http.StatusInternalServerError)
+		return
+	}
+	defer db.Close()
+
+	if stepID, ok := auth.GetStepIDFromContext(r.Context()); ok {
+		// Permissions check: If this is done within a step context, does the
+		// step have the task leased?
+		leased, err := tasks.IsTaskLeased(db, taskID, stepID)
+		if err != nil {
+			http.Error(w, `{"error":{"code":"ERROR","message":"Error checking task lease"}}`, http.StatusInternalServerError)
+			return
+		}
+		if !leased {
+			http.Error(w, `{"error":{"code":"ERROR","message":"Task is not leased"}}`, http.StatusUnauthorized)
+			return
+		}
+	}
+
+	var req tasks.CreateTaskLogRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, `{"error":{"code":"VALIDATION_ERROR","message":"Invalid request body"}}`, http.StatusBadRequest)
 		return
@@ -711,17 +762,6 @@ func (h *TaskHandler) CreateTaskLog(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, `{"error":{"code":"VALIDATION_ERROR","message":"Message is required"}}`, http.StatusBadRequest)
 		return
 	}
-
-	// Get project ID from URL
-	projectID := vars["project_id"]
-
-	// Open project database
-	db, err := h.getProjectDB(projectID)
-	if err != nil {
-		http.Error(w, `{"error":{"code":"INTERNAL_ERROR","message":"Failed to open project database"}}`, http.StatusInternalServerError)
-		return
-	}
-	defer db.Close()
 
 	// Check if task exists
 	_, err = tasks.GetTask(db, taskID)
@@ -741,99 +781,9 @@ func (h *TaskHandler) CreateTaskLog(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Fetch the created log (we need to get the ID and timestamp)
-	// For now, we'll create a response with the provided data
-	// In a real implementation, we'd fetch the created log from the database
-	responseLog := &TaskLogResponse{
-		TaskID:    taskID,
-		Message:   req.Message,
-		CreatedAt: time.Now(),
-	}
-
-	response := map[string]interface{}{
-		"data": map[string]interface{}{
-			"log": responseLog,
-		},
-		"meta": map[string]interface{}{
-			"timestamp": time.Now().Format(time.RFC3339),
-			"version":   "1.0.0",
-		},
-	}
-
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
-	json.NewEncoder(w).Encode(response)
-}
-
-// GetNextTask handles GET /tasks/next
-func (h *TaskHandler) GetNextTask(w http.ResponseWriter, r *http.Request) {
-	// Get project ID from URL
-	vars := mux.Vars(r)
-	projectID := vars["project_id"]
-
-	// Open project database
-	db, err := h.getProjectDB(projectID)
-	if err != nil {
-		http.Error(w, `{"error":{"code":"INTERNAL_ERROR","message":"Failed to open project database"}}`, http.StatusInternalServerError)
-		return
-	}
-	defer db.Close()
-
-	nextTask, err := tasks.GetNextTask(db)
-	if err != nil {
-		if err == sql.ErrNoRows {
-			// No tasks ready for work
-			response := map[string]interface{}{
-				"data": map[string]interface{}{
-					"task":    nil,
-					"message": "No tasks ready for work",
-				},
-				"meta": map[string]interface{}{
-					"timestamp": time.Now().Format(time.RFC3339),
-					"version":   "1.0.0",
-				},
-			}
-			w.Header().Set("Content-Type", "application/json")
-			json.NewEncoder(w).Encode(response)
-			return
-		}
-
-		http.Error(w, `{"error":{"code":"INTERNAL_ERROR","message":"Failed to fetch next task"}}`, http.StatusInternalServerError)
-		return
-	}
-
-	responseTask := convertTask(nextTask)
-
-	response := map[string]interface{}{
-		"data": map[string]interface{}{
-			"task": responseTask,
-		},
-		"meta": map[string]interface{}{
-			"timestamp": time.Now().Format(time.RFC3339),
-			"version":   "1.0.0",
-		},
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(response)
-}
-
-// TaskReviewResponse represents the API response format for task reviews
-type TaskReviewResponse struct {
-	ID         int       `json:"id"`
-	TaskID     int       `json:"task_id"`
-	Message    string    `json:"message"`
-	Attachment *string   `json:"attachment"`
-	Status     string    `json:"status"`
-	Feedback   *string   `json:"feedback"`
-	CreatedAt  time.Time `json:"created_at"`
-	UpdatedAt  time.Time `json:"updated_at"`
-}
-
-// CreateTaskReviewRequest represents the request body for creating a task review
-type CreateTaskReviewRequest struct {
-	Message    string  `json:"message"`
-	Attachment *string `json:"attachment"`
+	w.Write([]byte(`{"status":"ok"}`))
 }
 
 // GetTaskReviews handles GET /tasks/{task_id}/reviews
@@ -877,9 +827,9 @@ func (h *TaskHandler) GetTaskReviews(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Convert to response format
-	reviews := make([]*TaskReviewResponse, len(dbReviews))
+	reviews := make([]*tasks.TaskReviewResponse, len(dbReviews))
 	for i, review := range dbReviews {
-		reviews[i] = &TaskReviewResponse{
+		reviews[i] = &tasks.TaskReviewResponse{
 			ID:         review.ID,
 			TaskID:     review.TaskID,
 			Message:    review.Message,
@@ -909,6 +859,7 @@ func (h *TaskHandler) GetTaskReviews(w http.ResponseWriter, r *http.Request) {
 func (h *TaskHandler) CreateTaskReview(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	taskIDStr := vars["task_id"]
+	projectID := vars["project_id"]
 
 	taskID, err := strconv.Atoi(taskIDStr)
 	if err != nil {
@@ -916,7 +867,29 @@ func (h *TaskHandler) CreateTaskReview(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var req CreateTaskReviewRequest
+	// Open project database
+	db, err := h.getProjectDB(projectID)
+	if err != nil {
+		http.Error(w, `{"error":{"code":"INTERNAL_ERROR","message":"Failed to open project database"}}`, http.StatusInternalServerError)
+		return
+	}
+	defer db.Close()
+
+	if stepID, ok := auth.GetStepIDFromContext(r.Context()); ok {
+		// Permissions check: If this is done within a step context, does the
+		// step have the task leased?
+		leased, err := tasks.IsTaskLeased(db, taskID, stepID)
+		if err != nil {
+			http.Error(w, `{"error":{"code":"ERROR","message":"Error checking task lease"}}`, http.StatusInternalServerError)
+			return
+		}
+		if !leased {
+			http.Error(w, `{"error":{"code":"ERROR","message":"Task is not leased"}}`, http.StatusUnauthorized)
+			return
+		}
+	}
+
+	var req tasks.CreateTaskReviewRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, `{"error":{"code":"VALIDATION_ERROR","message":"Invalid request body"}}`, http.StatusBadRequest)
 		return
@@ -927,17 +900,6 @@ func (h *TaskHandler) CreateTaskReview(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, `{"error":{"code":"VALIDATION_ERROR","message":"Message is required"}}`, http.StatusBadRequest)
 		return
 	}
-
-	// Get project ID from URL
-	projectID := vars["project_id"]
-
-	// Open project database
-	db, err := h.getProjectDB(projectID)
-	if err != nil {
-		http.Error(w, `{"error":{"code":"INTERNAL_ERROR","message":"Failed to open project database"}}`, http.StatusInternalServerError)
-		return
-	}
-	defer db.Close()
 
 	// Check if task exists
 	_, err = tasks.GetTask(db, taskID)
@@ -965,30 +927,9 @@ func (h *TaskHandler) CreateTaskReview(w http.ResponseWriter, r *http.Request) {
 		h.wsServer.BroadcastReviewUpdate(projectID, 0, "pending")
 	}
 
-	// For now, we will create a response with the provided data
-	// In a real implementation, we would fetch the created review from the database
-	responseReview := &TaskReviewResponse{
-		TaskID:     taskID,
-		Message:    req.Message,
-		Attachment: req.Attachment,
-		Status:     "pending", // Default status for new reviews
-		CreatedAt:  time.Now(),
-		UpdatedAt:  time.Now(),
-	}
-
-	response := map[string]interface{}{
-		"data": map[string]interface{}{
-			"review": responseReview,
-		},
-		"meta": map[string]interface{}{
-			"timestamp": time.Now().Format(time.RFC3339),
-			"version":   "1.0.0",
-		},
-	}
-
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
-	json.NewEncoder(w).Encode(response)
+	w.Write([]byte(`{"status":"ok"}`))
 }
 
 // GetProjectReviews handles GET /projects/{project_id}/reviews
@@ -1052,9 +993,9 @@ func (h *TaskHandler) GetProjectReviews(w http.ResponseWriter, r *http.Request) 
 	paginatedReviews := dbReviews[startIdx:endIdx]
 
 	// Convert to response format
-	reviews := make([]*TaskReviewResponse, len(paginatedReviews))
+	reviews := make([]*tasks.TaskReviewResponse, len(paginatedReviews))
 	for i, review := range paginatedReviews {
-		reviews[i] = &TaskReviewResponse{
+		reviews[i] = &tasks.TaskReviewResponse{
 			ID:         review.ID,
 			TaskID:     review.TaskID,
 			Message:    review.Message,
@@ -1159,7 +1100,7 @@ func (h *TaskHandler) SubmitReviewFeedback(w http.ResponseWriter, r *http.Reques
 		h.wsServer.BroadcastReviewUpdate(projectID, reviewID, req.Status)
 	}
 
-	responseReview := &TaskReviewResponse{
+	responseReview := &tasks.TaskReviewResponse{
 		ID:         updatedReview.ID,
 		TaskID:     updatedReview.TaskID,
 		Message:    updatedReview.Message,
