@@ -8,16 +8,24 @@ interface StepTimelineProps {
   formatCost: (cost: number) => string;
 }
 
-export function StepTimeline({ steps, onStepClick, formatDuration, formatCost }: StepTimelineProps) {
+export function StepTimeline({
+  steps,
+  onStepClick,
+  formatDuration,
+  formatCost,
+}: StepTimelineProps) {
   // Group steps by date for better visualization
-  const stepsByDate = steps.reduce((acc, step) => {
-    const date = new Date(step.start_time).toDateString();
-    if (!acc[date]) {
-      acc[date] = [];
-    }
-    acc[date].push(step);
-    return acc;
-  }, {} as Record<string, Step[]>);
+  const stepsByDate = steps.reduce(
+    (acc, step) => {
+      const date = new Date(step.start_time).toDateString();
+      if (!acc[date]) {
+        acc[date] = [];
+      }
+      acc[date].push(step);
+      return acc;
+    },
+    {} as Record<string, Step[]>
+  );
 
   const getStatusColor = (step: Step) => {
     if (!step.active) return '#ff9800'; // Orange for rolled back
@@ -42,9 +50,15 @@ export function StepTimeline({ steps, onStepClick, formatDuration, formatCost }:
   };
 
   // Calculate timeline metrics
-  const totalDuration = steps.reduce((sum, step) => sum + (step.duration_ms || 0), 0);
+  const totalDuration = steps.reduce(
+    (sum, step) => sum + (step.duration_ms || 0),
+    0
+  );
   const totalCost = steps.reduce((sum, step) => sum + step.cost_usd, 0);
-  const successRate = steps.length > 0 ? (steps.filter(s => s.exit_code === 0).length / steps.length) * 100 : 0;
+  const successRate =
+    steps.length > 0
+      ? (steps.filter(s => s.exit_code === 0).length / steps.length) * 100
+      : 0;
 
   return (
     <div class="step-timeline">
@@ -78,13 +92,14 @@ export function StepTimeline({ steps, onStepClick, formatDuration, formatCost }:
             <div class="timeline-date">
               <h4>{new Date(date).toLocaleDateString()}</h4>
               <span class="day-summary">
-                {daySteps.length} steps, {formatCost(daySteps.reduce((sum, s) => sum + s.cost_usd, 0))}
+                {daySteps.length} steps,{' '}
+                {formatCost(daySteps.reduce((sum, s) => sum + s.cost_usd, 0))}
               </span>
             </div>
-            
+
             <div class="timeline-steps">
               {daySteps.map((step, index) => (
-                <div 
+                <div
                   key={step.id}
                   class="timeline-step"
                   onClick={() => onStepClick(step)}
@@ -93,36 +108,42 @@ export function StepTimeline({ steps, onStepClick, formatDuration, formatCost }:
                   <div class="timeline-step-marker">
                     <span class="status-icon">{getStatusIcon(step)}</span>
                   </div>
-                  
+
                   <div class="timeline-step-content">
                     <div class="step-header">
                       <span class="step-id">S{step.id}</span>
-                      <span class="step-time">{formatTime(step.start_time)}</span>
+                      <span class="step-time">
+                        {formatTime(step.start_time)}
+                      </span>
                     </div>
-                    
+
                     <div class="step-details">
                       <div class="step-metric">
-                        <strong>Duration:</strong> {step.duration_ms ? formatDuration(step.duration_ms) : 'Running'}
+                        <strong>Duration:</strong>{' '}
+                        {step.duration_ms
+                          ? formatDuration(step.duration_ms)
+                          : 'Running'}
                       </div>
                       <div class="step-metric">
-                        <strong>Tokens:</strong> {step.total_tokens.toLocaleString()}
+                        <strong>Tokens:</strong>{' '}
+                        {step.total_tokens.toLocaleString()}
                       </div>
                       <div class="step-metric">
                         <strong>Cost:</strong> {formatCost(step.cost_usd)}
                       </div>
                     </div>
-                    
+
                     <div class="step-commits">
                       <div class="commit-info">
-                        <strong>Before:</strong> {getCommitShortSha(step.commit_before)}
+                        {getCommitShortSha(step.commit_before)}
                       </div>
                       {step.commit_after && (
                         <div class="commit-info">
-                          <strong>After:</strong> {getCommitShortSha(step.commit_after)}
+                          → {getCommitShortSha(step.commit_after)}
                         </div>
                       )}
                     </div>
-                    
+
                     {step.parent_step_id && (
                       <div class="parent-step">
                         <strong>Parent:</strong> S{step.parent_step_id}

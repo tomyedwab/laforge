@@ -13,11 +13,16 @@ export function ReviewsDashboard({ onTaskClick }: ReviewsDashboardProps) {
   const [tasks, setTasks] = useState<Record<number, Task>>({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [filter, setFilter] = useState<'all' | 'pending' | 'approved' | 'rejected'>('all');
-  const [sortBy, setSortBy] = useState<'created' | 'updated' | 'status'>('created');
-  const [expandedReviews, setExpandedReviews] = useState<Set<number>>(new Set());
+  const [filter, setFilter] = useState<
+    'all' | 'pending' | 'approved' | 'rejected'
+  >('all');
+  const [sortBy, setSortBy] = useState<'created' | 'updated' | 'status'>(
+    'created'
+  );
+  const [expandedReviews, setExpandedReviews] = useState<Set<number>>(
+    new Set()
+  );
   const [feedbackText, setFeedbackText] = useState<Record<number, string>>({});
-  const [selectedStatus, setSelectedStatus] = useState<Record<number, ReviewStatus>>({});
   const [isSubmitting, setIsSubmitting] = useState<Record<number, boolean>>({});
   const [showArtifact, setShowArtifact] = useState<string | null>(null);
 
@@ -32,14 +37,16 @@ export function ReviewsDashboard({ onTaskClick }: ReviewsDashboardProps) {
 
       // Get all reviews for the project
       const reviewsResponse = await apiService.getAllProjectReviews({
-        limit: 100
+        limit: 100,
       });
 
       setReviews(reviewsResponse.reviews);
 
       // Fetch tasks for the reviews to display task titles
       if (reviewsResponse.reviews.length > 0) {
-        const taskIds = [...new Set(reviewsResponse.reviews.map(r => r.task_id))];
+        const taskIds = [
+          ...new Set(reviewsResponse.reviews.map(r => r.task_id)),
+        ];
         const tasksMap: Record<number, Task> = {};
 
         // Fetch each task to get the full details
@@ -72,25 +79,13 @@ export function ReviewsDashboard({ onTaskClick }: ReviewsDashboardProps) {
     setExpandedReviews(newExpanded);
   };
 
-  const handleStatusChange = (reviewId: number, status: ReviewStatus) => {
-    setSelectedStatus(prev => ({ ...prev, [reviewId]: status }));
-    if (status === 'approved') {
-      setFeedbackText(prev => ({ ...prev, [reviewId]: '' }));
-    }
-  };
-
   const handleFeedbackChange = (reviewId: number, feedback: string) => {
     setFeedbackText(prev => ({ ...prev, [reviewId]: feedback }));
   };
 
-  const handleSubmitFeedback = async (reviewId: number) => {
-    const status = selectedStatus[reviewId];
+  const handleSubmitFeedback = async (reviewId: number, accepted: boolean) => {
     const feedback = feedbackText[reviewId] || '';
-    
-    if (!status) {
-      setError('Please select a review decision');
-      return;
-    }
+    const status = accepted ? 'approved' : 'rejected';
 
     if (status === 'rejected' && !feedback.trim()) {
       setError('Please provide feedback when rejecting a review');
@@ -105,16 +100,11 @@ export function ReviewsDashboard({ onTaskClick }: ReviewsDashboardProps) {
         status,
         feedback: feedback.trim() || undefined,
       });
-      
+
       // Update the review in the list
-      setReviews(reviews.map(r => r.id === reviewId ? response.review : r));
-      
+      setReviews(reviews.map(r => (r.id === reviewId ? response.review : r)));
+
       // Clear form state for this review
-      setSelectedStatus(prev => {
-        const newState = { ...prev };
-        delete newState[reviewId];
-        return newState;
-      });
       setFeedbackText(prev => {
         const newState = { ...prev };
         delete newState[reviewId];
@@ -141,9 +131,9 @@ export function ReviewsDashboard({ onTaskClick }: ReviewsDashboardProps) {
 
   const getStatusColor = (status: TaskReview['status']) => {
     const colors = {
-      'pending': 'var(--color-warning)',
-      'approved': 'var(--color-success)',
-      'rejected': 'var(--color-error)',
+      pending: 'var(--color-warning)',
+      approved: 'var(--color-success)',
+      rejected: 'var(--color-error)',
     };
     return colors[status];
   };
@@ -162,9 +152,13 @@ export function ReviewsDashboard({ onTaskClick }: ReviewsDashboardProps) {
     return [...reviews].sort((a, b) => {
       switch (sortBy) {
         case 'created':
-          return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+          return (
+            new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+          );
         case 'updated':
-          return new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime();
+          return (
+            new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime()
+          );
         case 'status':
           return a.status.localeCompare(b.status);
         default:
@@ -174,9 +168,7 @@ export function ReviewsDashboard({ onTaskClick }: ReviewsDashboardProps) {
   };
 
   const filteredReviews = sortReviews(
-    filter === 'all' 
-      ? reviews 
-      : reviews.filter(r => r.status === filter)
+    filter === 'all' ? reviews : reviews.filter(r => r.status === filter)
   );
 
   const stats = getStatusStats();
@@ -230,16 +222,16 @@ export function ReviewsDashboard({ onTaskClick }: ReviewsDashboardProps) {
         </div>
       </div>
 
-      {error && (
-        <div class="error-message">{error}</div>
-      )}
+      {error && <div class="error-message">{error}</div>}
 
       <div class="reviews-controls">
         <div class="filter-controls">
           <label>Filter:</label>
-          <select 
-            value={filter} 
-            onChange={(e) => setFilter((e.target as HTMLSelectElement).value as any)}
+          <select
+            value={filter}
+            onChange={e =>
+              setFilter((e.target as HTMLSelectElement).value as any)
+            }
           >
             <option value="all">All Reviews</option>
             <option value="pending">Pending</option>
@@ -249,9 +241,11 @@ export function ReviewsDashboard({ onTaskClick }: ReviewsDashboardProps) {
         </div>
         <div class="sort-controls">
           <label>Sort by:</label>
-          <select 
-            value={sortBy} 
-            onChange={(e) => setSortBy((e.target as HTMLSelectElement).value as any)}
+          <select
+            value={sortBy}
+            onChange={e =>
+              setSortBy((e.target as HTMLSelectElement).value as any)
+            }
           >
             <option value="created">Created Date</option>
             <option value="updated">Updated Date</option>
@@ -265,24 +259,25 @@ export function ReviewsDashboard({ onTaskClick }: ReviewsDashboardProps) {
           <div class="empty-icon">📋</div>
           <h3>No reviews found</h3>
           <p>
-            {filter === 'all' 
-              ? 'There are no reviews yet.' 
-              : `No ${filter} reviews found.`
-            }
+            {filter === 'all'
+              ? 'There are no reviews yet.'
+              : `No ${filter} reviews found.`}
           </p>
         </div>
       ) : (
         <div class="reviews-list">
           {filteredReviews.map(review => {
             const task = tasks[review.task_id];
-            const isExpanded = expandedReviews.has(review.id);
             const isPending = review.status === 'pending';
+            const isExpanded = isPending || expandedReviews.has(review.id);
             const canRespond = isPending && !isSubmitting[review.id];
-            const currentStatus = selectedStatus[review.id] || '';
             const currentFeedback = feedbackText[review.id] || '';
-            
+
             return (
-              <div key={review.id} class={`review-card ${isExpanded ? 'expanded' : ''}`}>
+              <div
+                key={review.id}
+                class={`review-card ${isExpanded ? 'expanded' : ''}`}
+              >
                 <div class="review-card-header">
                   <div class="review-status">
                     <span class={`status-badge status-${review.status}`}>
@@ -292,6 +287,9 @@ export function ReviewsDashboard({ onTaskClick }: ReviewsDashboardProps) {
                       <span class="pending-indicator">⚡ Action Required</span>
                     )}
                   </div>
+                  {!isExpanded && (
+                    <div class="review-message-short">{review.message}</div>
+                  )}
                   <div class="review-header-actions">
                     <div class="review-date">
                       {formatDate(review.created_at)}
@@ -299,115 +297,94 @@ export function ReviewsDashboard({ onTaskClick }: ReviewsDashboardProps) {
                     <button
                       class="expand-button"
                       onClick={() => toggleReviewExpanded(review.id)}
-                      aria-label={isExpanded ? 'Collapse review' : 'Expand review'}
+                      aria-label={
+                        isExpanded ? 'Collapse review' : 'Expand review'
+                      }
                     >
                       {isExpanded ? '▼' : '▶'}
                     </button>
                   </div>
                 </div>
 
-                <div class="review-card-content">
-                  <div class="review-message">
-                    {review.message}
-                  </div>
-                  
-                  {task && (
-                    <div class="related-task">
-                      <span class="task-label">Task:</span>
-                      <button 
-                        class="task-link"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleTaskClick(task.id);
-                        }}
-                      >
-                        {task.title}
-                      </button>
-                    </div>
-                  )}
-
-                  {review.attachment && (
-                    <div class="review-attachment">
-                      <span class="attachment-icon">📎</span>
-                      <span class="attachment-path">{review.attachment}</span>
-                      <button
-                        class="view-artifact-button"
-                        onClick={() => setShowArtifact(review.attachment!)}
-                      >
-                        View Artifact
-                      </button>
-                    </div>
-                  )}
-
-                  {review.feedback && (
-                    <div class="review-feedback-preview">
-                      <strong>Feedback:</strong> {review.feedback}
-                    </div>
-                  )}
-                </div>
-
                 {isExpanded && (
-                  <div class="review-expanded-content">
+                  <div class="review-card-content">
+                    <div class="review-message">{review.message}</div>
+
+                    {task && (
+                      <div class="related-task">
+                        <span class="task-label">Task:</span>
+                        <button
+                          class="task-link"
+                          onClick={e => {
+                            e.stopPropagation();
+                            handleTaskClick(task.id);
+                          }}
+                        >
+                          {task.title}
+                        </button>
+                      </div>
+                    )}
+
+                    {review.attachment && (
+                      <div class="review-attachment">
+                        <span class="attachment-icon">📎</span>
+                        <span class="attachment-path">{review.attachment}</span>
+                        <button
+                          class="view-artifact-button"
+                          onClick={() => setShowArtifact(review.attachment!)}
+                        >
+                          View Artifact
+                        </button>
+                      </div>
+                    )}
+
                     {isPending ? (
                       <div class="review-response-inline">
-                        <h4>Respond to Review</h4>
+                        <h4>Submit review feedback</h4>
                         <div class="form-group">
-                          <label>Review Decision *</label>
-                          <div class="status-options">
-                            <label class="status-option">
-                              <input
-                                type="radio"
-                                name={`status-${review.id}`}
-                                value="approved"
-                                checked={currentStatus === 'approved'}
-                                onChange={() => handleStatusChange(review.id, 'approved')}
-                                disabled={!canRespond}
-                              />
-                              <span class="option-label approve">
-                                <span class="option-icon">✓</span>
-                                Approve
-                              </span>
-                            </label>
-                            <label class="status-option">
-                              <input
-                                type="radio"
-                                name={`status-${review.id}`}
-                                value="rejected"
-                                checked={currentStatus === 'rejected'}
-                                onChange={() => handleStatusChange(review.id, 'rejected')}
-                                disabled={!canRespond}
-                              />
-                              <span class="option-label reject">
-                                <span class="option-icon">✗</span>
-                                Request Changes
-                              </span>
-                            </label>
-                          </div>
+                          <label htmlFor={`feedback-${review.id}`}>
+                            Feedback *
+                          </label>
+                          <textarea
+                            id={`feedback-${review.id}`}
+                            value={currentFeedback}
+                            onChange={e =>
+                              handleFeedbackChange(
+                                review.id,
+                                (e.target as HTMLTextAreaElement).value
+                              )
+                            }
+                            placeholder="Please provide specific feedback on what needs to be changed..."
+                            rows={4}
+                            required={false}
+                            disabled={!canRespond}
+                          />
                         </div>
-
-                        {currentStatus === 'rejected' && (
-                          <div class="form-group">
-                            <label htmlFor={`feedback-${review.id}`}>Feedback *</label>
-                            <textarea
-                              id={`feedback-${review.id}`}
-                              value={currentFeedback}
-                              onChange={(e) => handleFeedbackChange(review.id, (e.target as HTMLTextAreaElement).value)}
-                              placeholder="Please provide specific feedback on what needs to be changed..."
-                              rows={4}
-                              required={currentStatus === 'rejected'}
-                              disabled={!canRespond}
-                            />
-                          </div>
-                        )}
 
                         <div class="form-actions">
                           <button
                             type="button"
                             class="submit-button"
-                            onClick={() => handleSubmitFeedback(review.id)}
-                            disabled={!canRespond || !currentStatus}
+                            onClick={() =>
+                              handleSubmitFeedback(review.id, true)
+                            }
+                            disabled={!canRespond}
                           >
-                            {isSubmitting[review.id] ? 'Submitting...' : 'Submit Response'}
+                            {isSubmitting[review.id]
+                              ? 'Submitting...'
+                              : '✓ Approve'}
+                          </button>
+                          <button
+                            type="button"
+                            class="submit-button"
+                            onClick={() =>
+                              handleSubmitFeedback(review.id, false)
+                            }
+                            disabled={!canRespond}
+                          >
+                            {isSubmitting[review.id]
+                              ? 'Submitting...'
+                              : '✗ Request Changes'}
                           </button>
                         </div>
                       </div>

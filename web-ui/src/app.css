@@ -6,9 +6,9 @@
 }
 
 body {
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
-    'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue',
-    sans-serif;
+  font-family:
+    -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen', 'Ubuntu',
+    'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue', sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   background-color: var(--color-background);
@@ -142,7 +142,7 @@ body {
   cursor: not-allowed;
 }
 
-button[type="submit"] {
+button[type='submit'] {
   width: 100%;
   padding: 0.75rem;
   background-color: var(--color-button-primary);
@@ -155,11 +155,11 @@ button[type="submit"] {
   transition: background-color 0.2s;
 }
 
-button[type="submit"]:hover:not(:disabled) {
+button[type='submit']:hover:not(:disabled) {
   background-color: var(--color-button-primary-hover);
 }
 
-button[type="submit"]:disabled {
+button[type='submit']:disabled {
   background-color: #bdc3c7;
   cursor: not-allowed;
 }
@@ -575,7 +575,7 @@ button[type="submit"]:disabled {
   font-size: 0.75rem;
   padding: 0.2rem 0.4rem;
   border-radius: 3px;
-  background-color: rgba(0,0,0,0.1);
+  background-color: rgba(0, 0, 0, 0.1);
 }
 
 .child-count {
@@ -583,7 +583,7 @@ button[type="submit"]:disabled {
   align-items: center;
   gap: 0.25rem;
   font-size: 0.8rem;
-  background-color: rgba(0,0,0,0.05);
+  background-color: rgba(0, 0, 0, 0.05);
   padding: 0.2rem 0.4rem;
   border-radius: 3px;
 }
@@ -1110,7 +1110,7 @@ button[type="submit"]:disabled {
   gap: 0.5rem;
 }
 
-.filter-group input[type="date"] {
+.filter-group input[type='date'] {
   padding: 0.5rem;
   border: 1px solid var(--color-border);
   border-radius: 4px;
@@ -1416,6 +1416,7 @@ button[type="submit"]:disabled {
   display: flex;
   gap: 1rem;
   flex-wrap: wrap;
+  flex-direction: row;
 }
 
 .commit-info {
@@ -1728,171 +1729,171 @@ button[type="submit"]:disabled {
   .main-content {
     padding: 1rem;
   }
-  
+
   .header-content {
     flex-direction: row;
     justify-content: space-between;
     align-items: center;
   }
-  
+
   .header-actions {
     flex-direction: row;
     align-items: center;
     gap: 1rem;
   }
-  
+
   .view-navigation {
     display: none;
   }
-  
+
   .mobile-navigation {
     display: block;
   }
-  
+
   .mobile-menu-toggle {
     display: flex;
   }
-  
+
   .user-menu {
     flex-direction: row;
     align-items: center;
     gap: 0.5rem;
   }
-  
+
   .username {
     font-size: 0.9rem;
   }
-  
+
   .logout-button {
     padding: 0.4rem 0.8rem;
     font-size: 0.8rem;
   }
-  
+
   .login-form {
     margin: 1rem;
     padding: 1.5rem;
   }
-  
+
   .task-dashboard,
   .step-dashboard {
     padding: 1.5rem;
   }
-  
+
   .dashboard-header {
     flex-direction: column;
     align-items: stretch;
     gap: 1rem;
   }
-  
+
   .dashboard-actions {
     justify-content: space-between;
     flex-wrap: wrap;
   }
-  
+
   .step-filters {
     flex-direction: column;
     align-items: stretch;
     gap: 1rem;
   }
-  
+
   .filter-row {
     flex-direction: column;
     align-items: stretch;
   }
-  
+
   .search-group {
     width: 100%;
   }
-  
+
   .timeline-date {
     flex-direction: column;
     align-items: flex-start;
     gap: 0.5rem;
   }
-  
+
   .step-header {
     flex-direction: column;
     align-items: flex-start;
     gap: 0.25rem;
   }
-  
+
   .step-details {
     flex-direction: column;
     gap: 0.5rem;
   }
-  
+
   .info-grid {
     grid-template-columns: 1fr;
   }
-  
+
   .summary-stats {
     grid-template-columns: 1fr;
   }
-  
+
   .task-card-header {
     flex-direction: column;
     align-items: flex-start;
     gap: 0.75rem;
   }
-  
+
   .task-status-section {
     align-self: flex-end;
   }
-  
+
   .task-actions {
     justify-content: stretch;
   }
-  
+
   .task-action-button {
     flex: 1;
     justify-content: center;
   }
-  
+
   .pagination {
     flex-direction: column;
     align-items: center;
     gap: 1rem;
   }
-  
+
   .pagination-controls {
     flex-wrap: wrap;
     justify-content: center;
   }
-  
+
   .task-detail-modal,
   .modal-content {
     margin: 0.5rem;
     max-height: calc(100vh - 1rem);
   }
-  
+
   .task-detail-header,
   .modal-header {
     padding: 1rem;
   }
-  
+
   .task-detail-panel,
   .modal-body {
     padding: 1rem;
   }
-  
+
   .properties-grid {
     grid-template-columns: 1fr;
     gap: 0.75rem;
   }
-  
+
   .task-form-modal {
     margin: 0.5rem;
     max-height: calc(100vh - 1rem);
   }
-  
+
   .form-row {
     grid-template-columns: 1fr;
   }
-  
+
   .form-actions {
     flex-direction: column;
   }
-  
+
   .cancel-button,
   .save-button {
     width: 100%;
@@ -1903,47 +1904,47 @@ button[type="submit"]:disabled {
   .app-header {
     padding: 0.75rem 1rem;
   }
-  
+
   .app-title {
     font-size: 1.25rem;
   }
-  
+
   .main-content {
     padding: 0.75rem;
   }
-  
+
   .task-dashboard,
   .step-dashboard {
     padding: 1rem;
   }
-  
+
   .dashboard-actions {
     flex-direction: column;
     align-items: stretch;
   }
-  
+
   .connection-status {
     justify-content: center;
   }
-  
+
   .create-task-button {
     width: 100%;
   }
-  
+
   .task-card {
     padding: 1rem;
   }
-  
+
   .step-card {
     padding: 1rem;
   }
-  
+
   .task-detail-modal,
   .modal-content {
     margin: 0.25rem;
     max-height: calc(100vh - 0.5rem);
   }
-  
+
   .review-request-modal,
   .review-detail-modal,
   .artifact-viewer-modal {
@@ -1951,13 +1952,13 @@ button[type="submit"]:disabled {
     margin: 0.5rem;
     max-height: calc(100vh - 1rem);
   }
-  
+
   .review-request-header,
   .review-detail-header,
   .artifact-viewer-header {
     padding: 1rem;
   }
-  
+
   .review-request-content,
   .review-detail-content,
   .artifact-viewer-content {
@@ -1968,25 +1969,25 @@ button[type="submit"]:disabled {
   .review-header-actions {
     gap: 0.5rem;
   }
-  
+
   .review-card-content {
     font-size: 0.9rem;
   }
-  
+
   .review-message {
     font-size: 1rem !important;
   }
-  
+
   .review-response-inline,
   .review-completed-inline {
     padding: 1rem;
   }
-  
+
   .status-options {
     flex-direction: column;
     gap: 0.5rem;
   }
-  
+
   .option-label {
     padding: 0.5rem;
     font-size: 0.9rem;
@@ -2050,8 +2051,12 @@ button[type="submit"]:disabled {
 }
 
 @keyframes spin {
-  0% { transform: rotate(0deg); }
-  100% { transform: rotate(360deg); }
+  0% {
+    transform: rotate(0deg);
+  }
+  100% {
+    transform: rotate(360deg);
+  }
 }
 
 .loading-message {
@@ -2067,7 +2072,12 @@ button[type="submit"]:disabled {
 
 .skeleton-line {
   height: 16px;
-  background: linear-gradient(90deg, var(--color-border-light) 25%, var(--color-border) 50%, var(--color-border-light) 75%);
+  background: linear-gradient(
+    90deg,
+    var(--color-border-light) 25%,
+    var(--color-border) 50%,
+    var(--color-border-light) 75%
+  );
   background-size: 200% 100%;
   animation: loading 1.5s infinite;
   border-radius: 4px;
@@ -2093,7 +2103,9 @@ button[type="submit"]:disabled {
   border-radius: 4px;
   font-size: 1rem;
   background-color: white;
-  transition: border-color 0.2s, box-shadow 0.2s;
+  transition:
+    border-color 0.2s,
+    box-shadow 0.2s;
 }
 
 .autocomplete-input:focus {
@@ -2120,7 +2132,9 @@ button[type="submit"]:disabled {
   padding: 0.25rem;
   line-height: 1;
   border-radius: 2px;
-  transition: color 0.2s, background-color 0.2s;
+  transition:
+    color 0.2s,
+    background-color 0.2s;
 }
 
 .autocomplete-clear:hover {
@@ -2230,8 +2244,12 @@ button[type="submit"]:disabled {
 }
 
 @keyframes spin {
-  0% { transform: rotate(0deg); }
-  100% { transform: rotate(360deg); }
+  0% {
+    transform: rotate(0deg);
+  }
+  100% {
+    transform: rotate(360deg);
+  }
 }
 
 .skeleton-line.long {
@@ -2440,7 +2458,9 @@ button[type="submit"]:disabled {
   border: 1px solid var(--color-border);
   border-radius: 4px;
   font-size: 0.95rem;
-  transition: border-color 0.2s, box-shadow 0.2s;
+  transition:
+    border-color 0.2s,
+    box-shadow 0.2s;
   background-color: var(--color-surface);
   color: var(--color-text);
 }
@@ -2471,7 +2491,7 @@ button[type="submit"]:disabled {
   cursor: pointer;
 }
 
-.checkbox-label input[type="checkbox"] {
+.checkbox-label input[type='checkbox'] {
   width: auto;
   margin: 0;
 }
@@ -2562,11 +2582,11 @@ button[type="submit"]:disabled {
   .form-row {
     grid-template-columns: 1fr;
   }
-  
+
   .form-actions {
     flex-direction: column;
   }
-  
+
   .cancel-button,
   .save-button {
     width: 100%;
@@ -2900,7 +2920,9 @@ button[type="submit"]:disabled {
   border: 1px solid var(--color-border);
   border-radius: 4px;
   font-size: 0.95rem;
-  transition: border-color 0.2s, box-shadow 0.2s;
+  transition:
+    border-color 0.2s,
+    box-shadow 0.2s;
   background-color: var(--color-surface);
   color: var(--color-text);
 }
@@ -3008,8 +3030,12 @@ button[type="submit"]:disabled {
 }
 
 @keyframes spin {
-  0% { transform: rotate(0deg); }
-  100% { transform: rotate(360deg); }
+  0% {
+    transform: rotate(0deg);
+  }
+  100% {
+    transform: rotate(360deg);
+  }
 }
 
 .error-icon {
@@ -3166,7 +3192,7 @@ button[type="submit"]:disabled {
   border: 1px solid var(--color-border);
 }
 
-  .review-feedback-completed {
+.review-feedback-completed {
   margin-top: 1rem;
   padding: 1rem;
   background-color: var(--color-surface);
@@ -3192,7 +3218,9 @@ button[type="submit"]:disabled {
   border: 1px solid var(--color-border);
   border-radius: 4px;
   font-size: 0.95rem;
-  transition: border-color 0.2s, box-shadow 0.2s;
+  transition:
+    border-color 0.2s,
+    box-shadow 0.2s;
   background-color: var(--color-surface);
   color: var(--color-text);
   resize: vertical;
@@ -3412,6 +3440,16 @@ button[type="submit"]:disabled {
   line-height: 1.5;
   margin-bottom: 1rem;
   color: var(--color-text);
+}
+.review-message-short {
+  font-size: 0.9rem;
+  line-height: 1.5;
+  color: var(--color-text);
+  max-height: 2rem;
+  max-width: 650px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .related-task {
