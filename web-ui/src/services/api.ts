@@ -7,8 +7,16 @@ import type {
   Step,
 } from '../types';
 
-const API_BASE_URL =
-  import.meta.env.VITE_API_BASE_URL || 'http://localhost:8080/api/v1';
+const getApiBaseUrl = () => {
+  const envUrl = import.meta.env.VITE_API_BASE_URL;
+  if (envUrl && envUrl.startsWith('/')) {
+    // Relative URL - use current domain
+    return envUrl;
+  }
+  return envUrl || 'http://localhost:8080/api/v1';
+};
+
+const API_BASE_URL = getApiBaseUrl();
 
 class ApiService {
   private projectId: string | null = null;

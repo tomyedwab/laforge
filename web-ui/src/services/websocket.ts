@@ -117,6 +117,11 @@ export class WebSocketService {
   }
 }
 
-// Create singleton instance
-const WS_URL = import.meta.env.VITE_WS_URL || 'ws://localhost:8080/api/v1';
-export const websocketService = new WebSocketService(WS_URL);
+// Create singleton instance with dynamic WebSocket URL
+const getWebSocketUrl = () => {
+  const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+  const host = window.location.host;
+  return import.meta.env.VITE_WS_URL || `${protocol}//${host}/api/v1`;
+};
+
+export const websocketService = new WebSocketService(getWebSocketUrl());
