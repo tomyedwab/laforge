@@ -12,7 +12,8 @@ import (
 )
 
 type Claims struct {
-	UserID string `json:"user_id"`
+	UserID *string `json:"user_id"`
+	StepID *int    `json:"step_id"`
 	jwt.RegisteredClaims
 }
 
@@ -26,9 +27,10 @@ func NewJWTManager(secretKey string) *JWTManager {
 	}
 }
 
-func (j *JWTManager) GenerateToken(userID string) (string, error) {
+func (j *JWTManager) GenerateToken(userID *string, stepID *int) (string, error) {
 	claims := &Claims{
 		UserID: userID,
+		StepID: stepID,
 		RegisteredClaims: jwt.RegisteredClaims{
 			ExpiresAt: jwt.NewNumericDate(time.Now().Add(24 * time.Hour)),
 			IssuedAt:  jwt.NewNumericDate(time.Now()),
@@ -67,6 +69,7 @@ func (j *JWTManager) ValidateToken(tokenString string) (*Claims, error) {
 type ContextKey string
 
 const UserContextKey ContextKey = "user_id"
+const StepContextKey ContextKey = "step_id"
 
 func (j *JWTManager) AuthMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -109,6 +112,7 @@ func (j *JWTManager) AuthMiddleware(next http.Handler) http.Handler {
 		log.Printf("AUTH: Successfully validated token for user: %s", claims.UserID)
 		// Add user ID to context
 		ctx := context.WithValue(r.Context(), UserContextKey, claims.UserID)
+		ctx = context.WithValue(ctx, StepContextKey, claims.StepID)
 		next.ServeHTTP(w, r.WithContext(ctx))
 	})
 }
@@ -121,6 +125,17 @@ func min(a, b int) int {
 }
 
 func GetUserIDFromContext(ctx context.Context) (string, bool) {
-	userID, ok := ctx.Value(UserContextKey).(string)
-	return userID, ok
+	userID, ok := ctx.Value(UserContextKey).(*string)
+	if ok && userID != nil {
+		return *userID, true
+	}
+	return "", false
+}
+
+func GetStepIDFromContext(ctx context.Context) (int, bool) {
+	stepID, ok := ctx.Value(StepContextKey).(*int)
+	if ok && stepID != nil {
+		return *stepID, true
+	}
+	return 0, false
 }

@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/tomyedwab/laforge/errors"
+	"github.com/tomyedwab/laforge/lib/errors"
 )
 
 // Worktree represents a git worktree

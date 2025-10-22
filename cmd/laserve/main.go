@@ -75,7 +75,7 @@ func run(config *Config) error {
 	taskHandler := handlers.NewTaskHandler(nil, wsServer)
 
 	// Create step handler (without database - will be opened per project)
-	stepHandler := handlers.NewStepHandler(wsServer)
+	stepHandler := handlers.NewStepHandler(wsServer, jwtManager)
 
 	// Create router
 	router := setupRouter(jwtManager, taskHandler, stepHandler, wsServer, config)
@@ -192,6 +192,8 @@ func setupRouter(jwtManager *auth.JWTManager, taskHandler *handlers.TaskHandler,
 	protected.HandleFunc("/{project_id}/tasks/{task_id}", taskHandler.UpdateTask).Methods("PUT")
 	protected.HandleFunc("/{project_id}/tasks/{task_id}", taskHandler.DeleteTask).Methods("DELETE")
 	protected.HandleFunc("/{project_id}/tasks/{task_id}", corsPreflightHandler).Methods("OPTIONS")
+	protected.HandleFunc("/{project_id}/tasks/lease/{task_id}", taskHandler.LeaseTask).Methods("POST")
+	protected.HandleFunc("/{project_id}/tasks/lease/{task_id}", corsPreflightHandler).Methods("OPTIONS")
 	protected.HandleFunc("/{project_id}/tasks/{task_id}/status", taskHandler.UpdateTaskStatus).Methods("PUT")
 	protected.HandleFunc("/{project_id}/tasks/{task_id}/status", corsPreflightHandler).Methods("OPTIONS")
 
@@ -214,6 +216,8 @@ func setupRouter(jwtManager *auth.JWTManager, taskHandler *handlers.TaskHandler,
 	protected.HandleFunc("/{project_id}/steps", corsPreflightHandler).Methods("OPTIONS")
 	protected.HandleFunc("/{project_id}/steps/{step_id}", stepHandler.GetStep).Methods("GET")
 	protected.HandleFunc("/{project_id}/steps/{step_id}", corsPreflightHandler).Methods("OPTIONS")
+	protected.HandleFunc("/{project_id}/steps/lease", stepHandler.LeaseStep).Methods("POST")
+	protected.HandleFunc("/{project_id}/steps/lease", corsPreflightHandler).Methods("OPTIONS")
 
 	// Artifact serving routes
 	protected.HandleFunc("/{project_id}/artifacts/{artifact_path:.*}", artifactHandler.ServeArtifact).Methods("GET")
@@ -245,7 +249,7 @@ func makeLoginHandler(jwtManager *auth.JWTManager) http.HandlerFunc {
 		// In production, this would validate credentials against a database
 		userID := "test-user"
 
-		token, err := jwtManager.GenerateToken(userID)
+		token, err := jwtManager.GenerateToken(&userID, nil)
 		if err != nil {
 			http.Error(w, `{"error":{"code":"INTERNAL_ERROR","message":"Failed to generate token"}}`, http.StatusInternalServerError)
 			return

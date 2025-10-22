@@ -13,8 +13,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/tomyedwab/laforge/projects"
-	"github.com/tomyedwab/laforge/steps"
+	"github.com/tomyedwab/laforge/lib/projects"
+	"github.com/tomyedwab/laforge/lib/steps"
 )
 
 // Container represents a running Docker container

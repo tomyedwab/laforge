@@ -6,8 +6,8 @@ import (
 	"time"
 
 	"github.com/gorilla/mux"
-	"github.com/tomyedwab/laforge/errors"
-	"github.com/tomyedwab/laforge/projects"
+	"github.com/tomyedwab/laforge/lib/errors"
+	"github.com/tomyedwab/laforge/lib/projects"
 )
 
 // ProjectResponse represents the API response format for projects

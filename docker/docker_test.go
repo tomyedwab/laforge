@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/tomyedwab/laforge/projects"
+	"github.com/tomyedwab/laforge/lib/projects"
 )
 
 func TestNewClient(t *testing.T) {

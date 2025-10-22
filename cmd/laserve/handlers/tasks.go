@@ -4,15 +4,17 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"log"
 	"net/http"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/gorilla/mux"
+	"github.com/tomyedwab/laforge/cmd/laserve/auth"
 	"github.com/tomyedwab/laforge/cmd/laserve/websocket"
-	"github.com/tomyedwab/laforge/projects"
-	"github.com/tomyedwab/laforge/tasks"
+	"github.com/tomyedwab/laforge/lib/projects"
+	"github.com/tomyedwab/laforge/lib/tasks"
 )
 
 type TaskHandler struct {
@@ -429,6 +431,27 @@ func (h *TaskHandler) UpdateTask(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(response)
+}
+
+// LeaseTask handles POST /tasks/{task_id}/lease
+func (h *TaskHandler) LeaseTask(w http.ResponseWriter, r *http.Request) {
+	vars := mux.Vars(r)
+	taskIDStr := vars["task_id"]
+
+	taskID, err := strconv.Atoi(taskIDStr)
+	if err != nil {
+		http.Error(w, `{"error":{"code":"VALIDATION_ERROR","message":"Invalid task ID"}}`, http.StatusBadRequest)
+		return
+	}
+
+	stepID, ok := auth.GetStepIDFromContext(r.Context())
+	if !ok {
+		http.Error(w, `{"error":{"code":"AUTH_ERROR","message":"Auth token is not associated with an active step"}}`, http.StatusUnauthorized)
+		return
+	}
+
+	// TODO: Get current task status and attempt to lease it
+	log.Printf("Leasing task %d for step %d", taskID, stepID)
 }
 
 // UpdateTaskStatus handles PUT /tasks/{task_id}/status

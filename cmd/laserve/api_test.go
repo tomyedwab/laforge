@@ -15,7 +15,8 @@ func TestAPIEndpoints(t *testing.T) {
 	jwtManager := auth.NewJWTManager("test-secret")
 
 	// Generate a test token
-	token, err := jwtManager.GenerateToken("test-user")
+	userId := "test-user"
+	token, err := jwtManager.GenerateToken(&userId, nil)
 	if err != nil {
 		t.Fatalf("Failed to generate token: %v", err)
 	}

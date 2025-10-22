@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/tomyedwab/laforge/tasks"
+	"github.com/tomyedwab/laforge/lib/tasks"
 )
 
 // Mock database for testing

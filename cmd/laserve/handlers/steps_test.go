@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/tomyedwab/laforge/steps"
+	"github.com/tomyedwab/laforge/lib/steps"
 )
 
 func TestConvertStep(t *testing.T) {
@@ -26,17 +26,10 @@ func TestConvertStep(t *testing.T) {
 				ParentStepID:    nil,
 				CommitSHABefore: "abc123",
 				CommitSHAAfter:  "def456",
-				AgentConfig: steps.AgentConfig{
-					Model:        "gpt-4",
-					MaxTokens:    2000,
-					Temperature:  0.7,
-					SystemPrompt: "You are a helpful assistant",
-					Tools:        []string{"latasks", "latools"},
-					Metadata:     map[string]string{"env": "test"},
-				},
-				StartTime:  now,
-				EndTime:    &now,
-				DurationMs: &duration,
+				AgentConfigName: "opencode",
+				StartTime:       now,
+				EndTime:         &now,
+				DurationMs:      &duration,
 				TokenUsage: steps.TokenUsage{
 					PromptTokens:     1500,
 					CompletionTokens: 800,
@@ -67,12 +60,10 @@ func TestConvertStep(t *testing.T) {
 				ParentStepID:    intPtr(1),
 				CommitSHABefore: "def456",
 				CommitSHAAfter:  "",
-				AgentConfig: steps.AgentConfig{
-					Model: "gpt-3.5-turbo",
-				},
-				StartTime:  now,
-				EndTime:    nil,
-				DurationMs: nil,
+				AgentConfigName: "opencode",
+				StartTime:       now,
+				EndTime:         nil,
+				DurationMs:      nil,
 				TokenUsage: steps.TokenUsage{
 					PromptTokens:     0,
 					CompletionTokens: 0,
@@ -152,17 +143,10 @@ func TestStepResponseStructure(t *testing.T) {
 		ParentStepID:    nil,
 		CommitSHABefore: "abc123",
 		CommitSHAAfter:  "def456",
-		AgentConfig: steps.AgentConfig{
-			Model:        "gpt-4",
-			MaxTokens:    2000,
-			Temperature:  0.7,
-			SystemPrompt: "Test prompt",
-			Tools:        []string{"tool1", "tool2"},
-			Metadata:     map[string]string{"key": "value"},
-		},
-		StartTime:  time.Now(),
-		EndTime:    nil,
-		DurationMs: nil,
+		AgentConfigName: "opencode",
+		StartTime:       time.Now(),
+		EndTime:         nil,
+		DurationMs:      nil,
 		TokenUsage: steps.TokenUsage{
 			PromptTokens:     100,
 			CompletionTokens: 50,
@@ -193,7 +177,7 @@ func TestStepResponseStructure(t *testing.T) {
 	if response.CommitSHAAfter != step.CommitSHAAfter {
 		t.Error("CommitSHAAfter field mismatch")
 	}
-	if response.AgentConfig.Model != step.AgentConfig.Model {
+	if response.AgentConfigName != step.AgentConfigName {
 		t.Error("AgentConfig.Model field mismatch")
 	}
 	if response.StartTime != step.StartTime {

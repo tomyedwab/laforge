@@ -14,7 +14,7 @@ func TestJWTManager(t *testing.T) {
 	jwtManager := NewJWTManager(secret)
 
 	t.Run("Generate and Validate Token", func(t *testing.T) {
-		token, err := jwtManager.GenerateToken(userID)
+		token, err := jwtManager.GenerateToken(&userID, nil)
 		if err != nil {
 			t.Fatalf("Failed to generate token: %v", err)
 		}
@@ -28,7 +28,7 @@ func TestJWTManager(t *testing.T) {
 			t.Fatalf("Failed to validate token: %v", err)
 		}
 
-		if claims.UserID != userID {
+		if *claims.UserID != userID {
 			t.Errorf("Expected user ID %s, got %s", userID, claims.UserID)
 		}
 	})
@@ -41,7 +41,7 @@ func TestJWTManager(t *testing.T) {
 	})
 
 	t.Run("Wrong Secret", func(t *testing.T) {
-		token, err := jwtManager.GenerateToken(userID)
+		token, err := jwtManager.GenerateToken(&userID, nil)
 		if err != nil {
 			t.Fatalf("Failed to generate token: %v", err)
 		}
@@ -81,7 +81,7 @@ func TestAuthMiddleware(t *testing.T) {
 	protectedHandler := jwtManager.AuthMiddleware(testHandler)
 
 	t.Run("Valid Token", func(t *testing.T) {
-		token, _ := jwtManager.GenerateToken(userID)
+		token, _ := jwtManager.GenerateToken(&userID, nil)
 
 		req, err := http.NewRequest("GET", "/test", nil)
 		if err != nil {

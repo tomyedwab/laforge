@@ -7,8 +7,8 @@ import (
 	"strings"
 
 	"github.com/gorilla/mux"
-	"github.com/tomyedwab/laforge/errors"
-	"github.com/tomyedwab/laforge/projects"
+	"github.com/tomyedwab/laforge/lib/errors"
+	"github.com/tomyedwab/laforge/lib/projects"
 )
 
 // ArtifactHandler handles artifact-related API requests

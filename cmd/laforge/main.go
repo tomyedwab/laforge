@@ -12,11 +12,11 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/tomyedwab/laforge/database"
 	"github.com/tomyedwab/laforge/docker"
-	"github.com/tomyedwab/laforge/errors"
 	"github.com/tomyedwab/laforge/git"
+	"github.com/tomyedwab/laforge/lib/errors"
+	"github.com/tomyedwab/laforge/lib/projects"
+	"github.com/tomyedwab/laforge/lib/steps"
 	"github.com/tomyedwab/laforge/logging"
-	"github.com/tomyedwab/laforge/projects"
-	"github.com/tomyedwab/laforge/steps"
 )
 
 var (
@@ -349,20 +349,10 @@ func runStep(cmd *cobra.Command, args []string) error {
 		ParentStepID:    nil, // Will be set if this is a child step
 		CommitSHABefore: commitSHABefore,
 		CommitSHAAfter:  "", // Will be updated after step completion
-		AgentConfig: steps.AgentConfig{
-			Model:        "default", // Basic model info since projects.AgentConfig doesn't have these fields
-			MaxTokens:    0,
-			Temperature:  0.7,
-			SystemPrompt: "", // Will be populated from agent config if available
-			Tools:        []string{},
-			Metadata: map[string]string{
-				"agent_name": agentConfig.Name,
-				"image":      agentConfig.Image,
-			},
-		},
-		StartTime:  time.Now(),
-		EndTime:    nil, // Will be updated after step completion
-		DurationMs: nil, // Will be updated after step completion
+		AgentConfigName: agentConfig.Name,
+		StartTime:       time.Now(),
+		EndTime:         nil, // Will be updated after step completion
+		DurationMs:      nil, // Will be updated after step completion
 		TokenUsage: steps.TokenUsage{
 			PromptTokens:     0, // Will be updated after step completion
 			CompletionTokens: 0, // Will be updated after step completion
@@ -374,7 +364,7 @@ func runStep(cmd *cobra.Command, args []string) error {
 		CreatedAt: time.Now(),
 	}
 
-	if err := stepDB.CreateStep(step); err != nil {
+	if _, err := stepDB.CreateStep(step); err != nil {
 		return errors.Wrap(errors.ErrDatabaseOperationFailed, err, "failed to create step record")
 	}
 
@@ -955,20 +945,7 @@ func runStepInfo(cmd *cobra.Command, args []string) error {
 	}
 
 	// Agent configuration
-	fmt.Printf("\nAgent Configuration:\n")
-	fmt.Printf("  Model: %s\n", step.AgentConfig.Model)
-	if step.AgentConfig.MaxTokens > 0 {
-		fmt.Printf("  Max Tokens: %d\n", step.AgentConfig.MaxTokens)
-	}
-	if step.AgentConfig.Temperature > 0 {
-		fmt.Printf("  Temperature: %.2f\n", step.AgentConfig.Temperature)
-	}
-	if len(step.AgentConfig.Metadata) > 0 {
-		fmt.Printf("  Metadata:\n")
-		for key, value := range step.AgentConfig.Metadata {
-			fmt.Printf("    %s: %s\n", key, value)
-		}
-	}
+	fmt.Printf("\nAgent Configuration: %s\n", step.AgentConfigName)
 
 	// Token usage
 	if step.TokenUsage.TotalTokens > 0 {

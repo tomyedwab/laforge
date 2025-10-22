@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/tomyedwab/laforge/errors"
+	"github.com/tomyedwab/laforge/lib/errors"
 )
 
 func TestCreateWorktree(t *testing.T) {
