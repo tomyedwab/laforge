@@ -127,6 +127,9 @@ func (h *TaskHandler) ListTasks(w http.ResponseWriter, r *http.Request) {
 	status := r.URL.Query().Get("status")
 	taskType := r.URL.Query().Get("type")
 	parentIDStr := r.URL.Query().Get("parent_id")
+	search := r.URL.Query().Get("search")
+	sortBy := r.URL.Query().Get("sort_by")
+	sortOrder := r.URL.Query().Get("sort_order")
 	includeChildren := r.URL.Query().Get("include_children") == "true"
 	includeLogs := r.URL.Query().Get("include_logs") == "true"
 	includeReviews := r.URL.Query().Get("include_reviews") == "true"
@@ -151,78 +154,64 @@ func (h *TaskHandler) ListTasks(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// Parse parent_id filter
+	var parentID *int
+	if parentIDStr != "" {
+		if parsed, err := strconv.Atoi(parentIDStr); err == nil {
+			parentID = &parsed
+		} else {
+			http.Error(w, `{"error":{"code":"VALIDATION_ERROR","message":"Invalid parent_id parameter"}}`, http.StatusBadRequest)
+			return
+		}
+	}
+
+	// Validate sort parameters
+	if sortBy != "" {
+		validSortFields := map[string]bool{
+			"created_at": true,
+			"updated_at": true,
+			"title":      true,
+			"status":     true,
+			"type":       true,
+		}
+		if !validSortFields[sortBy] {
+			http.Error(w, `{"error":{"code":"VALIDATION_ERROR","message":"Invalid sort_by parameter"}}`, http.StatusBadRequest)
+			return
+		}
+	}
+
+	if sortOrder != "" && sortOrder != "asc" && sortOrder != "desc" {
+		http.Error(w, `{"error":{"code":"VALIDATION_ERROR","message":"Invalid sort_order parameter"}}`, http.StatusBadRequest)
+		return
+	}
+
 	// TODO: Implement include_children, include_logs, include_reviews
 	_ = includeChildren
 	_ = includeLogs
 	_ = includeReviews
 
-	// Get all tasks from database
-	dbTasks, err := tasks.ListTasks(db)
+	// Build options for database query
+	options := tasks.ListTasksOptions{
+		Status:    statusFilter,
+		Type:      taskType,
+		ParentID:  parentID,
+		Search:    search,
+		SortBy:    sortBy,
+		SortOrder: sortOrder,
+		Page:      page,
+		Limit:     limit,
+	}
+
+	// Get tasks from database with filtering, sorting, and pagination
+	dbTasks, totalCount, err := tasks.ListTasksWithOptions(db, options)
 	if err != nil {
 		http.Error(w, `{"error":{"code":"INTERNAL_ERROR","message":"Failed to fetch tasks"}}`, http.StatusInternalServerError)
 		return
 	}
 
-	// Filter tasks based on query parameters
-	var filteredTasks []tasks.Task
-	for _, task := range dbTasks {
-		// Filter by status (handle multiple statuses)
-		if len(statusFilter) > 0 {
-			statusMatch := false
-			for _, s := range statusFilter {
-				if task.Status == strings.TrimSpace(s) {
-					statusMatch = true
-					break
-				}
-			}
-			if !statusMatch {
-				continue
-			}
-		}
-
-		// Filter by type (extract from title)
-		if taskType != "" {
-			actualType := "FEAT"
-			if strings.HasPrefix(task.Title, "[") {
-				if endIdx := strings.Index(task.Title, "]"); endIdx > 1 {
-					actualType = task.Title[1:endIdx]
-				}
-			}
-			if actualType != taskType {
-				continue
-			}
-		}
-
-		// Filter by parent_id
-		if parentIDStr != "" {
-			parentID, err := strconv.Atoi(parentIDStr)
-			if err != nil {
-				http.Error(w, `{"error":{"code":"VALIDATION_ERROR","message":"Invalid parent_id parameter"}}`, http.StatusBadRequest)
-				return
-			}
-			if task.ParentID == nil || *task.ParentID != parentID {
-				continue
-			}
-		}
-
-		filteredTasks = append(filteredTasks, task)
-	}
-
-	// Apply pagination
-	total := len(filteredTasks)
-	start := (page - 1) * limit
-	end := start + limit
-	if start >= total {
-		filteredTasks = []tasks.Task{}
-	} else if end > total {
-		filteredTasks = filteredTasks[start:]
-	} else {
-		filteredTasks = filteredTasks[start:end]
-	}
-
 	// Convert to response format
-	responseTasks := make([]*TaskResponse, len(filteredTasks))
-	for i, task := range filteredTasks {
+	responseTasks := make([]*TaskResponse, len(dbTasks))
+	for i, task := range dbTasks {
 		responseTasks[i] = convertTask(&task)
 	}
 
@@ -234,8 +223,8 @@ func (h *TaskHandler) ListTasks(w http.ResponseWriter, r *http.Request) {
 			"pagination": map[string]interface{}{
 				"page":  page,
 				"limit": limit,
-				"total": total,
-				"pages": (total + limit - 1) / limit,
+				"total": totalCount,
+				"pages": (totalCount + limit - 1) / limit,
 			},
 		},
 		"meta": map[string]interface{}{
@@ -1055,9 +1044,9 @@ func (h *TaskHandler) GetProjectReviews(w http.ResponseWriter, r *http.Request) 
 	}
 
 	pagination := map[string]interface{}{
-		"page":       page,
-		"limit":      limit,
-		"total":      totalCount,
+		"page":        page,
+		"limit":       limit,
+		"total":       totalCount,
 		"total_pages": (totalCount + limit - 1) / limit,
 	}
 

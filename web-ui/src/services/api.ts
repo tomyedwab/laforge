@@ -88,6 +88,8 @@ class ApiService {
     page?: number;
     limit?: number;
     search?: string;
+    sort_by?: 'created_at' | 'updated_at' | 'title' | 'status' | 'type';
+    sort_order?: 'asc' | 'desc';
   }): Promise<{ tasks: Task[]; pagination: any }> {
     const searchParams = new URLSearchParams();
     Object.entries(params || {}).forEach(([key, value]) => {

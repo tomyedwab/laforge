@@ -103,6 +103,9 @@ export function TaskDashboard({ onTaskClick }: TaskDashboardProps) {
           limit: itemsPerPage,
           status: 'todo,in-progress,in-review',
           type: filters.type,
+          search: filters.search,
+          sort_by: filters.sortBy,
+          sort_order: filters.sortOrder,
         });
         
         setUpcomingTasks(response.tasks);
@@ -117,6 +120,9 @@ export function TaskDashboard({ onTaskClick }: TaskDashboardProps) {
           limit: itemsPerPage,
           status: 'completed',
           type: filters.type,
+          search: filters.search,
+          sort_by: filters.sortBy,
+          sort_order: filters.sortOrder,
         });
         
         setCompletedTasks(response.tasks);
@@ -134,39 +140,6 @@ export function TaskDashboard({ onTaskClick }: TaskDashboardProps) {
   const currentTasks = activeTab === 'upcoming' ? upcomingTasks : completedTasks;
   const currentPagination = activeTab === 'upcoming' ? upcomingPagination : completedPagination;
   const currentPage = activeTab === 'upcoming' ? upcomingPage : completedPage;
-
-  // Apply local filtering and sorting for more responsive UI
-  const processedTasks = useMemo(() => {
-    let filtered = currentTasks;
-
-    // Apply search filter
-    if (filters.search) {
-      const searchLower = filters.search.toLowerCase();
-      filtered = filtered.filter(task => 
-        task.title.toLowerCase().includes(searchLower) ||
-        task.description?.toLowerCase().includes(searchLower)
-      );
-    }
-
-    // Apply sorting
-    if (filters.sortBy) {
-      filtered = [...filtered].sort((a, b) => {
-        let aValue: any = a[filters.sortBy!];
-        let bValue: any = b[filters.sortBy!];
-        
-        if (filters.sortBy === 'title') {
-          aValue = aValue.toLowerCase();
-          bValue = bValue.toLowerCase();
-        }
-        
-        if (aValue < bValue) return filters.sortOrder === 'asc' ? -1 : 1;
-        if (aValue > bValue) return filters.sortOrder === 'asc' ? 1 : -1;
-        return 0;
-      });
-    }
-
-    return filtered;
-  }, [currentTasks, filters]);
 
   const handleTaskClick = (task: Task) => {
     if (onTaskClick) {
@@ -363,7 +336,7 @@ export function TaskDashboard({ onTaskClick }: TaskDashboardProps) {
       
       <TaskFilters filters={filters} onFiltersChange={setFilters} />
       
-      {processedTasks.length === 0 ? (
+      {currentTasks.length === 0 ? (
         <div class="empty-state">
           <p>No tasks found.</p>
           <p>Try adjusting your filters or create a new task.</p>
@@ -371,7 +344,7 @@ export function TaskDashboard({ onTaskClick }: TaskDashboardProps) {
       ) : (
         <>
           <div class="task-list">
-             {processedTasks.map(task => (
+             {currentTasks.map(task => (
               <TaskCard
                 key={task.id}
                 task={task}

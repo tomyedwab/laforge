@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"fmt"
 	"os"
+	"strings"
 	"time"
 
 	_ "github.com/mattn/go-sqlite3"
@@ -152,10 +153,106 @@ func GetTask(db *sql.DB, taskID int) (*Task, error) {
 	return &task, nil
 }
 
-func ListTasks(db *sql.DB) ([]Task, error) {
-	rows, err := db.Query("SELECT id, title, description, acceptance_criteria, upstream_dependency_id, review_required, parent_id, status, created_at, updated_at FROM tasks ORDER BY id")
+// ListTasksOptions represents filtering and sorting options for listing tasks
+type ListTasksOptions struct {
+	Status    []string // Filter by status (empty means all statuses)
+	Type      string   // Filter by task type (extracted from title)
+	ParentID  *int     // Filter by parent_id
+	Search    string   // Search in title and description
+	SortBy    string   // Sort field: created_at, updated_at, title, status, type
+	SortOrder string   // Sort order: asc, desc
+	Page      int      // Page number (1-based)
+	Limit     int      // Items per page
+}
+
+// ListTasksWithOptions retrieves tasks with filtering, sorting, and pagination
+func ListTasksWithOptions(db *sql.DB, options ListTasksOptions) ([]Task, int, error) {
+	// Build the query
+	query := "SELECT id, title, description, acceptance_criteria, upstream_dependency_id, review_required, parent_id, status, created_at, updated_at FROM tasks"
+	countQuery := "SELECT COUNT(*) FROM tasks"
+
+	var whereConditions []string
+	var args []interface{}
+	var countArgs []interface{}
+
+	// Add search filter
+	if options.Search != "" {
+		searchPattern := "%" + options.Search + "%"
+		whereConditions = append(whereConditions, "(title LIKE ? OR description LIKE ?)")
+		args = append(args, searchPattern, searchPattern)
+		countArgs = append(countArgs, searchPattern, searchPattern)
+	}
+
+	// Add status filter
+	if len(options.Status) > 0 {
+		statusPlaceholders := make([]string, len(options.Status))
+		for i, status := range options.Status {
+			statusPlaceholders[i] = "?"
+			args = append(args, status)
+			countArgs = append(countArgs, status)
+		}
+		whereConditions = append(whereConditions, fmt.Sprintf("status IN (%s)", strings.Join(statusPlaceholders, ", ")))
+	}
+
+	// Add type filter (extracted from title)
+	if options.Type != "" {
+		whereConditions = append(whereConditions, "title LIKE ?")
+		args = append(args, "["+options.Type+"]%")
+		countArgs = append(countArgs, "["+options.Type+"]%")
+	}
+
+	// Add parent_id filter
+	if options.ParentID != nil {
+		whereConditions = append(whereConditions, "parent_id = ?")
+		args = append(args, *options.ParentID)
+		countArgs = append(countArgs, *options.ParentID)
+	}
+
+	// Build WHERE clause
+	whereClause := ""
+	if len(whereConditions) > 0 {
+		whereClause = " WHERE " + strings.Join(whereConditions, " AND ")
+	}
+
+	// Get total count for pagination
+	var totalCount int
+	err := db.QueryRow(countQuery+whereClause, countArgs...).Scan(&totalCount)
 	if err != nil {
-		return nil, fmt.Errorf("failed to query tasks: %w", err)
+		return nil, 0, fmt.Errorf("failed to count tasks: %w", err)
+	}
+
+	// Add ORDER BY clause
+	orderByClause := ""
+	if options.SortBy != "" {
+		// Validate sort field to prevent SQL injection
+		validSortFields := map[string]bool{
+			"created_at": true,
+			"updated_at": true,
+			"title":      true,
+			"status":     true,
+			"id":         true,
+		}
+
+		if validSortFields[options.SortBy] {
+			sortOrder := "ASC"
+			if strings.ToLower(options.SortOrder) == "desc" {
+				sortOrder = "DESC"
+			}
+			orderByClause = fmt.Sprintf(" ORDER BY %s %s", options.SortBy, sortOrder)
+		}
+	}
+
+	// Add pagination
+	limitClause := ""
+	if options.Limit > 0 {
+		offset := (options.Page - 1) * options.Limit
+		limitClause = fmt.Sprintf(" LIMIT %d OFFSET %d", options.Limit, offset)
+	}
+
+	// Execute the main query
+	rows, err := db.Query(query+whereClause+orderByClause+limitClause, args...)
+	if err != nil {
+		return nil, 0, fmt.Errorf("failed to query tasks: %w", err)
 	}
 	defer rows.Close()
 
@@ -163,12 +260,22 @@ func ListTasks(db *sql.DB) ([]Task, error) {
 	for rows.Next() {
 		var task Task
 		if err := rows.Scan(&task.ID, &task.Title, &task.Description, &task.AcceptanceCriteria, &task.UpstreamDependencyID, &task.ReviewRequired, &task.ParentID, &task.Status, &task.CreatedAt, &task.UpdatedAt); err != nil {
-			return nil, fmt.Errorf("failed to scan task: %w", err)
+			return nil, 0, fmt.Errorf("failed to scan task: %w", err)
 		}
 		tasks = append(tasks, task)
 	}
 
-	return tasks, nil
+	return tasks, totalCount, nil
+}
+
+// ListTasks retrieves all tasks (maintained for backward compatibility)
+func ListTasks(db *sql.DB) ([]Task, error) {
+	options := ListTasksOptions{
+		SortBy:    "id",
+		SortOrder: "asc",
+	}
+	tasks, _, err := ListTasksWithOptions(db, options)
+	return tasks, err
 }
 
 func UpdateTaskStatus(db *sql.DB, taskID int, status string) error {
