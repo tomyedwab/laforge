@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'preact/hooks';
-import type { Task, TaskReview } from '../types';
+import type { Task, TaskReview, ReviewStatus } from '../types';
 import { apiService } from '../services/api';
-import { ReviewDetail } from './ReviewDetail';
+import { ArtifactViewer } from './ArtifactViewer';
 import { TaskCard } from './TaskCard';
 
 interface ReviewsDashboardProps {
@@ -13,9 +13,13 @@ export function ReviewsDashboard({ onTaskClick }: ReviewsDashboardProps) {
   const [tasks, setTasks] = useState<Record<number, Task>>({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [selectedReview, setSelectedReview] = useState<TaskReview | null>(null);
   const [filter, setFilter] = useState<'all' | 'pending' | 'approved' | 'rejected'>('all');
   const [sortBy, setSortBy] = useState<'created' | 'updated' | 'status'>('created');
+  const [expandedReviews, setExpandedReviews] = useState<Set<number>>(new Set());
+  const [feedbackText, setFeedbackText] = useState<Record<number, string>>({});
+  const [selectedStatus, setSelectedStatus] = useState<Record<number, ReviewStatus>>({});
+  const [isSubmitting, setIsSubmitting] = useState<Record<number, boolean>>({});
+  const [showArtifact, setShowArtifact] = useState<string | null>(null);
 
   useEffect(() => {
     loadReviews();
@@ -58,13 +62,70 @@ export function ReviewsDashboard({ onTaskClick }: ReviewsDashboardProps) {
     }
   };
 
-  const handleReviewClick = (review: TaskReview) => {
-    setSelectedReview(review);
+  const toggleReviewExpanded = (reviewId: number) => {
+    const newExpanded = new Set(expandedReviews);
+    if (newExpanded.has(reviewId)) {
+      newExpanded.delete(reviewId);
+    } else {
+      newExpanded.add(reviewId);
+    }
+    setExpandedReviews(newExpanded);
   };
 
-  const handleReviewUpdated = (updatedReview: TaskReview) => {
-    setReviews(reviews.map(r => r.id === updatedReview.id ? updatedReview : r));
-    setSelectedReview(null);
+  const handleStatusChange = (reviewId: number, status: ReviewStatus) => {
+    setSelectedStatus(prev => ({ ...prev, [reviewId]: status }));
+    if (status === 'approved') {
+      setFeedbackText(prev => ({ ...prev, [reviewId]: '' }));
+    }
+  };
+
+  const handleFeedbackChange = (reviewId: number, feedback: string) => {
+    setFeedbackText(prev => ({ ...prev, [reviewId]: feedback }));
+  };
+
+  const handleSubmitFeedback = async (reviewId: number) => {
+    const status = selectedStatus[reviewId];
+    const feedback = feedbackText[reviewId] || '';
+    
+    if (!status) {
+      setError('Please select a review decision');
+      return;
+    }
+
+    if (status === 'rejected' && !feedback.trim()) {
+      setError('Please provide feedback when rejecting a review');
+      return;
+    }
+
+    setIsSubmitting(prev => ({ ...prev, [reviewId]: true }));
+    setError(null);
+
+    try {
+      const response = await apiService.submitReviewFeedback(reviewId, {
+        status,
+        feedback: feedback.trim() || undefined,
+      });
+      
+      // Update the review in the list
+      setReviews(reviews.map(r => r.id === reviewId ? response.review : r));
+      
+      // Clear form state for this review
+      setSelectedStatus(prev => {
+        const newState = { ...prev };
+        delete newState[reviewId];
+        return newState;
+      });
+      setFeedbackText(prev => {
+        const newState = { ...prev };
+        delete newState[reviewId];
+        return newState;
+      });
+    } catch (error) {
+      console.error('Failed to submit review feedback:', error);
+      setError('Failed to submit review feedback. Please try again.');
+    } finally {
+      setIsSubmitting(prev => ({ ...prev, [reviewId]: false }));
+    }
   };
 
   const handleTaskClick = (taskId: number) => {
@@ -169,6 +230,10 @@ export function ReviewsDashboard({ onTaskClick }: ReviewsDashboardProps) {
         </div>
       </div>
 
+      {error && (
+        <div class="error-message">{error}</div>
+      )}
+
       <div class="reviews-controls">
         <div class="filter-controls">
           <label>Filter:</label>
@@ -210,25 +275,34 @@ export function ReviewsDashboard({ onTaskClick }: ReviewsDashboardProps) {
         <div class="reviews-list">
           {filteredReviews.map(review => {
             const task = tasks[review.task_id];
+            const isExpanded = expandedReviews.has(review.id);
+            const isPending = review.status === 'pending';
+            const canRespond = isPending && !isSubmitting[review.id];
+            const currentStatus = selectedStatus[review.id] || '';
+            const currentFeedback = feedbackText[review.id] || '';
+            
             return (
-              <div 
-                key={review.id} 
-                class="review-card"
-                onClick={() => handleReviewClick(review)}
-              >
+              <div key={review.id} class={`review-card ${isExpanded ? 'expanded' : ''}`}>
                 <div class="review-card-header">
                   <div class="review-status">
-                    <span 
-                      class={`status-badge status-${review.status}`}
-                    >
+                    <span class={`status-badge status-${review.status}`}>
                       {review.status}
                     </span>
-                    {review.status === 'pending' && (
+                    {isPending && (
                       <span class="pending-indicator">⚡ Action Required</span>
                     )}
                   </div>
-                  <div class="review-date">
-                    {formatDate(review.created_at)}
+                  <div class="review-header-actions">
+                    <div class="review-date">
+                      {formatDate(review.created_at)}
+                    </div>
+                    <button
+                      class="expand-button"
+                      onClick={() => toggleReviewExpanded(review.id)}
+                      aria-label={isExpanded ? 'Collapse review' : 'Expand review'}
+                    >
+                      {isExpanded ? '▼' : '▶'}
+                    </button>
                   </div>
                 </div>
 
@@ -256,6 +330,12 @@ export function ReviewsDashboard({ onTaskClick }: ReviewsDashboardProps) {
                     <div class="review-attachment">
                       <span class="attachment-icon">📎</span>
                       <span class="attachment-path">{review.attachment}</span>
+                      <button
+                        class="view-artifact-button"
+                        onClick={() => setShowArtifact(review.attachment!)}
+                      >
+                        View Artifact
+                      </button>
                     </div>
                   )}
 
@@ -265,17 +345,101 @@ export function ReviewsDashboard({ onTaskClick }: ReviewsDashboardProps) {
                     </div>
                   )}
                 </div>
+
+                {isExpanded && (
+                  <div class="review-expanded-content">
+                    {isPending ? (
+                      <div class="review-response-inline">
+                        <h4>Respond to Review</h4>
+                        <div class="form-group">
+                          <label>Review Decision *</label>
+                          <div class="status-options">
+                            <label class="status-option">
+                              <input
+                                type="radio"
+                                name={`status-${review.id}`}
+                                value="approved"
+                                checked={currentStatus === 'approved'}
+                                onChange={() => handleStatusChange(review.id, 'approved')}
+                                disabled={!canRespond}
+                              />
+                              <span class="option-label approve">
+                                <span class="option-icon">✓</span>
+                                Approve
+                              </span>
+                            </label>
+                            <label class="status-option">
+                              <input
+                                type="radio"
+                                name={`status-${review.id}`}
+                                value="rejected"
+                                checked={currentStatus === 'rejected'}
+                                onChange={() => handleStatusChange(review.id, 'rejected')}
+                                disabled={!canRespond}
+                              />
+                              <span class="option-label reject">
+                                <span class="option-icon">✗</span>
+                                Request Changes
+                              </span>
+                            </label>
+                          </div>
+                        </div>
+
+                        {currentStatus === 'rejected' && (
+                          <div class="form-group">
+                            <label htmlFor={`feedback-${review.id}`}>Feedback *</label>
+                            <textarea
+                              id={`feedback-${review.id}`}
+                              value={currentFeedback}
+                              onChange={(e) => handleFeedbackChange(review.id, (e.target as HTMLTextAreaElement).value)}
+                              placeholder="Please provide specific feedback on what needs to be changed..."
+                              rows={4}
+                              required={currentStatus === 'rejected'}
+                              disabled={!canRespond}
+                            />
+                          </div>
+                        )}
+
+                        <div class="form-actions">
+                          <button
+                            type="button"
+                            class="submit-button"
+                            onClick={() => handleSubmitFeedback(review.id)}
+                            disabled={!canRespond || !currentStatus}
+                          >
+                            {isSubmitting[review.id] ? 'Submitting...' : 'Submit Response'}
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      <div class="review-completed-inline">
+                        <div class="completion-notice">
+                          <span class={`completion-icon ${review.status}`}>
+                            {review.status === 'approved' ? '✓' : '✗'}
+                          </span>
+                          <span class="completion-text">
+                            This review has been {review.status}
+                          </span>
+                        </div>
+                        {review.feedback && (
+                          <div class="review-feedback-completed">
+                            <strong>Feedback:</strong> {review.feedback}
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
             );
           })}
         </div>
       )}
 
-      {selectedReview && (
-        <ReviewDetail
-          review={selectedReview}
-          onClose={() => setSelectedReview(null)}
-          onReviewUpdated={handleReviewUpdated}
+      {showArtifact && (
+        <ArtifactViewer
+          artifactPath={showArtifact}
+          onClose={() => setShowArtifact(null)}
         />
       )}
     </div>

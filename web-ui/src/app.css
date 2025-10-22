@@ -1963,6 +1963,34 @@ button[type="submit"]:disabled {
   .artifact-viewer-content {
     padding: 1rem;
   }
+
+  /* Responsive review cards */
+  .review-header-actions {
+    gap: 0.5rem;
+  }
+  
+  .review-card-content {
+    font-size: 0.9rem;
+  }
+  
+  .review-message {
+    font-size: 1rem !important;
+  }
+  
+  .review-response-inline,
+  .review-completed-inline {
+    padding: 1rem;
+  }
+  
+  .status-options {
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+  
+  .option-label {
+    padding: 0.5rem;
+    font-size: 0.9rem;
+  }
 }
 
 /* Loading States */
@@ -3084,6 +3112,129 @@ button[type="submit"]:disabled {
   padding: 2rem;
   box-shadow: 0 2px 10px var(--color-shadow);
   border: 1px solid var(--color-border);
+}
+
+.review-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+
+.expand-button {
+  background: none;
+  border: 1px solid var(--color-border);
+  border-radius: 4px;
+  padding: 0.25rem 0.5rem;
+  cursor: pointer;
+  font-size: 0.8rem;
+  color: var(--color-text-light);
+  transition: all 0.2s;
+}
+
+.expand-button:hover {
+  background-color: var(--color-border-light);
+  color: var(--color-text);
+}
+
+.review-card.expanded {
+  background: var(--color-surface);
+  box-shadow: 0 4px 12px var(--color-shadow);
+}
+
+.review-expanded-content {
+  margin-top: 1.5rem;
+  padding-top: 1.5rem;
+  border-top: 1px solid var(--color-border);
+}
+
+.review-response-inline {
+  background-color: var(--color-border-light);
+  padding: 1.5rem;
+  border-radius: 6px;
+  border: 1px solid var(--color-border);
+}
+
+.review-response-inline h4 {
+  margin: 0 0 1rem 0;
+  color: var(--color-text);
+}
+
+.review-completed-inline {
+  background-color: var(--color-border-light);
+  padding: 1.5rem;
+  border-radius: 6px;
+  border: 1px solid var(--color-border);
+}
+
+  .review-feedback-completed {
+  margin-top: 1rem;
+  padding: 1rem;
+  background-color: var(--color-surface);
+  border-radius: 4px;
+  border-left: 4px solid var(--color-success);
+}
+
+/* Inline review form styling */
+.review-response-inline .form-group {
+  margin-bottom: 1.5rem;
+}
+
+.review-response-inline .form-group label {
+  display: block;
+  margin-bottom: 0.5rem;
+  font-weight: 500;
+  color: var(--color-text);
+}
+
+.review-response-inline .form-group textarea {
+  width: 100%;
+  padding: 0.75rem;
+  border: 1px solid var(--color-border);
+  border-radius: 4px;
+  font-size: 0.95rem;
+  transition: border-color 0.2s, box-shadow 0.2s;
+  background-color: var(--color-surface);
+  color: var(--color-text);
+  resize: vertical;
+  min-height: 100px;
+}
+
+.review-response-inline .form-group textarea:focus {
+  outline: none;
+  border-color: var(--color-focus);
+  box-shadow: 0 0 0 2px var(--color-border-light);
+}
+
+.review-response-inline .form-group textarea:disabled {
+  background-color: var(--color-border-light);
+  cursor: not-allowed;
+}
+
+.review-response-inline .form-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 1rem;
+}
+
+.review-response-inline .submit-button {
+  padding: 0.75rem 1.5rem;
+  background-color: var(--color-button-primary);
+  color: white;
+  border: none;
+  border-radius: 4px;
+  font-size: 0.95rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background-color 0.2s;
+}
+
+.review-response-inline .submit-button:hover:not(:disabled) {
+  background-color: var(--color-button-primary-hover);
+}
+
+.review-response-inline .submit-button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
 }
 
 .reviews-dashboard .reviews-header {
