@@ -133,7 +133,8 @@ func (s *Server) HandleWebSocket(w http.ResponseWriter, r *http.Request) {
 	// Upgrade HTTP connection to WebSocket
 	conn, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
-		http.Error(w, "Failed to upgrade connection", http.StatusBadRequest)
+		// Log the error but don't write to response - upgrade already attempted
+		// and the response writer may have been used
 		return
 	}
 

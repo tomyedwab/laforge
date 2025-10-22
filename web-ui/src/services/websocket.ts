@@ -35,7 +35,7 @@ export class WebSocketService {
       this.ws = new WebSocket(wsUrl);
 
       this.ws.onopen = () => {
-        console.log('WebSocket connected');
+        console.log('WebSocket connected successfully');
         this.subscribe(['tasks', 'reviews', 'steps']);
       };
 
@@ -48,20 +48,24 @@ export class WebSocketService {
         }
       };
 
-      this.ws.onclose = () => {
-        console.log('WebSocket disconnected');
+      this.ws.onclose = (event) => {
+        console.log(`WebSocket disconnected: code=${event.code}, reason=${event.reason}, wasClean=${event.wasClean}`);
         this.ws = null;
         if (this.shouldReconnect) {
+          console.log(`Reconnecting in ${this.reconnectInterval}ms...`);
           setTimeout(() => this.connect(token), this.reconnectInterval);
         }
       };
 
-      this.ws.onerror = error => {
-        console.error('WebSocket error:', error);
+      this.ws.onerror = (error) => {
+        console.error('WebSocket error event:', error);
+        // Don't reconnect here - let onclose handle it
       };
     } catch (error) {
       console.error('Failed to create WebSocket connection:', error);
+      this.ws = null;
       if (this.shouldReconnect) {
+        console.log(`Retrying connection in ${this.reconnectInterval}ms...`);
         setTimeout(() => this.connect(token), this.reconnectInterval);
       }
     }
