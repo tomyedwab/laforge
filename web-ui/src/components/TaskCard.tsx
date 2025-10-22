@@ -5,6 +5,7 @@ interface TaskCardProps {
   task: Task;
   onClick?: (task: Task) => void;
   onStatusChange?: (taskId: number, status: TaskStatus) => void;
+  onEdit?: (task: Task) => void;
   showActions?: boolean;
   isSelected?: boolean;
   depth?: number;
@@ -32,6 +33,7 @@ export function TaskCard({
   task,
   onClick,
   onStatusChange,
+  onEdit,
   showActions = true,
   isSelected = false,
   depth = 0,
@@ -39,6 +41,12 @@ export function TaskCard({
   const handleStatusChange = (newStatus: TaskStatus) => {
     if (onStatusChange) {
       onStatusChange(task.id, newStatus);
+    }
+  };
+
+  const handleEdit = () => {
+    if (onEdit) {
+      onEdit(task);
     }
   };
 
@@ -217,7 +225,11 @@ export function TaskCard({
           >
             👁️ View
           </button>
-          <button class="task-action-button edit-button" title="Edit task">
+          <button
+            class="task-action-button edit-button"
+            onClick={handleEdit}
+            title="Edit task"
+          >
             ✏️ Edit
           </button>
         </div>

@@ -32,6 +32,7 @@ export function TaskDashboard({ onTaskClick }: TaskDashboardProps) {
   const [completedPage, setCompletedPage] = useState(1);
   const [itemsPerPage, setItemsPerPage] = useState(25);
   const [isCreatingTask, setIsCreatingTask] = useState(false);
+  const [editingTask, setEditingTask] = useState<Task | null>(null);
 
   // Set up WebSocket connection for real-time updates
   const { isConnected, connectionError } = useWebSocket({
@@ -189,6 +190,32 @@ export function TaskDashboard({ onTaskClick }: TaskDashboardProps) {
     loadTasks();
   };
 
+  const handleEditTask = (task: Task) => {
+    setEditingTask(task);
+  };
+
+  const handleCancelEditTask = () => {
+    setEditingTask(null);
+  };
+
+  const handleTaskEdited = (updatedTask: Task) => {
+    setEditingTask(null);
+    // Update the task in the appropriate local state
+    if (updatedTask.status === 'completed') {
+      setCompletedTasks(prevTasks => 
+        prevTasks.map(task => 
+          task.id === updatedTask.id ? updatedTask : task
+        )
+      );
+    } else {
+      setUpcomingTasks(prevTasks => 
+        prevTasks.map(task => 
+          task.id === updatedTask.id ? updatedTask : task
+        )
+      );
+    }
+  };
+
   const handleTaskUpdated = (updatedTask: Task) => {
     // Update the task in the appropriate local state
     if (updatedTask.status === 'completed') {
@@ -344,12 +371,13 @@ export function TaskDashboard({ onTaskClick }: TaskDashboardProps) {
       ) : (
         <>
           <div class="task-list">
-            {processedTasks.map(task => (
+             {processedTasks.map(task => (
               <TaskCard
                 key={task.id}
                 task={task}
                 onClick={handleTaskClick}
                 onStatusChange={handleStatusChange}
+                onEdit={handleEditTask}
                 showActions={true}
               />
             ))}
@@ -379,6 +407,14 @@ export function TaskDashboard({ onTaskClick }: TaskDashboardProps) {
         <TaskForm
           onSave={handleTaskCreated}
           onCancel={handleCancelCreateTask}
+        />
+      )}
+      
+      {editingTask && (
+        <TaskForm
+          task={editingTask}
+          onSave={handleTaskEdited}
+          onCancel={handleCancelEditTask}
         />
       )}
     </div>
