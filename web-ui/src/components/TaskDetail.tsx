@@ -29,6 +29,8 @@ export function TaskDetail({
   const [isEditing, setIsEditing] = useState(false);
   const [showReviewRequest, setShowReviewRequest] = useState(false);
   const [selectedReview, setSelectedReview] = useState<TaskReview | null>(null);
+  const [logMessage, setLogMessage] = useState('');
+  const [isAddingLog, setIsAddingLog] = useState(false);
 
   // Set up WebSocket connection for real-time updates
   const { isConnected } = useWebSocket({
@@ -110,6 +112,26 @@ export function TaskDetail({
       reviews.map(r => (r.id === updatedReview.id ? updatedReview : r))
     );
     setSelectedReview(null);
+  };
+
+  const handleAddLog = async () => {
+    if (!logMessage.trim()) return;
+
+    try {
+      setIsAddingLog(true);
+      setError(null);
+
+      await apiService.addTaskLog(task.id, logMessage.trim());
+      setLogMessage('');
+
+      // Reload logs to show the new entry
+      await loadTaskDetails();
+    } catch (error) {
+      console.error('Failed to add log message:', error);
+      setError('Failed to add log message');
+    } finally {
+      setIsAddingLog(false);
+    }
   };
 
   const hasPendingReviews = reviews.some(r => r.status === 'pending');
@@ -298,6 +320,25 @@ export function TaskDetail({
 
                 {activeTab === 'logs' && (
                   <div class="task-logs-tab">
+                    <div class="add-log-section">
+                      <textarea
+                        class="log-input"
+                        placeholder="Add a log message..."
+                        rows={3}
+                        value={logMessage}
+                        onChange={e =>
+                          setLogMessage((e.target as HTMLTextAreaElement).value)
+                        }
+                        disabled={isAddingLog}
+                      />
+                      <button
+                        class="add-log-button"
+                        onClick={handleAddLog}
+                        disabled={isAddingLog || !logMessage.trim()}
+                      >
+                        {isAddingLog ? 'Adding...' : 'Add Log'}
+                      </button>
+                    </div>
                     {logs.length === 0 ? (
                       <p class="empty-message">No logs for this task yet.</p>
                     ) : (
