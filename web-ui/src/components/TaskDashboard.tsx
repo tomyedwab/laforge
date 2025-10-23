@@ -1,5 +1,5 @@
 // Preact JSX doesn't require h import
-import { useState, useEffect, useMemo } from 'preact/hooks';
+import { useState, useEffect, useMemo, useCallback } from 'preact/hooks';
 import { apiService } from '../services/api';
 import { useWebSocket } from '../hooks/useWebSocket';
 import type { Task, TaskStatus } from '../types';
@@ -83,11 +83,7 @@ export function TaskDashboard({ onTaskClick }: TaskDashboardProps) {
     },
   });
 
-  useEffect(() => {
-    loadTasks();
-  }, []);
-
-  const loadTasks = async () => {
+  const loadTasks = useCallback(async () => {
     try {
       setIsLoading(true);
       setError(null);
@@ -134,7 +130,11 @@ export function TaskDashboard({ onTaskClick }: TaskDashboardProps) {
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [activeTab, upcomingPage, completedPage, itemsPerPage, filters]);
+
+  useEffect(() => {
+    loadTasks();
+  }, [loadTasks]);
 
   // Get current tasks and pagination based on active tab
   const currentTasks = activeTab === 'upcoming' ? upcomingTasks : completedTasks;
@@ -157,11 +157,11 @@ export function TaskDashboard({ onTaskClick }: TaskDashboardProps) {
     setIsCreatingTask(false);
   };
 
-  const handleTaskCreated = (newTask: Task) => {
+  const handleTaskCreated = useCallback((newTask: Task) => {
     setIsCreatingTask(false);
     // Reload tasks to include the new task
     loadTasks();
-  };
+  }, [loadTasks]);
 
   const handleEditTask = (task: Task) => {
     setEditingTask(task);
@@ -237,21 +237,21 @@ export function TaskDashboard({ onTaskClick }: TaskDashboardProps) {
     }
   };
 
-  const handlePageChange = (page: number) => {
+  const handlePageChange = useCallback((page: number) => {
     if (activeTab === 'upcoming') {
       setUpcomingPage(page);
     } else {
       setCompletedPage(page);
     }
     loadTasks();
-  };
+  }, [activeTab, loadTasks]);
 
-  const handleItemsPerPageChange = (items: number) => {
+  const handleItemsPerPageChange = useCallback((items: number) => {
     setItemsPerPage(items);
     setUpcomingPage(1);
     setCompletedPage(1);
     loadTasks();
-  };
+  }, [loadTasks]);
 
   // Reload tasks when filters change (with debouncing for search)
   useEffect(() => {
@@ -260,7 +260,7 @@ export function TaskDashboard({ onTaskClick }: TaskDashboardProps) {
     }, 300);
     
     return () => clearTimeout(timeoutId);
-  }, [filters.status, filters.type, upcomingPage, completedPage, itemsPerPage, activeTab]);
+  }, [filters, upcomingPage, completedPage, itemsPerPage, activeTab]);
 
   if (isLoading) {
     return (

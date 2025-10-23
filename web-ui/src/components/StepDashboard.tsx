@@ -1,5 +1,5 @@
 import { h } from 'preact';
-import { useState, useEffect } from 'preact/hooks';
+import { useState, useEffect, useCallback } from 'preact/hooks';
 import { apiService } from '../services/api';
 import type { Step } from '../types';
 import { StepDetail } from './StepDetail';
@@ -19,7 +19,7 @@ export function StepDashboard() {
     loadSteps();
   }, [currentPage, itemsPerPage]);
 
-  const loadSteps = async () => {
+  const loadSteps = useCallback(async () => {
     try {
       setIsLoading(true);
       setError(null);
@@ -38,7 +38,7 @@ export function StepDashboard() {
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [currentPage, itemsPerPage]);
 
   const handleStepClick = (step: Step) => {
     setSelectedStep(step);
