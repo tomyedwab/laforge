@@ -19,12 +19,11 @@ import (
 
 // Container represents a running Docker container
 type Container struct {
-	ID         string
-	Name       string
-	Config     *projects.AgentConfig
-	WorkDir    string
-	TaskDBPath string
-	StartTime  time.Time
+	ID        string
+	Name      string
+	Config    *projects.AgentConfig
+	WorkDir   string
+	StartTime time.Time
 }
 
 // Client provides Docker operations using Docker CLI
@@ -57,7 +56,7 @@ func (c *Client) Close() error {
 }
 
 // CreateAgentContainer creates a container for running the LaForge agent
-func (c *Client) CreateAgentContainer(agentConfig *projects.AgentConfig, workDir, taskDBPath string) (*Container, error) {
+func (c *Client) CreateAgentContainer(agentConfig *projects.AgentConfig, workDir string) (*Container, error) {
 	// Ensure the image exists, pull if necessary
 	if err := c.ensureImage(agentConfig.Image); err != nil {
 		return nil, fmt.Errorf("failed to ensure image %s: %w", agentConfig.Image, err)
@@ -67,10 +66,9 @@ func (c *Client) CreateAgentContainer(agentConfig *projects.AgentConfig, workDir
 	containerName := fmt.Sprintf("laforge-agent-%d", time.Now().Unix())
 
 	return &Container{
-		Name:       containerName,
-		Config:     agentConfig,
-		WorkDir:    workDir,
-		TaskDBPath: taskDBPath,
+		Name:    containerName,
+		Config:  agentConfig,
+		WorkDir: workDir,
 	}, nil
 }
 
@@ -306,14 +304,14 @@ type ContainerMetrics struct {
 
 // RunAgentContainerFromConfigWithStreamingLogs creates, starts, and manages an agent container from AgentConfig
 // with real-time log streaming to the provided writer, and returns logs and metrics
-func (c *Client) RunAgentContainerFromConfigWithStreamingLogs(agentConfig *projects.AgentConfig, workDir, taskDBPath string, logWriter io.Writer, metrics *ContainerMetrics) (int64, string, error) {
+func (c *Client) RunAgentContainerFromConfigWithStreamingLogs(agentConfig *projects.AgentConfig, workDir string, logWriter io.Writer, metrics *ContainerMetrics) (int64, string, error) {
 	if metrics == nil {
 		metrics = &ContainerMetrics{}
 	}
 	metrics.StartTime = time.Now()
 
 	// Create container from AgentConfig
-	container, err := c.CreateAgentContainer(agentConfig, workDir, taskDBPath)
+	container, err := c.CreateAgentContainer(agentConfig, workDir)
 	if err != nil {
 		metrics.EndTime = time.Now()
 		return -1, "", fmt.Errorf("failed to create container from config: %w", err)
@@ -635,8 +633,6 @@ func (c *Client) startContainerWithAgentConfig(container *Container, agentConfig
 
 	// Add volume mounts for work directory and task database
 	args = append(args, "-v", fmt.Sprintf("%s:/src", container.WorkDir))
-	taskDBDir := filepath.Dir(container.TaskDBPath)
-	args = append(args, "-v", fmt.Sprintf("%s:/state", taskDBDir))
 
 	// Set the image
 	args = append(args, agentConfig.Image)

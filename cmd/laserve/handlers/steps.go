@@ -15,6 +15,7 @@ import (
 	"github.com/tomyedwab/laforge/lib/errors"
 	"github.com/tomyedwab/laforge/lib/projects"
 	"github.com/tomyedwab/laforge/lib/steps"
+	"github.com/tomyedwab/laforge/lib/tasks"
 )
 
 type StepHandler struct {
@@ -24,6 +25,15 @@ type StepHandler struct {
 
 func NewStepHandler(wsServer *websocket.Server, jwtManager *auth.JWTManager) *StepHandler {
 	return &StepHandler{wsServer: wsServer, jwtManager: jwtManager}
+}
+
+// getProjectDB opens the task database for the specified project
+func (h *StepHandler) getProjectDB(projectID string) (*sql.DB, error) {
+	db, err := projects.OpenProjectTaskDatabase(projectID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to open project task database: %w", err)
+	}
+	return db, nil
 }
 
 // getProjectStepDB opens the step database for the specified project
@@ -198,22 +208,15 @@ func (h *StepHandler) GetStep(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(response)
 }
 
-type CreateStepRequest struct {
-	ParentStepID    *int   `json:"parent_step_id"`
-	CommitSHABefore string `json:"commit_sha_before"`
-	AgentConfig     string `json:"agent_config"`
-}
-
 // LeaseStep handles POST /steps/lease
 func (h *StepHandler) LeaseStep(w http.ResponseWriter, r *http.Request) {
-	var req CreateStepRequest
+	var req steps.LeaseStepRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, `{"error":{"code":"VALIDATION_ERROR","message":"Invalid request body"}}`, http.StatusBadRequest)
 		return
 	}
 
 	vars := mux.Vars(r)
-	// Get project ID from URL
 	projectID := vars["project_id"]
 
 	agentConfigs, err := projects.LoadAgentsConfig(projectID)
@@ -226,7 +229,7 @@ func (h *StepHandler) LeaseStep(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	configName := req.AgentConfig
+	configName := req.AgentConfigName
 	if configName == "" {
 		configName = agentConfigs.Default
 	}
@@ -237,13 +240,6 @@ func (h *StepHandler) LeaseStep(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	newStep := &steps.Step{
-		ParentStepID:    req.ParentStepID,
-		CommitSHABefore: req.CommitSHABefore,
-		AgentConfigName: configName,
-		ProjectID:       projectID,
-	}
-
 	// Open project step database
 	sdb, err := h.getProjectStepDB(projectID)
 	if err != nil {
@@ -251,6 +247,32 @@ func (h *StepHandler) LeaseStep(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer sdb.Close()
+
+	latest, err := sdb.GetLatestActiveStep(projectID)
+	if err != nil {
+		http.Error(w, `{"error":{"code":"INTERNAL_ERROR","message":"Failed to get latest active step"}}`, http.StatusInternalServerError)
+		return
+	}
+	var latestStepID *int = nil
+	if latest != nil {
+		latestStepID = &latest.ID
+	}
+
+	newStep := &steps.Step{
+		Active:          true,
+		ParentStepID:    latestStepID,
+		CommitSHABefore: req.CommitSHABefore,
+		AgentConfigName: configName,
+		ProjectID:       projectID,
+		StartTime:       time.Now(),
+		TokenUsage: steps.TokenUsage{
+			PromptTokens:     0, // Will be updated after step completion
+			CompletionTokens: 0, // Will be updated after step completion
+			TotalTokens:      0, // Will be updated after step completion
+			Cost:             0, // Will be updated after step completion
+		},
+		CreatedAt: time.Now(),
+	}
 
 	stepId, err := sdb.CreateStep(newStep)
 	if err != nil {
@@ -265,8 +287,73 @@ func (h *StepHandler) LeaseStep(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	response := &steps.LeaseStepResponse{
+		StepID: stepId,
+		Token:  token,
+		Meta:   steps.MetaResponse{Timestamp: time.Now(), Version: "1.0.0"},
+	}
+
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
-	fmt.Fprintf(w, `{"data":{"token":"%s","step_id":"%d"},"meta":{"timestamp":"%s","version":"1.0.0"}}`,
-		token, stepId, time.Now().Format(time.RFC3339))
+	json.NewEncoder(w).Encode(response)
+}
+
+// FinalizeStep handles POST /steps/finalize
+func (h *StepHandler) FinalizeStep(w http.ResponseWriter, r *http.Request) {
+	_, ok := auth.GetUserIDFromContext(r.Context())
+	if !ok {
+		http.Error(w, `{"error":{"code":"INTERNAL_ERROR","message":"Must be run in step context"}}`, http.StatusForbidden)
+		return
+	}
+
+	var req steps.FinalizeStepRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, `{"error":{"code":"VALIDATION_ERROR","message":"Invalid request body"}}`, http.StatusBadRequest)
+		return
+	}
+
+	vars := mux.Vars(r)
+	projectID := vars["project_id"]
+
+	// Open project step database
+	sdb, err := h.getProjectStepDB(projectID)
+	if err != nil {
+		http.Error(w, `{"error":{"code":"INTERNAL_ERROR","message":"Failed to open project step database"}}`, http.StatusInternalServerError)
+		return
+	}
+	defer sdb.Close()
+
+	// Open project database
+	db, err := h.getProjectDB(projectID)
+	if err != nil {
+		http.Error(w, `{"error":{"code":"INTERNAL_ERROR","message":"Failed to open project database"}}`, http.StatusInternalServerError)
+		return
+	}
+	defer db.Close()
+
+	step, err := sdb.GetStep(req.StepID)
+	if err != nil {
+		http.Error(w, `{"error":{"code":"INTERNAL_ERROR","message":"Failed to get step"}}`, http.StatusInternalServerError)
+		return
+	}
+
+	// Release all task leases for this step
+	err = tasks.UnleaseTasksForStepID(db, req.StepID)
+	if err != nil {
+		http.Error(w, `{"error":{"code":"INTERNAL_ERROR","message":"Failed to release task leases"}}`, http.StatusInternalServerError)
+		return
+	}
+
+	// Calculate duration and update step record
+	duration := int(time.Since(step.StartTime).Milliseconds())
+	now := time.Now()
+	err = sdb.UpdateStep(req.StepID, req.CommitSHAAfter, now, duration, req.ExitCode, steps.TokenUsage{})
+	if err != nil {
+		http.Error(w, `{"error":{"code":"INTERNAL_ERROR","message":"Failed to update step"}}`, http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	w.Write([]byte(`{"status":"ok"}`))
 }

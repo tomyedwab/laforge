@@ -216,6 +216,8 @@ func setupRouter(jwtManager *auth.JWTManager, taskHandler *handlers.TaskHandler,
 	protected.HandleFunc("/{project_id}/steps/{step_id}", corsPreflightHandler).Methods("OPTIONS")
 	protected.HandleFunc("/{project_id}/steps/lease", stepHandler.LeaseStep).Methods("POST")
 	protected.HandleFunc("/{project_id}/steps/lease", corsPreflightHandler).Methods("OPTIONS")
+	protected.HandleFunc("/{project_id}/steps/finalize", stepHandler.FinalizeStep).Methods("POST")
+	protected.HandleFunc("/{project_id}/steps/finalize", corsPreflightHandler).Methods("OPTIONS")
 
 	// Artifact serving routes
 	protected.HandleFunc("/{project_id}/artifacts/{artifact_path:.*}", artifactHandler.ServeArtifact).Methods("GET")
@@ -255,7 +257,7 @@ func makeLoginHandler(jwtManager *auth.JWTManager) http.HandlerFunc {
 
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
-		fmt.Fprintf(w, `{"data":{"token":"%s","user_id":"%s"},"meta":{"timestamp":"%s","version":"1.0.0"}}`,
+		fmt.Fprintf(w, `{"token":"%s","user_id":"%s","meta":{"timestamp":"%s","version":"1.0.0"}}`,
 			token, userID, time.Now().Format(time.RFC3339))
 	}
 }

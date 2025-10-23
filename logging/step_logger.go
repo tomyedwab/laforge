@@ -42,19 +42,18 @@ func (sl *StepLogger) LogStepStart(projectID string) {
 }
 
 // LogStepEnd logs the completion of a step
-func (sl *StepLogger) LogStepEnd(success bool, duration time.Duration, exitCode int64) {
+func (sl *StepLogger) LogStepEnd(success bool, exitCode int) {
 	status := "completed"
 	if !success {
 		status = "failed"
 	}
 
-	sl.logger.Info("step", fmt.Sprintf("LaForge step %s in %v", status, duration), map[string]interface{}{
-		"project_id":  sl.projectID,
-		"step_id":     sl.stepID,
-		"status":      status,
-		"duration_ms": duration.Milliseconds(),
-		"exit_code":   exitCode,
-		"timestamp":   time.Now().Format(time.RFC3339),
+	sl.logger.Info("step", fmt.Sprintf("LaForge step %s", status), map[string]interface{}{
+		"project_id": sl.projectID,
+		"step_id":    sl.stepID,
+		"status":     status,
+		"exit_code":  exitCode,
+		"timestamp":  time.Now().Format(time.RFC3339),
 	})
 }
 
@@ -74,45 +73,6 @@ func (sl *StepLogger) LogWorktreeCleanup(worktreePath string) {
 		"worktree_path": worktreePath,
 		"project_id":    sl.projectID,
 		"step_id":       sl.stepID,
-	})
-}
-
-// LogDatabaseCopy logs database copying
-func (sl *StepLogger) LogDatabaseCopy(sourcePath, destPath string) {
-	sl.logger.Info("database", "Copying task database for isolation", map[string]interface{}{
-		"source_path": sourcePath,
-		"dest_path":   destPath,
-		"project_id":  sl.projectID,
-		"step_id":     sl.stepID,
-	})
-}
-
-// LogDatabaseCleanup logs database cleanup
-func (sl *StepLogger) LogDatabaseCleanup(dbPath string) {
-	sl.logger.Info("database", "Cleaning up temporary database", map[string]interface{}{
-		"db_path":    dbPath,
-		"project_id": sl.projectID,
-		"step_id":    sl.stepID,
-	})
-}
-
-// LogDatabaseBackup logs database backup creation
-func (sl *StepLogger) LogDatabaseBackup(sourcePath, backupPath string) {
-	sl.logger.Info("database", "Creating task database backup", map[string]interface{}{
-		"source_path": sourcePath,
-		"backup_path": backupPath,
-		"project_id":  sl.projectID,
-		"step_id":     sl.stepID,
-	})
-}
-
-// LogDatabaseUpdate logs main database update
-func (sl *StepLogger) LogDatabaseUpdate(sourcePath, destPath string) {
-	sl.logger.Info("database", "Updating main task database", map[string]interface{}{
-		"source_path": sourcePath,
-		"dest_path":   destPath,
-		"project_id":  sl.projectID,
-		"step_id":     sl.stepID,
 	})
 }
 

@@ -33,7 +33,6 @@ func TestContainerCreationValidation(t *testing.T) {
 		name        string
 		image       string
 		workDir     string
-		taskDBPath  string
 		wantErr     bool
 		description string
 	}{
@@ -41,7 +40,6 @@ func TestContainerCreationValidation(t *testing.T) {
 			name:        "missing image",
 			image:       "",
 			workDir:     "/tmp",
-			taskDBPath:  "/tmp/tasks.db",
 			wantErr:     true,
 			description: "Should fail without image",
 		},
@@ -49,7 +47,6 @@ func TestContainerCreationValidation(t *testing.T) {
 			name:        "missing workdir",
 			image:       "test:latest",
 			workDir:     "",
-			taskDBPath:  "/tmp/tasks.db",
 			wantErr:     true,
 			description: "Should fail without work directory",
 		},
@@ -57,7 +54,6 @@ func TestContainerCreationValidation(t *testing.T) {
 			name:        "missing taskdb path",
 			image:       "test:latest",
 			workDir:     "/tmp",
-			taskDBPath:  "",
 			wantErr:     true,
 			description: "Should fail without task database path",
 		},
@@ -65,7 +61,6 @@ func TestContainerCreationValidation(t *testing.T) {
 			name:        "valid parameters",
 			image:       "test:latest",
 			workDir:     "/tmp",
-			taskDBPath:  "/tmp/tasks.db",
 			wantErr:     false,
 			description: "Should succeed with all required parameters",
 		},
@@ -79,13 +74,13 @@ func TestContainerCreationValidation(t *testing.T) {
 			}
 
 			// Test container creation (will fail if Docker not available, which is expected)
-			container, err := client.CreateAgentContainer(agentConfig, tt.workDir, tt.taskDBPath)
+			container, err := client.CreateAgentContainer(agentConfig, tt.workDir)
 
 			// We expect either success or a Docker-related error, not a validation error
 			if tt.wantErr {
 				// For this test, we consider missing parameters as something that would
 				// cause issues downstream, even if CreateAgentContainer doesn't validate them
-				if tt.image == "" || tt.workDir == "" || tt.taskDBPath == "" {
+				if tt.image == "" || tt.workDir == "" {
 					// This is expected to be problematic
 					return
 				}
@@ -203,7 +198,6 @@ func TestAgentConfigContainerCreation(t *testing.T) {
 		name        string
 		agentConfig *projects.AgentConfig
 		workDir     string
-		taskDBPath  string
 		wantErr     bool
 		description string
 	}{
@@ -217,7 +211,6 @@ func TestAgentConfigContainerCreation(t *testing.T) {
 				},
 			},
 			workDir:     "/tmp/work",
-			taskDBPath:  "/tmp/tasks.db",
 			wantErr:     false,
 			description: "Should create container with valid agent config",
 		},
@@ -231,7 +224,6 @@ func TestAgentConfigContainerCreation(t *testing.T) {
 				},
 			},
 			workDir:     "/tmp/work",
-			taskDBPath:  "/tmp/tasks.db",
 			wantErr:     false,
 			description: "Should handle agent config with memory limits",
 		},
@@ -245,7 +237,6 @@ func TestAgentConfigContainerCreation(t *testing.T) {
 				},
 			},
 			workDir:     "/tmp/work",
-			taskDBPath:  "/tmp/tasks.db",
 			wantErr:     false,
 			description: "Should handle agent config with environment variables",
 		},
@@ -253,7 +244,6 @@ func TestAgentConfigContainerCreation(t *testing.T) {
 			name:        "nil agent config",
 			agentConfig: nil,
 			workDir:     "/tmp/work",
-			taskDBPath:  "/tmp/tasks.db",
 			wantErr:     true,
 			description: "Should fail with nil agent config",
 		},
@@ -268,7 +258,7 @@ func TestAgentConfigContainerCreation(t *testing.T) {
 			}
 
 			// Test container creation with the agent config
-			container, err := client.CreateAgentContainer(tt.agentConfig, tt.workDir, tt.taskDBPath)
+			container, err := client.CreateAgentContainer(tt.agentConfig, tt.workDir)
 
 			if tt.wantErr {
 				if err == nil {
@@ -289,9 +279,6 @@ func TestAgentConfigContainerCreation(t *testing.T) {
 						if container.WorkDir != tt.workDir {
 							t.Errorf("Container workDir = %v, want %v", container.WorkDir, tt.workDir)
 						}
-						if container.TaskDBPath != tt.taskDBPath {
-							t.Errorf("Container taskDBPath = %v, want %v", container.TaskDBPath, tt.taskDBPath)
-						}
 					}
 				}
 			}
@@ -311,7 +298,6 @@ func TestCreateAgentContainerWithConfig(t *testing.T) {
 		name        string
 		agentConfig *projects.AgentConfig
 		workDir     string
-		taskDBPath  string
 		wantErr     bool
 		description string
 	}{
@@ -322,7 +308,6 @@ func TestCreateAgentContainerWithConfig(t *testing.T) {
 				Image: "alpine:latest", // Use a small, available image
 			},
 			workDir:     "/tmp/work",
-			taskDBPath:  "/tmp/tasks.db",
 			wantErr:     false,
 			description: "Should create container with valid config",
 		},
@@ -333,7 +318,6 @@ func TestCreateAgentContainerWithConfig(t *testing.T) {
 				Image: "", // Empty image should cause failure
 			},
 			workDir:     "/tmp/work",
-			taskDBPath:  "/tmp/tasks.db",
 			wantErr:     true,
 			description: "Should fail with empty image",
 		},
@@ -341,7 +325,6 @@ func TestCreateAgentContainerWithConfig(t *testing.T) {
 			name:        "nil agent config",
 			agentConfig: nil,
 			workDir:     "/tmp/work",
-			taskDBPath:  "/tmp/tasks.db",
 			wantErr:     true,
 			description: "Should fail with nil agent config",
 		},
@@ -349,7 +332,7 @@ func TestCreateAgentContainerWithConfig(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			container, err := client.CreateAgentContainer(tt.agentConfig, tt.workDir, tt.taskDBPath)
+			container, err := client.CreateAgentContainer(tt.agentConfig, tt.workDir)
 
 			if tt.wantErr {
 				if err == nil {
@@ -368,9 +351,6 @@ func TestCreateAgentContainerWithConfig(t *testing.T) {
 						}
 						if container.WorkDir != tt.workDir {
 							t.Errorf("Container workDir mismatch: got %v, want %v", container.WorkDir, tt.workDir)
-						}
-						if container.TaskDBPath != tt.taskDBPath {
-							t.Errorf("Container taskDBPath mismatch: got %v, want %v", container.TaskDBPath, tt.taskDBPath)
 						}
 					}
 				}
@@ -391,7 +371,6 @@ func TestStartContainerWithConfig(t *testing.T) {
 		name        string
 		agentConfig *projects.AgentConfig
 		workDir     string
-		taskDBPath  string
 		wantErr     bool
 	}{
 		{
@@ -400,15 +379,13 @@ func TestStartContainerWithConfig(t *testing.T) {
 				Name:  "test-agent",
 				Image: "alpine:latest", // Use alpine since it's small and available
 			},
-			workDir:    "/tmp/work",
-			taskDBPath: "/tmp/tasks.db",
-			wantErr:    false,
+			workDir: "/tmp/work",
+			wantErr: false,
 		},
 		{
 			name:        "nil config",
 			agentConfig: nil,
 			workDir:     "/tmp/work",
-			taskDBPath:  "/tmp/tasks.db",
 			wantErr:     true,
 		},
 	}
@@ -416,7 +393,7 @@ func TestStartContainerWithConfig(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			// Test container creation (which is the first step in starting a container)
-			container, err := client.CreateAgentContainer(tt.agentConfig, tt.workDir, tt.taskDBPath)
+			container, err := client.CreateAgentContainer(tt.agentConfig, tt.workDir)
 
 			if tt.wantErr {
 				if err == nil {
@@ -448,7 +425,6 @@ func TestStartContainerFromConfig(t *testing.T) {
 		name        string
 		agentConfig *projects.AgentConfig
 		workDir     string
-		taskDBPath  string
 		wantErr     bool
 	}{
 		{
@@ -462,15 +438,13 @@ func TestStartContainerFromConfig(t *testing.T) {
 					Timeout:    "10s",
 				},
 			},
-			workDir:    "/tmp/work",
-			taskDBPath: "/tmp/tasks.db",
-			wantErr:    false,
+			workDir: "/tmp/work",
+			wantErr: false,
 		},
 		{
 			name:        "nil config",
 			agentConfig: nil,
 			workDir:     "/tmp/work",
-			taskDBPath:  "/tmp/tasks.db",
 			wantErr:     true,
 		},
 	}
@@ -478,7 +452,7 @@ func TestStartContainerFromConfig(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			// Test container creation and starting
-			container, err := client.CreateAgentContainer(tt.agentConfig, tt.workDir, tt.taskDBPath)
+			container, err := client.CreateAgentContainer(tt.agentConfig, tt.workDir)
 			if err != nil {
 				if !tt.wantErr {
 					t.Errorf("CreateAgentContainer() unexpected error = %v", err)
@@ -512,7 +486,6 @@ func TestRunAgentContainerFromConfig(t *testing.T) {
 		name        string
 		agentConfig *projects.AgentConfig
 		workDir     string
-		taskDBPath  string
 		wantErr     bool
 	}{
 		{
@@ -526,15 +499,13 @@ func TestRunAgentContainerFromConfig(t *testing.T) {
 					Timeout:    "10s",
 				},
 			},
-			workDir:    "/tmp/work",
-			taskDBPath: "/tmp/tasks.db",
-			wantErr:    false,
+			workDir: "/tmp/work",
+			wantErr: false,
 		},
 		{
 			name:        "nil config",
 			agentConfig: nil,
 			workDir:     "/tmp/work",
-			taskDBPath:  "/tmp/tasks.db",
 			wantErr:     true,
 		},
 	}
@@ -547,7 +518,7 @@ func TestRunAgentContainerFromConfig(t *testing.T) {
 			// Use a buffer to capture logs
 			var logBuffer bytes.Buffer
 
-			exitCode, logs, err := client.RunAgentContainerFromConfigWithStreamingLogs(tt.agentConfig, tt.workDir, tt.taskDBPath, &logBuffer, metrics)
+			exitCode, logs, err := client.RunAgentContainerFromConfigWithStreamingLogs(tt.agentConfig, tt.workDir, &logBuffer, metrics)
 			if (err != nil) != tt.wantErr {
 				t.Errorf("RunAgentContainerFromConfigWithStreamingLogs() error = %v, wantErr %v", err, tt.wantErr)
 			}

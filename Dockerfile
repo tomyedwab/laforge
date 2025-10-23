@@ -3,7 +3,7 @@ FROM golang:1.24-bookworm AS builder
 WORKDIR /build
 COPY go.mod go.sum ./
 COPY cmd ./cmd
-COPY tasks ./tasks
+COPY lib ./lib
 RUN go build -o /bin/latasks ./cmd/latasks
 
 FROM debian:bookworm-slim

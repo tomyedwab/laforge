@@ -1,8 +1,13 @@
 package main
 
 import (
+	"bytes"
+	"encoding/json"
+	nativeerrors "errors"
 	"fmt"
 	"io"
+	"log"
+	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -20,9 +25,10 @@ import (
 )
 
 var (
-	version = "dev"
-	commit  = "none"
-	date    = "unknown"
+	version  = "dev"
+	commit   = "none"
+	date     = "unknown"
+	apiToken = ""
 )
 
 var rootCmd = &cobra.Command{
@@ -184,6 +190,84 @@ func init() {
 	stepCmd.Flags().Duration("timeout", 0, "timeout for step execution (0 means no timeout)")
 }
 
+var (
+	MissingCredentialsError = nativeerrors.New("missing credentials")
+	InvalidCredentialsError = nativeerrors.New("invalid credentials")
+)
+
+func sendRequestAttempt(url, method string, body interface{}, response interface{}) error {
+	client := &http.Client{}
+	var reqBody io.Reader
+	if body != nil {
+		// Serialize the body to JSON
+		jsonBody, err := json.Marshal(body)
+		if err != nil {
+			return err
+		}
+		reqBody = bytes.NewBuffer(jsonBody)
+	}
+	req, err := http.NewRequest(method, url, reqBody)
+	if err != nil {
+		return err
+	}
+	if apiToken != "" {
+		req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", apiToken))
+	}
+	resp, err := client.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode == http.StatusUnauthorized {
+		return InvalidCredentialsError
+	}
+	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusCreated {
+		// Read body text
+		bodyText, err := io.ReadAll(resp.Body)
+		if err != nil {
+			return err
+		}
+		return fmt.Errorf("unexpected status code: %d. Message: %s", resp.StatusCode, string(bodyText))
+	}
+	if err := json.NewDecoder(resp.Body).Decode(response); err != nil {
+		return err
+	}
+	return nil
+}
+
+func sendRequest(project, endpoint, method string, body interface{}, response interface{}) error {
+	urlPrefix, found := os.LookupEnv("LAFORGE_URLPATH")
+	if !found || urlPrefix == "" {
+		urlPrefix = "http://localhost:8080/api/v1"
+	}
+	urlPath := fmt.Sprintf("%s/projects/%s", urlPrefix, project)
+
+	var err error
+	for _ = range 3 {
+		err = sendRequestAttempt(fmt.Sprintf("%s%s", urlPath, endpoint), method, body, response)
+		if err == nil {
+			return nil
+		}
+		if err == InvalidCredentialsError || err == MissingCredentialsError {
+			log.Printf("Logging in...")
+			var loginResponse struct {
+				Token  string `json:"token"`
+				UserID string `json:"user_id"`
+			}
+			err = sendRequestAttempt(fmt.Sprintf("%s/public/login", urlPrefix), "POST", nil, &loginResponse)
+			if err != nil {
+				return err
+			}
+			apiToken = loginResponse.Token
+			log.Printf("Response  %v...", loginResponse) // donotcheckin
+			err = nativeerrors.New("Failed after three login attempts")
+		} else {
+			return err
+		}
+	}
+	return err
+}
+
 // runInit is the handler for the init command
 func runInit(cmd *cobra.Command, args []string) error {
 	projectID := args[0]
@@ -280,12 +364,6 @@ func runStep(cmd *cobra.Command, args []string) error {
 		return errors.Wrap(errors.ErrUnknown, err, "failed to load project configuration")
 	}
 
-	// Get task database path
-	taskDBPath, err := projects.GetProjectTaskDatabase(projectID)
-	if err != nil {
-		return errors.Wrap(errors.ErrUnknown, err, "failed to get project task database path")
-	}
-
 	// Load agents configuration from file
 	agentsConfig, err := projects.LoadAgentsConfig(projectID)
 	if err != nil {
@@ -324,52 +402,23 @@ func runStep(cmd *cobra.Command, args []string) error {
 		logger = logging.NewLogger(logging.WARN, "")
 	}
 
-	// Open step database for recording
-	stepDB, err := projects.OpenProjectStepDatabase(projectID)
-	if err != nil {
-		return errors.Wrap(errors.ErrDatabaseConnectionFailed, err, "failed to open project step database")
-	}
-	defer stepDB.Close()
-
-	// Get the next step ID from database
-	stepID, err := stepDB.GetNextStepID()
-	if err != nil {
-		return errors.Wrap(errors.ErrDatabaseOperationFailed, err, "failed to get next step ID")
-	}
-
 	// Get current commit SHA before step execution
 	commitSHABefore, err := git.GetCurrentCommitSHA(sourceDir)
 	if err != nil {
 		return errors.Wrap(errors.ErrUnknown, err, "failed to get current commit SHA")
 	}
 
-	// Create step record in database
-	step := &steps.Step{
-		Active:          true,
-		ParentStepID:    nil, // Will be set if this is a child step
+	var leaseResponse steps.LeaseStepResponse
+	err = sendRequest(projectID, "/steps/lease", "POST", &steps.LeaseStepRequest{
 		CommitSHABefore: commitSHABefore,
-		CommitSHAAfter:  "", // Will be updated after step completion
 		AgentConfigName: agentConfig.Name,
-		StartTime:       time.Now(),
-		EndTime:         nil, // Will be updated after step completion
-		DurationMs:      nil, // Will be updated after step completion
-		TokenUsage: steps.TokenUsage{
-			PromptTokens:     0, // Will be updated after step completion
-			CompletionTokens: 0, // Will be updated after step completion
-			TotalTokens:      0, // Will be updated after step completion
-			Cost:             0, // Will be updated after step completion
-		},
-		ExitCode:  nil, // Will be updated after step completion
-		ProjectID: projectID,
-		CreatedAt: time.Now(),
+	}, &leaseResponse)
+	if err != nil {
+		return errors.Wrap(errors.ErrUnknown, err, "failed to lease step")
 	}
 
-	if _, err := stepDB.CreateStep(step); err != nil {
-		return errors.Wrap(errors.ErrDatabaseOperationFailed, err, "failed to create step record")
-	}
-
-	// Use database-generated step ID instead of timestamp-based ID
-	dbStepID := fmt.Sprintf("S%d", step.ID)
+	stepID := leaseResponse.StepID
+	dbStepID := fmt.Sprintf("S%d", stepID)
 	stepLogger := logging.NewStepLogger(logger, projectID, dbStepID)
 
 	// Log step start
@@ -380,13 +429,8 @@ func runStep(cmd *cobra.Command, args []string) error {
 	var worktree *git.Worktree
 
 	defer func() {
-		// Calculate duration and update step record
-		duration := time.Since(stepStartTime)
-		durationMs := int(duration.Milliseconds())
-		endTime := time.Now()
-
 		// Update step record with completion data
-		exitCode := int64(0)
+		exitCode := int(0)
 		if err != nil {
 			exitCode = 1
 		}
@@ -401,14 +445,22 @@ func runStep(cmd *cobra.Command, args []string) error {
 			}
 		}
 
-		if updateErr := stepDB.UpdateStep(step.ID, commitSHAAfter, endTime, durationMs, int(exitCode), step.TokenUsage); updateErr != nil {
-			stepLogger.LogError("database", "Failed to update step record", updateErr, map[string]interface{}{
-				"step_id": step.ID,
+		var successResponse struct {
+			Status string `json:"status"`
+		}
+		err = sendRequest(projectID, "/steps/finalize", "POST", &steps.FinalizeStepRequest{
+			StepID:         stepID,
+			CommitSHAAfter: commitSHAAfter,
+			ExitCode:       exitCode,
+		}, &successResponse)
+		if err != nil {
+			stepLogger.LogError("database", "Failed to update step record", err, map[string]interface{}{
+				"step_id": stepID,
 			})
 		}
 
 		// Log step completion
-		stepLogger.LogStepEnd(err == nil, duration, exitCode)
+		stepLogger.LogStepEnd(err == nil, exitCode)
 	}()
 
 	// Step 1: Create temporary git worktree
@@ -434,39 +486,7 @@ func runStep(cmd *cobra.Command, args []string) error {
 		}
 	}()
 
-	// Step 2: Create backup of task database before starting step
-	stepLogger.LogStepPhase("database", "Creating task database backup")
-	backupDBPath, err := createTaskDatabaseBackup(taskDBPath, dbStepID)
-	if err != nil {
-		stepLogger.LogError("database", "Failed to create task database backup", err, map[string]interface{}{
-			"source_path": taskDBPath,
-			"step_id":     dbStepID,
-		})
-		return errors.Wrap(errors.ErrUnknown, err, "failed to create task database backup")
-	}
-	stepLogger.LogDatabaseBackup(taskDBPath, backupDBPath)
-
-	// Step 3: Copy task database for isolation
-	stepLogger.LogStepPhase("database", "Copying task database for isolation")
-	tempDBPath, err := database.CreateTempDatabaseCopy(taskDBPath, "step")
-	if err != nil {
-		stepLogger.LogError("database", "Failed to create temporary database copy", err, map[string]interface{}{
-			"source_path": taskDBPath,
-		})
-		return errors.Wrap(errors.ErrUnknown, err, "failed to create temporary database copy")
-	}
-	stepLogger.LogDatabaseCopy(taskDBPath, tempDBPath)
-	defer func() {
-		// Clean up temporary database
-		stepLogger.LogDatabaseCleanup(tempDBPath)
-		if cleanupErr := database.CleanupTempDatabase(tempDBPath); cleanupErr != nil {
-			stepLogger.LogWarning("database", "Failed to cleanup temporary database", map[string]interface{}{
-				"error": cleanupErr.Error(),
-			})
-		}
-	}()
-
-	// Step 3: Create Docker client
+	// Step 2: Create Docker client
 	stepLogger.LogStepPhase("docker", "Initializing Docker client")
 	dockerClient, err := docker.NewClient()
 	if err != nil {
@@ -476,7 +496,7 @@ func runStep(cmd *cobra.Command, args []string) error {
 	stepLogger.LogDockerClientInit()
 	defer dockerClient.Close()
 
-	// Step 4: Create log file for streaming container output
+	// Step 3: Create log file for streaming container output
 	stepLogger.LogStepPhase("logs", "Setting up log file")
 	projectDir, err := projects.GetProjectDir(projectID)
 	if err != nil {
@@ -514,7 +534,7 @@ func runStep(cmd *cobra.Command, args []string) error {
 	// Create multi-writer to stream to both stdout and file
 	multiWriter := io.MultiWriter(os.Stdout, logFile)
 
-	// Step 5: Launch agent container
+	// Step 4: Launch agent container
 	stepLogger.LogStepPhase("container", "Launching agent container")
 	containerMetrics := &docker.ContainerMetrics{}
 
@@ -524,14 +544,16 @@ func runStep(cmd *cobra.Command, args []string) error {
 	// Use agent configuration from agents.yml
 	stepLogger.LogContainerLaunch(agentConfig.Image, fmt.Sprintf("laforge-agent-%s-%s-%d", projectID, agentConfig.Name, time.Now().Unix()), map[string]interface{}{
 		"work_dir":     worktree.Path,
-		"task_db_path": tempDBPath,
 		"agent_config": agentConfigName,
 		"timeout":      agentConfig.Runtime.Timeout,
 		"log_file":     logFilePath,
 	})
 
 	// Run container using AgentConfig with streaming logs
-	exitCode, logs, err = dockerClient.RunAgentContainerFromConfigWithStreamingLogs(agentConfig, worktree.Path, tempDBPath, multiWriter, containerMetrics)
+	//exitCode, logs, err = dockerClient.RunAgentContainerFromConfigWithStreamingLogs(agentConfig, worktree.Path, multiWriter, containerMetrics)
+	exitCode = 0
+	logs = ""
+	_ = multiWriter
 	if err != nil {
 		stepLogger.LogError("docker", "Failed to run agent container", err, map[string]interface{}{
 			"exit_code": exitCode,
@@ -550,10 +572,7 @@ func runStep(cmd *cobra.Command, args []string) error {
 		"warning_count": containerMetrics.WarningCount,
 	})
 
-	// Update step with token usage from container metrics
-	step.TokenUsage = containerMetrics.TokenUsage
-
-	// Step 6: Check if there are changes to commit
+	// Step 5: Check if there are changes to commit
 	stepLogger.LogStepPhase("git", "Checking for changes to commit")
 	hasChanges, err := hasGitChanges(worktree.Path)
 	if err != nil {
@@ -621,23 +640,11 @@ func runStep(cmd *cobra.Command, args []string) error {
 		})
 	}
 
-	// Step 7: Copy changes back from temporary database to main database
-	stepLogger.LogStepPhase("database", "Updating main task database")
-	stepLogger.LogDatabaseUpdate(tempDBPath, taskDBPath)
-	_ = os.Remove(taskDBPath)
-	if err := database.CopyDatabase(tempDBPath, taskDBPath); err != nil {
-		stepLogger.LogError("database", "Failed to update main task database", err, map[string]interface{}{
-			"source_path": tempDBPath,
-			"dest_path":   taskDBPath,
-		})
-		return errors.Wrap(errors.ErrUnknown, err, "failed to update main task database")
-	}
-
-	// Step 8: Automerge step branch into main branch (only if step completed successfully)
+	// Step 6: Automerge step branch into main branch (only if step completed successfully)
 	if exitCode == 0 && hasChanges {
 		stepLogger.LogStepPhase("git", fmt.Sprintf("Automerging step branch into %s branch", project.MainBranch))
 
-		stepBranch := fmt.Sprintf("step-S%d", step.ID)
+		stepBranch := fmt.Sprintf("step-S%d", stepID)
 		mergeMessage := fmt.Sprintf("Automerge %s into %s", stepBranch, project.MainBranch)
 
 		if mergeErr := git.MergeBranch(sourceDir, stepBranch, project.MainBranch, mergeMessage); mergeErr != nil {
