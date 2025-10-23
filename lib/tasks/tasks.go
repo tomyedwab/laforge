@@ -306,6 +306,57 @@ func ListTasks(db *sql.DB) ([]Task, error) {
 	return tasks, err
 }
 
+func UpdateTask(db *sql.DB, taskID int, title string, description string, acceptanceCriteria string, upstreamDependencyID *int, reviewRequired bool, parentID *int) error {
+	// Get the current task to check its properties
+	task, err := GetTask(db, taskID)
+	if err != nil {
+		return fmt.Errorf("failed to get task: %w", err)
+	}
+	if task == nil {
+		return fmt.Errorf("task not found: T%d", taskID)
+	}
+
+	// Validate upstream dependency if provided
+	if upstreamDependencyID != nil {
+		var exists bool
+		err := db.QueryRow("SELECT EXISTS(SELECT 1 FROM tasks WHERE id = ?)", *upstreamDependencyID).Scan(&exists)
+		if err != nil {
+			return fmt.Errorf("failed to check upstream dependency: %w", err)
+		}
+		if !exists {
+			return fmt.Errorf("upstream dependency T%d does not exist", *upstreamDependencyID)
+		}
+	}
+
+	// Validate parent task if provided
+	if parentID != nil {
+		var exists bool
+		err := db.QueryRow("SELECT EXISTS(SELECT 1 FROM tasks WHERE id = ?)", *parentID).Scan(&exists)
+		if err != nil {
+			return fmt.Errorf("failed to check parent task: %w", err)
+		}
+		if !exists {
+			return fmt.Errorf("parent task T%d does not exist", *parentID)
+		}
+	}
+
+	// Update the task
+	_, err = db.Exec(`
+		UPDATE tasks 
+		SET title = ?, description = ?, acceptance_criteria = ?, 
+		    upstream_dependency_id = ?, review_required = ?, parent_id = ?, 
+		    updated_at = CURRENT_TIMESTAMP 
+		WHERE id = ?`,
+		title, description, acceptanceCriteria,
+		upstreamDependencyID, reviewRequired, parentID, taskID)
+
+	if err != nil {
+		return fmt.Errorf("failed to update task: %w", err)
+	}
+
+	return nil
+}
+
 func UpdateTaskStatus(db *sql.DB, taskID int, status string) error {
 	validStatuses := map[string]bool{
 		"todo":        true,

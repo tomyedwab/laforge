@@ -412,30 +412,21 @@ func (h *TaskHandler) UpdateTask(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Get existing task
-	existingTask, err := tasks.GetTask(db, taskID)
+	// Update task in database
+	err = tasks.UpdateTask(db, taskID, req.Title, req.Description, req.AcceptanceCriteria, req.UpstreamDependencyID, req.ReviewRequired, req.ParentID)
 	if err != nil {
-		if err == sql.ErrNoRows {
-			http.Error(w, `{"error":{"code":"NOT_FOUND","message":"Task not found"}}`, http.StatusNotFound)
-		} else {
-			http.Error(w, `{"error":{"code":"INTERNAL_ERROR","message":"Failed to fetch task"}}`, http.StatusInternalServerError)
-		}
+		http.Error(w, `{"error":{"code":"INTERNAL_ERROR","message":"Failed to update task"}}`, http.StatusInternalServerError)
 		return
 	}
 
-	// Update task fields
-	existingTask.Title = req.Title
-	existingTask.Description = req.Description
-	existingTask.AcceptanceCriteria = req.AcceptanceCriteria
-	existingTask.ParentID = req.ParentID
-	existingTask.UpstreamDependencyID = req.UpstreamDependencyID
-	existingTask.ReviewRequired = req.ReviewRequired
+	// Fetch updated task
+	updatedTask, err := tasks.GetTask(db, taskID)
+	if err != nil {
+		http.Error(w, `{"error":{"code":"INTERNAL_ERROR","message":"Failed to fetch updated task"}}`, http.StatusInternalServerError)
+		return
+	}
 
-	// TODO: Implement actual update in database
-	// For now, we'll just return the updated task
-	// This requires adding an UpdateTask function to the tasks package
-
-	responseTask := tasks.ConvertTask(existingTask)
+	responseTask := tasks.ConvertTask(updatedTask)
 
 	response := map[string]interface{}{
 		"data": map[string]interface{}{
