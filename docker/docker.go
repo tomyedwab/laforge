@@ -9,6 +9,7 @@ import (
 	"io"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"time"
@@ -24,6 +25,7 @@ type Container struct {
 	Config    *projects.AgentConfig
 	WorkDir   string
 	StartTime time.Time
+	ApiToken  string
 }
 
 // Client provides Docker operations using Docker CLI
@@ -56,7 +58,7 @@ func (c *Client) Close() error {
 }
 
 // CreateAgentContainer creates a container for running the LaForge agent
-func (c *Client) CreateAgentContainer(agentConfig *projects.AgentConfig, workDir string) (*Container, error) {
+func (c *Client) CreateAgentContainer(agentConfig *projects.AgentConfig, workDir, apiToken string) (*Container, error) {
 	// Ensure the image exists, pull if necessary
 	if err := c.ensureImage(agentConfig.Image); err != nil {
 		return nil, fmt.Errorf("failed to ensure image %s: %w", agentConfig.Image, err)
@@ -66,9 +68,10 @@ func (c *Client) CreateAgentContainer(agentConfig *projects.AgentConfig, workDir
 	containerName := fmt.Sprintf("laforge-agent-%d", time.Now().Unix())
 
 	return &Container{
-		Name:    containerName,
-		Config:  agentConfig,
-		WorkDir: workDir,
+		Name:     containerName,
+		Config:   agentConfig,
+		WorkDir:  workDir,
+		ApiToken: apiToken,
 	}, nil
 }
 
@@ -304,14 +307,14 @@ type ContainerMetrics struct {
 
 // RunAgentContainerFromConfigWithStreamingLogs creates, starts, and manages an agent container from AgentConfig
 // with real-time log streaming to the provided writer, and returns logs and metrics
-func (c *Client) RunAgentContainerFromConfigWithStreamingLogs(agentConfig *projects.AgentConfig, workDir string, logWriter io.Writer, metrics *ContainerMetrics) (int64, string, error) {
+func (c *Client) RunAgentContainerFromConfigWithStreamingLogs(agentConfig *projects.AgentConfig, workDir, apiToken string, logWriter io.Writer, metrics *ContainerMetrics) (int64, string, error) {
 	if metrics == nil {
 		metrics = &ContainerMetrics{}
 	}
 	metrics.StartTime = time.Now()
 
 	// Create container from AgentConfig
-	container, err := c.CreateAgentContainer(agentConfig, workDir)
+	container, err := c.CreateAgentContainer(agentConfig, workDir, apiToken)
 	if err != nil {
 		metrics.EndTime = time.Now()
 		return -1, "", fmt.Errorf("failed to create container from config: %w", err)
@@ -579,10 +582,18 @@ func (c *Client) startContainerWithAgentConfig(container *Container, agentConfig
 	// Build docker run command
 	args := []string{"run", "-d", "--name", container.Name}
 
+	// Specify the host dns entry for Linux
+	if runtime.GOOS == "linux" {
+		args = append(args, "--add-host=host.docker.internal:host-gateway")
+	}
+
 	// Add environment variables from AgentConfig
 	for key, value := range agentConfig.Environment {
 		args = append(args, "-e", fmt.Sprintf("%s=%s", key, value))
 	}
+
+	args = append(args, "-e", "LATASK_URLPATH=http://host.docker.internal:8080/api/v1/projects/laforge")
+	args = append(args, "-e", "LATASK_TOKEN="+container.ApiToken)
 
 	// Add volume mounts from AgentConfig
 	for _, volume := range agentConfig.Volumes {

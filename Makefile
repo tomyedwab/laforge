@@ -11,6 +11,12 @@ install: build
 	cp build/laforge ~/.local/bin/
 	cp build/latools ~/.local/bin/
 
+# Linux only: Set localhost dns entry
+HOST_PARAM :=
+ifeq ($(shell uname), Linux)
+	HOST_PARAM := --add-host=host.docker.internal:host-gateway
+endif
+
 run-opencode: .PHONY
 	mkdir -p /tmp/laforge/log
 	docker run -it --rm \
@@ -19,6 +25,7 @@ run-opencode: .PHONY
 		-v /tmp/laforge/log:/home/laforge/.local/share/opencode/log \
 		-v $(HOME)/.laforge/projects/laforge:/state \
 		-v $(PWD):/src \
+		$(HOST_PARAM) \
 		laforge-self-agent
 
 run-claudecode-login: .PHONY

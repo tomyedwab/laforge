@@ -192,16 +192,19 @@ func setupRouter(jwtManager *auth.JWTManager, taskHandler *handlers.TaskHandler,
 	protected.HandleFunc("/{project_id}/tasks/{task_id}", corsPreflightHandler).Methods("OPTIONS")
 	protected.HandleFunc("/{project_id}/tasks/{task_id}/lease", taskHandler.LeaseTask).Methods("POST")
 	protected.HandleFunc("/{project_id}/tasks/{task_id}/lease", corsPreflightHandler).Methods("OPTIONS")
+
+	// Task status, logs and reviews routes
 	protected.HandleFunc("/{project_id}/tasks/{task_id}/status", taskHandler.UpdateTaskStatus).Methods("PUT")
 	protected.HandleFunc("/{project_id}/tasks/{task_id}/status", corsPreflightHandler).Methods("OPTIONS")
-
-	// Task logs and reviews routes
 	protected.HandleFunc("/{project_id}/tasks/{task_id}/logs", taskHandler.GetTaskLogs).Methods("GET")
 	protected.HandleFunc("/{project_id}/tasks/{task_id}/logs", taskHandler.CreateTaskLog).Methods("POST")
 	protected.HandleFunc("/{project_id}/tasks/{task_id}/logs", corsPreflightHandler).Methods("OPTIONS")
 	protected.HandleFunc("/{project_id}/tasks/{task_id}/reviews", taskHandler.GetTaskReviews).Methods("GET")
 	protected.HandleFunc("/{project_id}/tasks/{task_id}/reviews", taskHandler.CreateTaskReview).Methods("POST")
 	protected.HandleFunc("/{project_id}/tasks/{task_id}/reviews", corsPreflightHandler).Methods("OPTIONS")
+
+	// Method to queue updates from within a step
+	protected.HandleFunc("/{project_id}/tasks/{task_id}/queue", taskHandler.QueueTaskUpdate).Methods("POST")
 
 	// Project reviews routes
 	protected.HandleFunc("/{project_id}/reviews", taskHandler.GetProjectReviews).Methods("GET")

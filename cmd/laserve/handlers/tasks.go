@@ -402,6 +402,16 @@ func (h *TaskHandler) UpdateTask(w http.ResponseWriter, r *http.Request) {
 	}
 	defer db.Close()
 
+	leased, err := tasks.IsTaskLeased(db, taskID)
+	if err != nil {
+		http.Error(w, `{"error":{"code":"INTERNAL_ERROR","message":"Failed to check task lease"}}`, http.StatusInternalServerError)
+		return
+	}
+	if leased {
+		http.Error(w, `{"error":{"code":"CONFLICT","message":"Task is currently leased"}}`, http.StatusConflict)
+		return
+	}
+
 	// Get existing task
 	existingTask, err := tasks.GetTask(db, taskID)
 	if err != nil {
@@ -467,13 +477,14 @@ func (h *TaskHandler) LeaseTask(w http.ResponseWriter, r *http.Request) {
 	}
 	defer db.Close()
 
-	// TODO: Get current task status and attempt to lease it
+	// Get current task status and attempt to lease it
 	log.Printf("Leasing task %d for step %d", taskID, stepID)
 	err = tasks.LeaseTask(db, taskID, stepID)
 	if err != nil {
 		if strings.Contains(err.Error(), "already leased") {
 			http.Error(w, `{"error":{"code":"ERROR","message":"Task is already leased"}}`, http.StatusBadRequest)
 		} else {
+			log.Printf("Error leasing task %d: %v", taskID, err)
 			http.Error(w, `{"error":{"code":"ERROR","message":"Error leasing task"}}`, http.StatusUnauthorized)
 		}
 	}
@@ -502,18 +513,14 @@ func (h *TaskHandler) UpdateTaskStatus(w http.ResponseWriter, r *http.Request) {
 	}
 	defer db.Close()
 
-	if stepID, ok := auth.GetStepIDFromContext(r.Context()); ok {
-		// Permissions check: If this is done within a step context, does the
-		// step have the task leased?
-		leased, err := tasks.IsTaskLeased(db, taskID, stepID)
-		if err != nil {
-			http.Error(w, `{"error":{"code":"ERROR","message":"Error checking task lease"}}`, http.StatusInternalServerError)
-			return
-		}
-		if !leased {
-			http.Error(w, `{"error":{"code":"ERROR","message":"Task is not leased"}}`, http.StatusUnauthorized)
-			return
-		}
+	leased, err := tasks.IsTaskLeased(db, taskID)
+	if err != nil {
+		http.Error(w, `{"error":{"code":"INTERNAL_ERROR","message":"Failed to check task lease"}}`, http.StatusInternalServerError)
+		return
+	}
+	if leased {
+		http.Error(w, `{"error":{"code":"CONFLICT","message":"Task is currently leased"}}`, http.StatusConflict)
+		return
 	}
 
 	var req tasks.UpdateTaskStatusRequest
@@ -597,6 +604,16 @@ func (h *TaskHandler) DeleteTask(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer db.Close()
+
+	leased, err := tasks.IsTaskLeased(db, taskID)
+	if err != nil {
+		http.Error(w, `{"error":{"code":"INTERNAL_ERROR","message":"Failed to check task lease"}}`, http.StatusInternalServerError)
+		return
+	}
+	if leased {
+		http.Error(w, `{"error":{"code":"CONFLICT","message":"Task is currently leased"}}`, http.StatusConflict)
+		return
+	}
 
 	// Check if task exists
 	_, err = tasks.GetTask(db, taskID)
@@ -737,18 +754,14 @@ func (h *TaskHandler) CreateTaskLog(w http.ResponseWriter, r *http.Request) {
 	}
 	defer db.Close()
 
-	if stepID, ok := auth.GetStepIDFromContext(r.Context()); ok {
-		// Permissions check: If this is done within a step context, does the
-		// step have the task leased?
-		leased, err := tasks.IsTaskLeased(db, taskID, stepID)
-		if err != nil {
-			http.Error(w, `{"error":{"code":"ERROR","message":"Error checking task lease"}}`, http.StatusInternalServerError)
-			return
-		}
-		if !leased {
-			http.Error(w, `{"error":{"code":"ERROR","message":"Task is not leased"}}`, http.StatusUnauthorized)
-			return
-		}
+	leased, err := tasks.IsTaskLeased(db, taskID)
+	if err != nil {
+		http.Error(w, `{"error":{"code":"INTERNAL_ERROR","message":"Failed to check task lease"}}`, http.StatusInternalServerError)
+		return
+	}
+	if leased {
+		http.Error(w, `{"error":{"code":"CONFLICT","message":"Task is currently leased"}}`, http.StatusConflict)
+		return
 	}
 
 	var req tasks.CreateTaskLogRequest
@@ -875,18 +888,14 @@ func (h *TaskHandler) CreateTaskReview(w http.ResponseWriter, r *http.Request) {
 	}
 	defer db.Close()
 
-	if stepID, ok := auth.GetStepIDFromContext(r.Context()); ok {
-		// Permissions check: If this is done within a step context, does the
-		// step have the task leased?
-		leased, err := tasks.IsTaskLeased(db, taskID, stepID)
-		if err != nil {
-			http.Error(w, `{"error":{"code":"ERROR","message":"Error checking task lease"}}`, http.StatusInternalServerError)
-			return
-		}
-		if !leased {
-			http.Error(w, `{"error":{"code":"ERROR","message":"Task is not leased"}}`, http.StatusUnauthorized)
-			return
-		}
+	leased, err := tasks.IsTaskLeased(db, taskID)
+	if err != nil {
+		http.Error(w, `{"error":{"code":"INTERNAL_ERROR","message":"Failed to check task lease"}}`, http.StatusInternalServerError)
+		return
+	}
+	if leased {
+		http.Error(w, `{"error":{"code":"CONFLICT","message":"Task is currently leased"}}`, http.StatusConflict)
+		return
 	}
 
 	var req tasks.CreateTaskReviewRequest
@@ -1123,4 +1132,74 @@ func (h *TaskHandler) SubmitReviewFeedback(w http.ResponseWriter, r *http.Reques
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(response)
+}
+
+func (h *TaskHandler) QueueTaskUpdate(w http.ResponseWriter, r *http.Request) {
+	vars := mux.Vars(r)
+	taskIDStr := vars["task_id"]
+	projectID := vars["project_id"]
+
+	taskID, err := strconv.Atoi(taskIDStr)
+	if err != nil {
+		http.Error(w, `{"error":{"code":"VALIDATION_ERROR","message":"Invalid task ID"}}`, http.StatusBadRequest)
+		return
+	}
+
+	stepID, ok := auth.GetStepIDFromContext(r.Context())
+	if !ok {
+		http.Error(w, `{"error":{"code":"ERROR","message":"Queueing of task updates must occur within step context"}}`, http.StatusUnauthorized)
+		return
+	}
+
+	// Open project database
+	db, err := h.getProjectDB(projectID)
+	if err != nil {
+		http.Error(w, `{"error":{"code":"INTERNAL_ERROR","message":"Failed to open project database"}}`, http.StatusInternalServerError)
+		return
+	}
+	defer db.Close()
+
+	// Permissions check: If this is done within a step context, does the
+	// step have the task leased?
+	leased, err := tasks.IsTaskLeasedByStep(db, taskID, stepID)
+	if err != nil {
+		http.Error(w, `{"error":{"code":"ERROR","message":"Error checking task lease"}}`, http.StatusInternalServerError)
+		return
+	}
+	if !leased {
+		http.Error(w, `{"error":{"code":"ERROR","message":"Task is not leased"}}`, http.StatusUnauthorized)
+		return
+	}
+
+	var req tasks.TaskQueuedUpdateRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, `{"error":{"code":"VALIDATION_ERROR","message":"Invalid request body"}}`, http.StatusBadRequest)
+		return
+	}
+
+	if req.Status != nil {
+		err = tasks.QueueTaskStatusUpdate(db, taskID, stepID, *req.Status)
+		if err != nil {
+			http.Error(w, `{"error":{"code":"ERROR","message":"Failed to queue task status update"}}`, http.StatusInternalServerError)
+			return
+		}
+	}
+	if req.LogMessage != nil {
+		err = tasks.QueueTaskLogUpdate(db, taskID, stepID, req.LogMessage)
+		if err != nil {
+			http.Error(w, `{"error":{"code":"ERROR","message":"Failed to queue task log message"}}`, http.StatusInternalServerError)
+			return
+		}
+	}
+	if req.Review != nil {
+		err = tasks.QueueTaskReviewUpdate(db, taskID, stepID, req.Review)
+		if err != nil {
+			http.Error(w, `{"error":{"code":"ERROR","message":"Failed to queue task review"}}`, http.StatusInternalServerError)
+			return
+		}
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	w.Write([]byte(`{"status":"ok"}`))
 }

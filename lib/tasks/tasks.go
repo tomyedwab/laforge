@@ -111,6 +111,26 @@ func createSchema(db *sql.DB) error {
 		updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
 		FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE CASCADE,
 		CHECK (status IN ('pending', 'approved', 'rejected'))
+	);
+
+	CREATE TABLE IF NOT EXISTS queued_logs (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		task_id INTEGER NOT NULL,
+		step_id INTEGER NOT NULL,
+		message TEXT NOT NULL,
+		created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+		FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE CASCADE
+	);
+
+	CREATE TABLE IF NOT EXISTS queued_reviews (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		task_id INTEGER NOT NULL,
+		step_id INTEGER NOT NULL,
+		message TEXT NOT NULL,
+		attachment_type TEXT,
+		attachment TEXT,
+		created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+		FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE CASCADE
 	);`
 
 	_, err := db.Exec(schema)
@@ -465,9 +485,15 @@ func LeaseTask(db *sql.DB, taskID int, stepID int) error {
 		return fmt.Errorf("task not found: T%d", taskID)
 	}
 
+	tx, err := db.Begin()
+	if err != nil {
+		return fmt.Errorf("failed to begin transaction: %w", err)
+	}
+	defer tx.Rollback()
+
 	// Check if task is already leased (has an active lease)
 	var hasActiveLease bool
-	err = db.QueryRow(
+	err = tx.QueryRow(
 		"SELECT EXISTS(SELECT 1 FROM task_leases WHERE task_id = ? AND datetime(expires_at) > datetime('now'))",
 		taskID,
 	).Scan(&hasActiveLease)
@@ -481,7 +507,7 @@ func LeaseTask(db *sql.DB, taskID int, stepID int) error {
 
 	// Create a new lease with expiration time 1 hour in the future
 	expiresAt := time.Now().Add(1 * time.Hour)
-	_, err = db.Exec(
+	_, err = tx.Exec(
 		"INSERT INTO task_leases (task_id, step_id, task_status, expires_at) VALUES (?, ?, ?, ?)",
 		taskID, stepID, task.Status, expiresAt,
 	)
@@ -489,46 +515,16 @@ func LeaseTask(db *sql.DB, taskID int, stepID int) error {
 		return fmt.Errorf("failed to create task lease: %w", err)
 	}
 
-	return nil
-}
-
-// UnleaseTask removes the lease for a task and updates the lease entry's task_status
-// to match the current status of the task.
-func UnleaseTask(db *sql.DB, taskID int) error {
-	// Get the current task to get its status
-	task, err := GetTask(db, taskID)
-	if err != nil {
-		return fmt.Errorf("failed to get task: %w", err)
-	}
-	if task == nil {
-		return fmt.Errorf("task not found: T%d", taskID)
-	}
-
-	// Update the lease entry to clear expires_at and update task_status to current status
-	result, err := db.Exec(
-		"UPDATE task_leases SET expires_at = NULL, task_status = ? WHERE task_id = ?",
-		task.Status, taskID,
-	)
-	if err != nil {
-		return fmt.Errorf("failed to unlease task: %w", err)
-	}
-
-	// Check if any rows were affected
-	rowsAffected, err := result.RowsAffected()
-	if err != nil {
-		return fmt.Errorf("failed to get rows affected: %w", err)
-	}
-
-	if rowsAffected == 0 {
-		return fmt.Errorf("task T%d has no active lease", taskID)
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("failed to commit transaction: %w", err)
 	}
 
 	return nil
 }
 
-// IsTaskLeased checks if a task is currently leased by the given step ID.
+// IsTaskLeasedByStep checks if a task is currently leased by the given step ID.
 // Returns true if an active lease exists for the task, false otherwise.
-func IsTaskLeased(db *sql.DB, taskID int, stepID int) (bool, error) {
+func IsTaskLeasedByStep(db *sql.DB, taskID int, stepID int) (bool, error) {
 	var isLeased bool
 	err := db.QueryRow(
 		"SELECT EXISTS(SELECT 1 FROM task_leases WHERE task_id = ? AND step_id = ? AND datetime(expires_at) > datetime('now'))",
@@ -541,17 +537,202 @@ func IsTaskLeased(db *sql.DB, taskID int, stepID int) (bool, error) {
 	return isLeased, nil
 }
 
-// UnleaseTasksForStepID unleases all tasks that are currently leased by the given step ID.
-// It updates each lease entry's task_status to match the current task status and clears expires_at.
-func UnleaseTasksForStepID(db *sql.DB, stepID int) error {
-	_, err := db.Exec(`
-		UPDATE task_leases
-		SET expires_at = NULL,
-		    task_status = (SELECT status FROM tasks WHERE tasks.id = task_leases.task_id)
-		WHERE step_id = ?
-	`, stepID)
+// IsTaskLeased checks if a task is currently leased by *any* step ID.
+// Returns true if an active lease exists for the task, false otherwise.
+func IsTaskLeased(db *sql.DB, taskID int) (bool, error) {
+	var isLeased bool
+	err := db.QueryRow(
+		"SELECT EXISTS(SELECT 1 FROM task_leases WHERE task_id = ? AND datetime(expires_at) > datetime('now'))",
+		taskID,
+	).Scan(&isLeased)
 	if err != nil {
-		return fmt.Errorf("failed to unlease tasks for step %d: %w", stepID, err)
+		return false, fmt.Errorf("failed to check if task is leased: %w", err)
+	}
+
+	return isLeased, nil
+}
+
+// UnleaseTasksForStepID unleases all tasks that are currently leased by the given step ID.
+// It processes any queued logs, reviews, and status updates before clearing the leases.
+func UnleaseTasksForStepID(db *sql.DB, stepID int) error {
+	tx, err := db.Begin()
+	if err != nil {
+		return fmt.Errorf("failed to begin transaction: %w", err)
+	}
+	defer tx.Rollback()
+
+	// Get all task leases for this step
+	rows, err := tx.Query("SELECT task_id, task_status FROM task_leases WHERE step_id = ?", stepID)
+	if err != nil {
+		return fmt.Errorf("failed to query task leases: %w", err)
+	}
+	defer rows.Close()
+
+	var taskLeases []struct {
+		taskID     int
+		taskStatus string
+	}
+	for rows.Next() {
+		var taskID int
+		var taskStatus string
+		if err := rows.Scan(&taskID, &taskStatus); err != nil {
+			return fmt.Errorf("failed to scan task lease: %w", err)
+		}
+		taskLeases = append(taskLeases, struct {
+			taskID     int
+			taskStatus string
+		}{taskID, taskStatus})
+	}
+	if err := rows.Err(); err != nil {
+		return fmt.Errorf("failed to iterate task leases: %w", err)
+	}
+
+	// Process each task lease
+	for _, lease := range taskLeases {
+		// Move queued logs to task_logs
+		logRows, err := tx.Query("SELECT message, created_at FROM queued_logs WHERE task_id = ? AND step_id = ?", lease.taskID, stepID)
+		if err != nil {
+			return fmt.Errorf("failed to query queued logs: %w", err)
+		}
+		defer logRows.Close()
+
+		for logRows.Next() {
+			var message string
+			var createdAt time.Time
+			if err := logRows.Scan(&message, &createdAt); err != nil {
+				return fmt.Errorf("failed to scan queued log: %w", err)
+			}
+			_, err := tx.Exec("INSERT INTO task_logs (task_id, message, created_at) VALUES (?, ?, ?)", lease.taskID, message, createdAt)
+			if err != nil {
+				return fmt.Errorf("failed to insert task log: %w", err)
+			}
+		}
+		if err := logRows.Err(); err != nil {
+			return fmt.Errorf("failed to iterate queued logs: %w", err)
+		}
+
+		// Move queued reviews to task_reviews
+		reviewRows, err := tx.Query("SELECT message, attachment_type, attachment, created_at FROM queued_reviews WHERE task_id = ? AND step_id = ?", lease.taskID, stepID)
+		if err != nil {
+			return fmt.Errorf("failed to query queued reviews: %w", err)
+		}
+		defer reviewRows.Close()
+
+		for reviewRows.Next() {
+			var message string
+			var attachmentType sql.NullString
+			var attachment sql.NullString
+			var createdAt time.Time
+			if err := reviewRows.Scan(&message, &attachmentType, &attachment, &createdAt); err != nil {
+				return fmt.Errorf("failed to scan queued review: %w", err)
+			}
+			var attachmentPtr *string
+			if attachment.Valid {
+				attachmentPtr = &attachment.String
+			}
+			_, err := tx.Exec("INSERT INTO task_reviews (task_id, message, attachment, status, created_at, updated_at) VALUES (?, ?, ?, 'pending', ?, ?)", lease.taskID, message, attachmentPtr, createdAt, createdAt)
+			if err != nil {
+				return fmt.Errorf("failed to insert task review: %w", err)
+			}
+		}
+		if err := reviewRows.Err(); err != nil {
+			return fmt.Errorf("failed to iterate queued reviews: %w", err)
+		}
+
+		// Update task status if it was queued for update
+		if lease.taskStatus != "" {
+			_, err := tx.Exec("UPDATE tasks SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?", lease.taskStatus, lease.taskID)
+			if err != nil {
+				return fmt.Errorf("failed to update task status: %w", err)
+			}
+		}
+
+		// Delete queued logs and reviews for this task
+		_, err = tx.Exec("DELETE FROM queued_logs WHERE task_id = ? AND step_id = ?", lease.taskID, stepID)
+		if err != nil {
+			return fmt.Errorf("failed to delete queued logs: %w", err)
+		}
+
+		_, err = tx.Exec("DELETE FROM queued_reviews WHERE task_id = ? AND step_id = ?", lease.taskID, stepID)
+		if err != nil {
+			return fmt.Errorf("failed to delete queued reviews: %w", err)
+		}
+	}
+
+	// Clear the leases
+	_, err = tx.Exec("DELETE FROM task_leases WHERE step_id = ?", stepID)
+	if err != nil {
+		return fmt.Errorf("failed to delete task leases: %w", err)
+	}
+
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("failed to commit transaction: %w", err)
+	}
+
+	return nil
+}
+
+// QueueTaskStatusUpdate updates the status for a task in the task_leases table.
+// This queues the status change to be applied when the task is unleased.
+func QueueTaskStatusUpdate(db *sql.DB, taskID int, stepID int, newStatus string) error {
+	validStatuses := map[string]bool{
+		"todo":        true,
+		"in-progress": true,
+		"in-review":   true,
+		"completed":   true,
+	}
+
+	if !validStatuses[newStatus] {
+		return fmt.Errorf("invalid status: %s", newStatus)
+	}
+
+	_, err := db.Exec("UPDATE task_leases SET task_status = ? WHERE task_id = ? AND step_id = ?", newStatus, taskID, stepID)
+	if err != nil {
+		return fmt.Errorf("failed to queue task status update: %w", err)
+	}
+
+	return nil
+}
+
+// QueueTaskLogUpdate adds a log message to the queued_logs table.
+// The log will be moved to task_logs when the task is unleased.
+func QueueTaskLogUpdate(db *sql.DB, taskID int, stepID int, logRequest *TaskQueuedLogRequest) error {
+	if logRequest == nil {
+		return fmt.Errorf("log request cannot be nil")
+	}
+
+	if logRequest.Message == "" {
+		return fmt.Errorf("log message cannot be empty")
+	}
+
+	_, err := db.Exec(
+		"INSERT INTO queued_logs (task_id, step_id, message, created_at) VALUES (?, ?, ?, ?)",
+		taskID, stepID, logRequest.Message, logRequest.CreatedAt,
+	)
+	if err != nil {
+		return fmt.Errorf("failed to queue task log: %w", err)
+	}
+
+	return nil
+}
+
+// QueueTaskReviewUpdate adds a review to the queued_reviews table.
+// The review will be moved to task_reviews when the task is unleased.
+func QueueTaskReviewUpdate(db *sql.DB, taskID int, stepID int, reviewRequest *TaskQueuedReviewRequest) error {
+	if reviewRequest == nil {
+		return fmt.Errorf("review request cannot be nil")
+	}
+
+	if reviewRequest.Message == "" {
+		return fmt.Errorf("review message cannot be empty")
+	}
+
+	_, err := db.Exec(
+		"INSERT INTO queued_reviews (task_id, step_id, message, attachment_type, attachment, created_at) VALUES (?, ?, ?, ?, ?, ?)",
+		taskID, stepID, reviewRequest.Message, reviewRequest.AttachmentType, reviewRequest.Attachment, reviewRequest.CreatedAt,
+	)
+	if err != nil {
+		return fmt.Errorf("failed to queue task review: %w", err)
 	}
 
 	return nil

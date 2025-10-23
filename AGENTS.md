@@ -8,7 +8,8 @@ mark any completed that look like they are done! Do this EVERY TIME.
 
 Every time I ask you to run you will follow these steps:
 1. First, read README.md for project context.
-2. Use the `latasks` CLI tool to get the next ready task to work on.
+2. Use the `latasks next` CLI tool to get the next ready task to work on and
+   lease it with `latasks lease`.
 3. IF THERE ARE NO TASKS READY TO WORK ON, STOP IMMEDIATELY.
 4. If the retrieved task has already been completed, or it has been reviewed and
    has no follow-up work in the log, MARK IT COMPLETE and move on to the next
@@ -36,13 +37,19 @@ are numbered starting at T1, going to T2, T3, etc. Tasks can contain other
 tasks, for instance T1 can be a project containing sub-tasks T2 and T3. T1
 should not be completed until all its subtasks are completed.
 
-Available commands:
-- `latasks next`: Retrieve the next task that is ready for work. Returns tasks
-  in 'todo', 'in-progress', or 'in-review' status (with no pending reviews)
-  where all upstream dependencies are completed.
-- `latasks add <title> <parent_id?>`: Create a new task. If `parent_id` is
-  specified, add the new task as a subtask. Returns the new task ID.
+## Available commands
+
+The following can be used to read tasks from the database at any time:
+- `latasks next`: Retrieve the next unleased task that is ready for work.
+  Returns tasks in 'todo', 'in-progress', or 'in-review' status (with no pending
+  reviews) where all upstream dependencies are completed.
 - `latasks view <task_id>`: View details of a specific task.
+- `latasks list`: List all tasks.
+
+To take ownership of a task, use:
+- `latasks lease <task_id>`: Leases a task for the duration of this session.
+
+Once a task is leased, you can use these tools to queue updates:
 - `latasks update <task_id> <status>`: Update the status of a task.
 - `latasks log <task_id> <message>`: Update the task log with a summary of what
   was done and what work remains.
@@ -50,8 +57,8 @@ Available commands:
   task to "in-review". This should be the last update to the task in the
   session. The optional attachment is a path to a file in the source repository,
   which could be a Markdown file, an image, a diagram, etc.
-- `latasks list`: List all tasks.
-- `latasks delete <task_id>`: Delete a task.
+
+NOTE: Updates are not visible in view/list while the task is leased!
 
 Task statuses:
 - `todo`: The task has not yet been started.

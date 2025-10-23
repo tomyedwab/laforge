@@ -5,6 +5,24 @@ import (
 	"time"
 )
 
+type TaskQueuedLogRequest struct {
+	Message   string    `json:"message"`
+	CreatedAt time.Time `json:"created_at"`
+}
+
+type TaskQueuedReviewRequest struct {
+	Message        string    `json:"message"`
+	CreatedAt      time.Time `json:"created_at"`
+	AttachmentType string    `json:"attachment_type"`
+	Attachment     *string   `json:"attachment"`
+}
+
+type TaskQueuedUpdateRequest struct {
+	Status     *string                  `json:"status"`
+	LogMessage *TaskQueuedLogRequest    `json:"message"`
+	Review     *TaskQueuedReviewRequest `json:"reviews"`
+}
+
 // TaskResponse represents the API response format for tasks
 type TaskResponse struct {
 	ID                   int        `json:"id"`

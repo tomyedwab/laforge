@@ -259,7 +259,6 @@ func sendRequest(project, endpoint, method string, body interface{}, response in
 				return err
 			}
 			apiToken = loginResponse.Token
-			log.Printf("Response  %v...", loginResponse) // donotcheckin
 			err = nativeerrors.New("Failed after three login attempts")
 		} else {
 			return err
@@ -550,10 +549,7 @@ func runStep(cmd *cobra.Command, args []string) error {
 	})
 
 	// Run container using AgentConfig with streaming logs
-	//exitCode, logs, err = dockerClient.RunAgentContainerFromConfigWithStreamingLogs(agentConfig, worktree.Path, multiWriter, containerMetrics)
-	exitCode = 0
-	logs = ""
-	_ = multiWriter
+	exitCode, logs, err = dockerClient.RunAgentContainerFromConfigWithStreamingLogs(agentConfig, worktree.Path, leaseResponse.Token, multiWriter, containerMetrics)
 	if err != nil {
 		stepLogger.LogError("docker", "Failed to run agent container", err, map[string]interface{}{
 			"exit_code": exitCode,

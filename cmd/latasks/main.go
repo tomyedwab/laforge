@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"time"
 
 	"github.com/spf13/cobra"
 	"github.com/tomyedwab/laforge/lib/tasks"
@@ -265,13 +266,17 @@ var updateCmd = &cobra.Command{
 		}
 		status := args[1]
 
-		var singleTaskResponse tasks.SingleTaskResponse
-		err := sendRequest(fmt.Sprintf("/tasks/%d/status", taskID), "PUT", &tasks.UpdateTaskStatusRequest{Status: status}, &singleTaskResponse)
+		var statusResponse struct {
+			Status string `json:"status"`
+		}
+		err := sendRequest(fmt.Sprintf("/tasks/%d/queue", taskID), "POST", &tasks.TaskQueuedUpdateRequest{
+			Status: &status,
+		}, &statusResponse)
 		if err != nil {
-			return fmt.Errorf("failed to fetch task: %w", err)
+			return fmt.Errorf("failed to queue task update: %w", err)
 		}
 
-		printTask(singleTaskResponse.Task, nil, nil, nil)
+		fmt.Printf("Queued update of task %d status to %s\n", taskID, status)
 		return nil
 	},
 }
@@ -290,12 +295,17 @@ var logCmd = &cobra.Command{
 		var statusResponse struct {
 			Status string `json:"status"`
 		}
-		err := sendRequest(fmt.Sprintf("/tasks/%d/logs", taskID), "POST", &tasks.CreateTaskLogRequest{Message: message}, &statusResponse)
+		err := sendRequest(fmt.Sprintf("/tasks/%d/queue", taskID), "POST", &tasks.TaskQueuedUpdateRequest{
+			LogMessage: &tasks.TaskQueuedLogRequest{
+				Message:   message,
+				CreatedAt: time.Now(),
+			},
+		}, &statusResponse)
 		if err != nil {
-			return fmt.Errorf("failed to fetch task: %w", err)
+			return fmt.Errorf("failed to queue task update: %w", err)
 		}
 
-		fmt.Printf("Wrote log to task %d\n", taskID)
+		fmt.Printf("Queued write of log to task %d\n", taskID)
 		return nil
 	},
 }
@@ -319,12 +329,15 @@ var reviewCmd = &cobra.Command{
 		var statusResponse struct {
 			Status string `json:"status"`
 		}
-		err := sendRequest(fmt.Sprintf("/tasks/%d/reviews", taskID), "POST", &tasks.CreateTaskReviewRequest{
-			Message:    message,
-			Attachment: attachment,
+		err := sendRequest(fmt.Sprintf("/tasks/%d/queue", taskID), "POST", &tasks.TaskQueuedUpdateRequest{
+			Review: &tasks.TaskQueuedReviewRequest{
+				Message:    message,
+				CreatedAt:  time.Now(),
+				Attachment: attachment,
+			},
 		}, &statusResponse)
 		if err != nil {
-			return fmt.Errorf("failed to fetch task: %w", err)
+			return fmt.Errorf("failed to queue task update: %w", err)
 		}
 
 		fmt.Printf("Submitted review for task %d\n", taskID)
