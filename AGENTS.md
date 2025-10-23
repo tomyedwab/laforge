@@ -44,7 +44,7 @@ The following can be used to read tasks from the database at any time:
   Returns tasks in 'todo', 'in-progress', or 'in-review' status (with no pending
   reviews) where all upstream dependencies are completed.
 - `latasks view <task_id>`: View details of a specific task.
-- `latasks list`: List all tasks.
+- `latasks list [page] [limit]`: List tasks, paginated by page and limit (default 25).
 
 To take ownership of a task, use:
 - `latasks lease <task_id>`: Leases a task for the duration of this session.
