@@ -2,6 +2,7 @@ import { h } from 'preact';
 import { useState, useEffect } from 'preact/hooks';
 import { useProject } from '../contexts/ProjectContext';
 import { apiService } from '../services/api';
+import { websocketService } from '../services/websocket';
 import './ProjectSelector.css';
 
 export function ProjectSelector() {
@@ -31,10 +32,8 @@ export function ProjectSelector() {
   const handleProjectSelect = (project: any) => {
     setSelectedProject(project);
     apiService.setProjectId(project.id);
+    websocketService.setProjectId(project.id);
     setIsOpen(false);
-    
-    // Reload the page to refresh all data with new project
-    window.location.reload();
   };
 
   const handleToggleDropdown = () => {

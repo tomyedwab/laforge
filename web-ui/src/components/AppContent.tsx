@@ -1,6 +1,7 @@
 import { h } from 'preact';
 import { useState, useEffect } from 'preact/hooks';
 import { useProject } from '../contexts/ProjectContext';
+import { websocketService } from '../services/websocket';
 import { Header } from './Header';
 import { MobileNavigation } from './MobileNavigation';
 import { TaskDashboard } from './TaskDashboard';
@@ -27,9 +28,16 @@ export function AppContent({ currentView, onViewChange }: AppContentProps) {
 
     checkMobile();
     window.addEventListener('resize', checkMobile);
-    
+
     return () => window.removeEventListener('resize', checkMobile);
   }, []);
+
+  // Sync selected project with WebSocket service
+  useEffect(() => {
+    if (selectedProject) {
+      websocketService.setProjectId(selectedProject.id);
+    }
+  }, [selectedProject?.id]);
 
   const handleTaskClick = (task: any) => {
     setSelectedTask(task);

@@ -227,7 +227,9 @@ func setupRouter(jwtManager *auth.JWTManager, taskHandler *handlers.TaskHandler,
 	protected.HandleFunc("/{project_id}/artifacts/{artifact_path:.*}", corsPreflightHandler).Methods("OPTIONS")
 
 	// WebSocket route for real-time updates
-	protected.HandleFunc("/{project_id}/ws", wsServer.HandleWebSocket)
+	wsapi := router.PathPrefix("/ws").Subrouter()
+	wsapi.Use(jwtManager.AuthMiddleware)
+	wsapi.HandleFunc("/{project_id}/connect", wsServer.HandleWebSocket)
 
 	return router
 }

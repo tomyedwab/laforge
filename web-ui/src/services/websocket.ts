@@ -8,34 +8,38 @@ export class WebSocketService {
   private shouldReconnect = true;
   private messageHandlers: Map<string, Set<(message: any) => void>> = new Map();
 
-  constructor(baseUrl: string, projectId: string = 'laforge-main') {
+  constructor(baseUrl: string, projectId: string) {
     this.baseUrl = baseUrl;
     this.projectId = projectId;
   }
 
   setProjectId(projectId: string): void {
+    console.log('[WS] setProjectId() called with projectId:', projectId);
     this.projectId = projectId;
     // Reconnect with new project ID
     if (this.ws?.readyState === WebSocket.OPEN) {
+      console.log('[WS] Connected, reconnecting with new project ID');
       this.disconnect();
       this.connect();
     }
   }
 
   connect(token?: string): void {
+    console.log('[WS] connect() called, current state:', this.ws?.readyState);
     if (this.ws?.readyState === WebSocket.OPEN) {
+      console.log('[WS] Already connected, returning early');
       return;
     }
 
-    const wsUrl = token ? 
-      `${this.baseUrl}/projects/${this.projectId}/ws?token=${token}` : 
-      `${this.baseUrl}/projects/${this.projectId}/ws`;
+    const wsUrl = token
+      ? `${this.baseUrl}/${this.projectId}/connect?token=${token}`
+      : `${this.baseUrl}/${this.projectId}/connect`;
 
     try {
       this.ws = new WebSocket(wsUrl);
 
       this.ws.onopen = () => {
-        console.log('WebSocket connected successfully');
+        console.log('[WS] ✓ Connection established:', this.baseUrl + '/' + this.projectId + '/connect');
         this.subscribe(['tasks', 'reviews', 'steps']);
       };
 
@@ -48,8 +52,10 @@ export class WebSocketService {
         }
       };
 
-      this.ws.onclose = (event) => {
-        console.log(`WebSocket disconnected: code=${event.code}, reason=${event.reason}, wasClean=${event.wasClean}`);
+      this.ws.onclose = event => {
+        console.log(
+          `WebSocket disconnected: code=${event.code}, reason=${event.reason}, wasClean=${event.wasClean}`
+        );
         this.ws = null;
         if (this.shouldReconnect) {
           console.log(`Reconnecting in ${this.reconnectInterval}ms...`);
@@ -57,7 +63,7 @@ export class WebSocketService {
         }
       };
 
-      this.ws.onerror = (error) => {
+      this.ws.onerror = error => {
         console.error('WebSocket error event:', error);
         // Don't reconnect here - let onclose handle it
       };
@@ -125,7 +131,7 @@ export class WebSocketService {
 const getWebSocketUrl = () => {
   const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
   const host = window.location.host;
-  return import.meta.env.VITE_WS_URL || `${protocol}//${host}/api/v1`;
+  return `${protocol}//${host}/ws`;
 };
 
-export const websocketService = new WebSocketService(getWebSocketUrl());
+export const websocketService = new WebSocketService(getWebSocketUrl(), 'default');

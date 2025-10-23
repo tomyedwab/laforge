@@ -2,6 +2,7 @@ package websocket
 
 import (
 	"encoding/json"
+	"log"
 	"net/http"
 	"strings"
 	"sync"
@@ -17,14 +18,18 @@ func createUpgrader() websocket.Upgrader {
 		CheckOrigin: func(r *http.Request) bool {
 			// Allow connections from localhost on any port
 			origin := r.Header.Get("Origin")
+			log.Printf("WS: CheckOrigin - origin header: '%s'", origin)
 			if origin == "" {
 				// WebSocket connections from same origin don't have Origin header
+				log.Printf("WS: CheckOrigin - no origin header, allowing connection")
 				return true
 			}
 			// Allow localhost connections for development
 			if strings.Contains(origin, "localhost") || strings.Contains(origin, "127.0.0.1") {
+				log.Printf("WS: CheckOrigin - localhost connection allowed")
 				return true
 			}
+			log.Printf("WS: CheckOrigin - origin not allowed: %s", origin)
 			return false
 		},
 		ReadBufferSize:  1024,
@@ -118,25 +123,33 @@ func (s *Server) Run() {
 
 // HandleWebSocket handles WebSocket connections
 func (s *Server) HandleWebSocket(w http.ResponseWriter, r *http.Request) {
+	log.Printf("WS: HandleWebSocket called with path %s", r.RequestURI)
+
 	ctx := r.Context()
 	// Extract user ID from context (set by auth middleware)
-	userID, ok := ctx.Value(auth.UserContextKey).(string)
-	if !ok {
+	// Note: UserID is a *string (pointer), not a string
+	userIDPtr, ok := ctx.Value(auth.UserContextKey).(*string)
+	if !ok || userIDPtr == nil {
+		log.Printf("WS: User ID not found in context or is nil")
 		http.Error(w, "User ID not found in context", http.StatusInternalServerError)
 		return
 	}
+	userID := *userIDPtr
+	log.Printf("WS: User ID from context: %s", userID)
 
 	// Extract project ID from URL
 	vars := mux.Vars(r)
 	projectID := vars["project_id"]
+	log.Printf("WS: Project ID from URL: %s", projectID)
 
 	// Upgrade HTTP connection to WebSocket
+	log.Printf("WS: Attempting to upgrade connection from %s", r.RemoteAddr)
 	conn, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
-		// Log the error but don't write to response - upgrade already attempted
-		// and the response writer may have been used
+		log.Printf("WS: Failed to upgrade connection: %v", err)
 		return
 	}
+	log.Printf("WS: Successfully upgraded connection")
 
 	client := &Client{
 		conn:      conn,

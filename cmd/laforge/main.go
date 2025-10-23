@@ -15,13 +15,12 @@ import (
 	"time"
 
 	"github.com/spf13/cobra"
-	"github.com/tomyedwab/laforge/database"
-	"github.com/tomyedwab/laforge/docker"
-	"github.com/tomyedwab/laforge/git"
+	"github.com/tomyedwab/laforge/lib/docker"
 	"github.com/tomyedwab/laforge/lib/errors"
+	"github.com/tomyedwab/laforge/lib/git"
+	"github.com/tomyedwab/laforge/lib/logging"
 	"github.com/tomyedwab/laforge/lib/projects"
 	"github.com/tomyedwab/laforge/lib/steps"
-	"github.com/tomyedwab/laforge/logging"
 )
 
 var (
@@ -67,9 +66,6 @@ func init() {
 	rootCmd.AddCommand(stepCmd)
 	rootCmd.AddCommand(stepsCmd)
 	rootCmd.AddCommand(stepInfoCmd)
-
-	// Add step subcommands
-	stepCmd.AddCommand(stepRollbackCmd)
 }
 
 // initCmd represents the init command
@@ -145,36 +141,6 @@ Information displayed:
   - Project ID and creation timestamp`,
 	Args: cobra.ExactArgs(2),
 	RunE: runStepInfo,
-}
-
-// stepRollbackCmd represents the step rollback command
-var stepRollbackCmd = &cobra.Command{
-	Use:   "rollback [project-id] [step-id]",
-	Short: "Rollback to a previous step",
-	Long: `Rollback to a previous step by deactivating subsequent steps and reverting git changes.
-
-This command allows you to revert your project to the state at a specific step by:
-1. Deactivating all steps after the target step in the database
-2. Resetting the git repository to the commit before the target step
-
-Examples:
-  laforge step rollback my-project S3    # Rollback to step 3
-  laforge step rollback my-project 1     # Rollback to step 1
-
-Safety features:
-  - User confirmation required before rollback
-  - Git repository must be clean (no uncommitted changes)
-  - All steps >= target step ID are deactivated
-  - Git reset to commit before target step
-
-Use with caution as this will permanently deactivate subsequent steps and discard changes.
-
-Common use cases:
-  - Revert to a known good state after problematic changes
-  - Explore alternative approaches by rolling back and trying again
-  - Recover from agent errors or unexpected behavior`,
-	Args: cobra.ExactArgs(2),
-	RunE: runStepRollback,
 }
 
 func init() {
@@ -965,135 +931,4 @@ func runStepInfo(cmd *cobra.Command, args []string) error {
 	fmt.Printf("\nCreated: %s\n", step.CreatedAt.Format("2006-01-02 15:04:05"))
 
 	return nil
-}
-
-// runStepRollback is the handler for the step rollback command
-func runStepRollback(cmd *cobra.Command, args []string) error {
-	projectID := args[0]
-	stepIDStr := args[1]
-
-	// Validate project ID
-	if projectID == "" {
-		return errors.NewInvalidInputError("project ID cannot be empty")
-	}
-
-	// Parse step ID
-	var stepID int
-	if _, err := fmt.Sscanf(stepIDStr, "S%d", &stepID); err != nil {
-		// Try parsing as plain integer
-		if _, err := fmt.Sscanf(stepIDStr, "%d", &stepID); err != nil {
-			return errors.NewInvalidInputError(fmt.Sprintf("invalid step ID format: %s. Use format like 'S1' or '1'", stepIDStr))
-		}
-	}
-
-	// Check if project exists
-	exists, err := projects.ProjectExists(projectID)
-	if err != nil {
-		return errors.Wrap(errors.ErrUnknown, err, "failed to check if project exists")
-	}
-	if !exists {
-		return errors.NewProjectNotFoundError(projectID)
-	}
-
-	// Open step database
-	stepDB, err := projects.OpenProjectStepDatabase(projectID)
-	if err != nil {
-		return errors.Wrap(errors.ErrDatabaseConnectionFailed, err, "failed to open project step database")
-	}
-	defer stepDB.Close()
-
-	// Get step by ID
-	targetStep, err := stepDB.GetStep(stepID)
-	if err != nil {
-		return errors.Wrap(errors.ErrDatabaseOperationFailed, err, "failed to get step")
-	}
-
-	if targetStep == nil {
-		return errors.NewInvalidInputError(fmt.Sprintf("step S%d not found in project '%s'", stepID, projectID))
-	}
-
-	// Validate target step is active
-	if !targetStep.Active {
-		return errors.NewInvalidInputError(fmt.Sprintf("step S%d is already rolled back", stepID))
-	}
-
-	// Get current working directory (should be the git repository)
-	repoDir, err := os.Getwd()
-	if err != nil {
-		return errors.Wrap(errors.ErrUnknown, err, "failed to get current working directory")
-	}
-
-	// Verify this is a git repository
-	if !git.IsGitRepository(repoDir) {
-		return errors.NewInvalidInputError("current directory is not a git repository")
-	}
-
-	// Confirm rollback with user
-	fmt.Printf("WARNING: This will rollback to step S%d and deactivate all subsequent steps.\n", stepID)
-	fmt.Printf("Project: %s\n", projectID)
-	fmt.Printf("Target commit: %s\n", targetStep.CommitSHABefore)
-	fmt.Print("Proceed with rollback? (yes/no): ")
-
-	var response string
-	fmt.Scanln(&response)
-	if response != "yes" {
-		fmt.Println("Rollback cancelled.")
-		return nil
-	}
-
-	fmt.Printf("Rolling back to step S%d...\n", stepID)
-
-	// Step 1: Deactivate all steps from the target step ID onwards
-	fmt.Printf("Deactivating steps from S%d onwards...\n", stepID)
-	if err := stepDB.DeactivateStepsFromID(stepID); err != nil {
-		return errors.Wrap(errors.ErrDatabaseOperationFailed, err, "failed to deactivate steps")
-	}
-
-	// Step 2: Reset git repository to the commit before the target step
-	fmt.Printf("Resetting repository to commit %s...\n", targetStep.CommitSHABefore)
-	if err := git.ResetToCommit(repoDir, targetStep.CommitSHABefore); err != nil {
-		return errors.Wrap(errors.ErrUnknown, err, "failed to reset repository to target commit")
-	}
-
-	// Step 3: Restore task database from backup
-	taskDBPath, err := projects.GetProjectTaskDatabase(projectID)
-	if err != nil {
-		return errors.Wrap(errors.ErrUnknown, err, "failed to get project task database path")
-	}
-
-	backupDBPath := filepath.Join(filepath.Dir(taskDBPath), fmt.Sprintf("tasks-S%d.db", stepID))
-	if _, err := os.Stat(backupDBPath); err == nil {
-		// Backup exists, restore it
-		fmt.Printf("Restoring task database from backup: %s...\n", backupDBPath)
-		_ = os.Remove(taskDBPath) // Remove current database
-		if err := database.CopyDatabase(backupDBPath, taskDBPath); err != nil {
-			return errors.Wrap(errors.ErrUnknown, err, "failed to restore task database from backup")
-		}
-		fmt.Printf("Task database restored from backup\n")
-	} else {
-		fmt.Printf("Warning: Task database backup not found at %s\n", backupDBPath)
-	}
-
-	fmt.Printf("Successfully rolled back to step S%d\n", stepID)
-	fmt.Printf("Repository reset to commit: %s\n", targetStep.CommitSHABefore)
-	fmt.Printf("All steps from S%d onwards have been deactivated.\n", stepID)
-
-	return nil
-}
-
-// createTaskDatabaseBackup creates a backup of the task database with the step name in the filename
-func createTaskDatabaseBackup(sourcePath string, stepID string) (string, error) {
-	// Get the directory of the source database
-	sourceDir := filepath.Dir(sourcePath)
-
-	// Create backup filename with step ID (e.g., tasks-S1.db)
-	backupFileName := fmt.Sprintf("tasks-%s.db", stepID)
-	backupPath := filepath.Join(sourceDir, backupFileName)
-
-	// Use the existing CopyDatabase function to create the backup
-	if err := database.CopyDatabase(sourcePath, backupPath); err != nil {
-		return "", fmt.Errorf("failed to copy database: %w", err)
-	}
-
-	return backupPath, nil
 }

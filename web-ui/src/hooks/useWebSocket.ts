@@ -18,6 +18,10 @@ export function useWebSocket({
   const [isConnected, setIsConnected] = useState(false);
   const [connectionError, setConnectionError] = useState<string | null>(null);
   const unsubscribeRef = useRef<(() => void)[]>([]);
+  const callbacksRef = useRef({ onTaskUpdate, onReviewUpdate, onStepUpdate });
+
+  // Update callback refs whenever callbacks change (but don't trigger effect)
+  callbacksRef.current = { onTaskUpdate, onReviewUpdate, onStepUpdate };
 
   useEffect(() => {
     if (!enabled) {
@@ -38,44 +42,39 @@ export function useWebSocket({
       setIsConnected(false);
     };
 
-    const handleError = (error: any) => {
-      setConnectionError('WebSocket connection failed');
-      console.error('WebSocket error:', error);
-    };
-
-    // Set up message handlers
-    if (onTaskUpdate) {
+    // Set up message handlers using refs to avoid re-triggering effect
+    if (callbacksRef.current.onTaskUpdate) {
       const unsubscribe = websocketService.on(
         'task_updated',
         (data: { task: Task }) => {
-          onTaskUpdate(data.task);
+          callbacksRef.current.onTaskUpdate?.(data.task);
         }
       );
       unsubscribeRef.current.push(unsubscribe);
     }
 
-    if (onReviewUpdate) {
+    if (callbacksRef.current.onReviewUpdate) {
       const unsubscribe = websocketService.on(
         'review_updated',
         (data: { review: TaskReview }) => {
-          onReviewUpdate(data.review);
+          callbacksRef.current.onReviewUpdate?.(data.review);
         }
       );
       unsubscribeRef.current.push(unsubscribe);
     }
 
-    if (onStepUpdate) {
+    if (callbacksRef.current.onStepUpdate) {
       const unsubscribe = websocketService.on(
         'step_completed',
         (data: { step: Step }) => {
-          onStepUpdate(data.step);
+          callbacksRef.current.onStepUpdate?.(data.step);
         }
       );
       unsubscribeRef.current.push(unsubscribe);
     }
 
     // Connect to WebSocket
-    websocketService.connect(token);
+    websocketService.connect(token || undefined);
 
     // Monitor connection status
     const checkConnection = () => {
@@ -99,7 +98,7 @@ export function useWebSocket({
       unsubscribeRef.current = [];
       // Note: We don't disconnect the WebSocket service here as it might be used by other components
     };
-  }, [enabled, onTaskUpdate, onReviewUpdate, onStepUpdate]);
+  }, [enabled]);
 
   return {
     isConnected,
