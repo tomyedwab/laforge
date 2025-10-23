@@ -15,11 +15,11 @@ chmod 600 ~/.claude/.credentials.json
 mkdir -p /src/.claude
 cp /bin/.claude/settings.local.json /src/.claude/
 
-claude --model $MODELNAME -p "Work on the next task."
+claude --model $MODELNAME --output-format stream-json --verbose -p "Work on the next task."
 
 # Check if COMMIT.md file exists. If it doesn't, create it.
 if [ ! -f COMMIT.md ]; then
-    claude --model $MODELNAME -c -p "Write a commit message to COMMIT.md"
+    claude --model $MODELNAME --output-format stream-json --verbose -c -p "Write a commit message to COMMIT.md"
 fi
 
 rm /src/.claude/settings.local.json

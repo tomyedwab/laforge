@@ -499,6 +499,9 @@ func runStep(cmd *cobra.Command, args []string) error {
 	// Create multi-writer to stream to both stdout and file
 	multiWriter := io.MultiWriter(os.Stdout, logFile)
 
+	// Wrap with formatting writer to convert JSON output to markdown
+	formattedWriter := docker.NewFormattingWriter(multiWriter)
+
 	// Step 4: Launch agent container
 	stepLogger.LogStepPhase("container", "Launching agent container")
 	containerMetrics := &docker.ContainerMetrics{}
@@ -514,8 +517,8 @@ func runStep(cmd *cobra.Command, args []string) error {
 		"log_file":     logFilePath,
 	})
 
-	// Run container using AgentConfig with streaming logs
-	exitCode, logs, err = dockerClient.RunAgentContainerFromConfigWithStreamingLogs(agentConfig, worktree.Path, leaseResponse.Token, multiWriter, containerMetrics)
+	// Run container using AgentConfig with streaming logs (formatted as markdown)
+	exitCode, logs, err = dockerClient.RunAgentContainerFromConfigWithStreamingLogs(agentConfig, worktree.Path, projectID, leaseResponse.Token, formattedWriter, containerMetrics)
 	if err != nil {
 		stepLogger.LogError("docker", "Failed to run agent container", err, map[string]interface{}{
 			"exit_code": exitCode,

@@ -110,6 +110,36 @@ func run(config *Config) error {
 	return srv.Shutdown(ctx)
 }
 
+func loggingMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		start := time.Now()
+
+		// Create a custom response writer to capture the status code
+		rw := &responseWriter{ResponseWriter: w, statusCode: http.StatusOK}
+
+		// Log the request
+		log.Printf("[%s] %s %s", r.Method, r.RequestURI, r.RemoteAddr)
+
+		// Call the next handler
+		next.ServeHTTP(rw, r)
+
+		// Log the response
+		duration := time.Since(start)
+		log.Printf("[%s] %s %s - Status: %d, Duration: %v",
+			r.Method, r.RequestURI, r.RemoteAddr, rw.statusCode, duration)
+	})
+}
+
+type responseWriter struct {
+	http.ResponseWriter
+	statusCode int
+}
+
+func (rw *responseWriter) WriteHeader(code int) {
+	rw.statusCode = code
+	rw.ResponseWriter.WriteHeader(code)
+}
+
 func corsMiddleware(config *Config) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -152,6 +182,9 @@ func corsMiddleware(config *Config) func(http.Handler) http.Handler {
 
 func setupRouter(jwtManager *auth.JWTManager, taskHandler *handlers.TaskHandler, stepHandler *handlers.StepHandler, wsServer *websocket.Server, config *Config) *mux.Router {
 	router := mux.NewRouter()
+
+	// Apply logging middleware first
+	router.Use(loggingMiddleware)
 
 	// Apply CORS middleware to all routes
 	router.Use(corsMiddleware(config))

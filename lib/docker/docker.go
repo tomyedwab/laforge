@@ -25,7 +25,47 @@ type Container struct {
 	Config    *projects.AgentConfig
 	WorkDir   string
 	StartTime time.Time
+	ProjectID string
 	ApiToken  string
+}
+
+// FormattingWriter wraps an io.Writer and formats Claude Code JSON output line-by-line
+type FormattingWriter struct {
+	writer io.Writer
+}
+
+// NewFormattingWriter creates a new FormattingWriter that wraps the given writer
+func NewFormattingWriter(w io.Writer) *FormattingWriter {
+	return &FormattingWriter{writer: w}
+}
+
+// Write implements io.Writer by formatting each line before writing
+func (fw *FormattingWriter) Write(p []byte) (n int, err error) {
+	// Split into lines and format each one
+	lines := strings.Split(string(p), "\n")
+	for i, line := range lines {
+		// Skip empty lines except the last one (which maintains newline)
+		if line == "" && i < len(lines)-1 {
+			continue
+		}
+
+		// Format the line if it's not empty
+		if line != "" {
+			formatted := FormatClaudeOutput(line)
+
+			if _, err := fw.writer.Write([]byte(formatted)); err != nil {
+				return len(p), err
+			}
+		} else if i == len(lines)-1 && strings.HasSuffix(string(p), "\n") {
+			// Preserve trailing newline
+			if _, err := fw.writer.Write([]byte("\n")); err != nil {
+				return len(p), err
+			}
+		}
+	}
+
+	// Return the original length to satisfy io.Writer interface
+	return len(p), nil
 }
 
 // Client provides Docker operations using Docker CLI
@@ -58,7 +98,7 @@ func (c *Client) Close() error {
 }
 
 // CreateAgentContainer creates a container for running the LaForge agent
-func (c *Client) CreateAgentContainer(agentConfig *projects.AgentConfig, workDir, apiToken string) (*Container, error) {
+func (c *Client) CreateAgentContainer(agentConfig *projects.AgentConfig, workDir, projectID, apiToken string) (*Container, error) {
 	// Ensure the image exists, pull if necessary
 	if err := c.ensureImage(agentConfig.Image); err != nil {
 		return nil, fmt.Errorf("failed to ensure image %s: %w", agentConfig.Image, err)
@@ -68,10 +108,11 @@ func (c *Client) CreateAgentContainer(agentConfig *projects.AgentConfig, workDir
 	containerName := fmt.Sprintf("laforge-agent-%d", time.Now().Unix())
 
 	return &Container{
-		Name:     containerName,
-		Config:   agentConfig,
-		WorkDir:  workDir,
-		ApiToken: apiToken,
+		Name:      containerName,
+		Config:    agentConfig,
+		WorkDir:   workDir,
+		ProjectID: projectID,
+		ApiToken:  apiToken,
 	}, nil
 }
 
@@ -134,6 +175,17 @@ func (c *Client) GetContainerLogs(container *Container, stdout, stderr, timestam
 	}
 
 	return string(output), nil
+}
+
+// GetContainerLogsFormatted retrieves logs from a container and formats them if they are Claude Code JSON output
+func (c *Client) GetContainerLogsFormatted(container *Container, stdout, stderr, timestamps bool) (string, error) {
+	logs, err := c.GetContainerLogs(container, stdout, stderr, timestamps)
+	if err != nil {
+		return "", err
+	}
+
+	// Format if Claude JSON output, otherwise return as-is
+	return FormatClaudeOutput(logs), nil
 }
 
 // StopContainer stops a running container
@@ -307,14 +359,14 @@ type ContainerMetrics struct {
 
 // RunAgentContainerFromConfigWithStreamingLogs creates, starts, and manages an agent container from AgentConfig
 // with real-time log streaming to the provided writer, and returns logs and metrics
-func (c *Client) RunAgentContainerFromConfigWithStreamingLogs(agentConfig *projects.AgentConfig, workDir, apiToken string, logWriter io.Writer, metrics *ContainerMetrics) (int64, string, error) {
+func (c *Client) RunAgentContainerFromConfigWithStreamingLogs(agentConfig *projects.AgentConfig, workDir, projectID, apiToken string, logWriter io.Writer, metrics *ContainerMetrics) (int64, string, error) {
 	if metrics == nil {
 		metrics = &ContainerMetrics{}
 	}
 	metrics.StartTime = time.Now()
 
 	// Create container from AgentConfig
-	container, err := c.CreateAgentContainer(agentConfig, workDir, apiToken)
+	container, err := c.CreateAgentContainer(agentConfig, workDir, projectID, apiToken)
 	if err != nil {
 		metrics.EndTime = time.Now()
 		return -1, "", fmt.Errorf("failed to create container from config: %w", err)
@@ -428,6 +480,27 @@ func (c *Client) RunAgentContainerFromConfigWithStreamingLogs(agentConfig *proje
 	}
 
 	return exitCode, logs, nil
+}
+
+// RunAgentContainerWithFormattedLogs creates, starts, and manages an agent container with formatted streaming logs
+// This is a convenience wrapper around RunAgentContainerFromConfigWithStreamingLogs that formats Claude Code JSON output
+func (c *Client) RunAgentContainerWithFormattedLogs(agentConfig *projects.AgentConfig, workDir, projectID, apiToken string, logWriter io.Writer, metrics *ContainerMetrics) (int64, string, error) {
+	// Wrap the log writer with formatting if provided
+	var formattedWriter io.Writer
+	if logWriter != nil {
+		formattedWriter = NewFormattingWriter(logWriter)
+	}
+
+	// Run container with formatted streaming
+	exitCode, logs, err := c.RunAgentContainerFromConfigWithStreamingLogs(agentConfig, workDir, projectID, apiToken, formattedWriter, metrics)
+	if err != nil {
+		return exitCode, logs, err
+	}
+
+	// Also format the returned logs
+	formattedLogs := FormatClaudeOutput(logs)
+
+	return exitCode, formattedLogs, nil
 }
 
 // countErrorsInLogs counts error messages in container logs
@@ -592,7 +665,7 @@ func (c *Client) startContainerWithAgentConfig(container *Container, agentConfig
 		args = append(args, "-e", fmt.Sprintf("%s=%s", key, value))
 	}
 
-	args = append(args, "-e", "LATASK_URLPATH=http://host.docker.internal:8080/api/v1/projects/laforge")
+	args = append(args, "-e", "LATASK_URLPATH=http://host.docker.internal:8080/api/v1/projects/"+container.ProjectID)
 	args = append(args, "-e", "LATASK_TOKEN="+container.ApiToken)
 
 	// Add volume mounts from AgentConfig
