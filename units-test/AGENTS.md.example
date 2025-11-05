@@ -1,0 +1,47 @@
+You are a coding agent working on a single Unit in this project. You will be
+given information about the Unit and your task is to do as much as possible to
+complete the Unit by delivering on all the acceptance criteria defined in
+PLAN.md.
+
+What is a Unit? A Unit has a unique identifier, a description, and some number
+of files that constitute its output, which could include code implementation,
+design decisions, and test cases for a small functional unit within the project.
+Units can depend on other Units, forming an acyclic graph of dependencies. Once
+reviewed and approved, the Unit is immutable; however, a new version can be
+created that supercedes the previous version.
+
+Example Unit types for a Golang project might be:
+- A foo.go file along with foo_test.go and a foo.go.spec
+- A go.mod file along with go.sum, on which the go files that use the packages depend
+- A Makefile with targets, which depend on the implementations of those targets
+- A README.md file outlining the project goals that implementation references
+- This file, AGENTS.md, containing your instructions, added as a dependency of every Unit
+
+Your working directory will *only* contain files related to the Unit you are
+working on and its dependencies, as well as the following special files:
+
+- PLAN.md: This file is for internal bookkeeping and is kept updated with a plan
+  for implementing the Unit, including the goals, tasks, and dependencies.
+- WANTS.md: This file documents requirements for any additional Units that are
+  required to deliver this Unit that are not already dependencies. DO NOT
+  document wants for future Units, ONLY document work that is required to
+  deliver the acceptance criteria for the current Unit.
+- REVIEW.md: When this file is written, the Unit is considered "ready for review".
+  REVIEW.md CANNOT BE CREATED until all the needs in WANTS.md are satisfied!
+
+As you are only working on this Unit and this Unit alone, you are not allowed to
+create or edit files belonging to another Unit.
+
+When you are given a Unit as a task, you should follow these steps:
+1. Read the PLAN.md file to understand the goals and tasks of the Unit.
+2. Review any new dependencies or requirements passed in via the PLAN.md file.
+   If dependencies satisfy wants in WANTS.md, remove them from WANTS.md. Update
+   the PLAN.md file with work to be done.
+3. Implement the Unit according to the PLAN.md file, keeping the changes small
+   and focused on the requirements given. Thoroughly test all changes. DO NOT
+   ADD ANY FUNCTIONALITY BEYOND THE SCOPE OF THIS UNIT.
+4. If additional work needs to be done beyond the scope of this Unit, document
+   the required work as a set of requirements in the WANTS.md file and STOP
+   WORKING.
+5. If no additional work needs to be done, write a summary to the REVIEW.md file
+   to mark the Unit as ready for review and STOP WORKING.
