@@ -38,14 +38,13 @@ The Unit database is a simple sqlite3 database stored in the same directory as
 the artifact registry with tables for Units, their dependencies and files.
 """
 
-import sys
 import json
 import shutil
 import sqlite3
-from pathlib import Path
-from typing import Optional, List, Dict
+import sys
 from datetime import datetime
-
+from pathlib import Path
+from typing import Dict, List, Optional
 
 PLAN_TEMPLATE = """
 # Plan file for unit `{unit_id}`
@@ -101,6 +100,13 @@ class LaforgeConfig:
             return Path(config["artifact_registry"])
         return None
 
+    def get_default_units(self) -> List[str]:
+        """Get default units from config"""
+        config = self.load()
+        if config and "default_units" in config:
+            return config["default_units"]
+        return []
+
 
 class LaforgeUnit:
     """Manages .laforge-unit file for current unit"""
@@ -119,10 +125,10 @@ class LaforgeUnit:
             print(f"Error loading unit: {e}", file=sys.stderr)
             return None
 
-    def save(self, unit_id: str) -> bool:
+    def save(self, unit_id: str, path: Path | None = None) -> bool:
         """Save current unit info"""
         try:
-            with open(self.unit_file, "w") as f:
+            with open(path / ".laforge-unit" if path else self.unit_file, "w") as f:
                 json.dump({"unit_id": unit_id}, f, indent=2)
             return True
         except Exception as e:
@@ -407,7 +413,9 @@ class LaforgeRegistry:
             print(f"Error storing file: {e}", file=sys.stderr)
             return False
 
-    def restore_files(self, unit_id: str, dest_dir: Path) -> bool:
+    def restore_files(
+        self, unit_id: str, dest_dir: Path, include_internal: bool
+    ) -> bool:
         """Restore artifact files to destination"""
         artifact_dir = self.registry_path / unit_id
         if not artifact_dir.exists():
@@ -417,6 +425,12 @@ class LaforgeRegistry:
         try:
             dest_dir.mkdir(parents=True, exist_ok=True)
             for item in artifact_dir.iterdir():
+                if not include_internal and item.name in [
+                    "PLAN.md",
+                    "REVIEW.md",
+                    "WANTS.md",
+                ]:
+                    continue
                 dst = dest_dir / item.name
                 if item.is_file():
                     shutil.copy2(item, dst)
@@ -478,7 +492,7 @@ def cmd_init(args: List[str]):
     db.create_unit("root", "Root Unit")
 
     # Save as current unit
-    if not LaforgeUnit().save("root", 1):
+    if not LaforgeUnit().save("root"):
         return False
 
     print("Created unit: 'root'")
@@ -519,17 +533,13 @@ def cmd_create(args: List[str]):
     db.create_unit(unit_id, description)
 
     # Add initial dependencies
-    # TODO(tom) Pull these from the config file, based on rules, etc.
-    if not db.add_dependency(unit_id, "agents-md"):
-        print(
-            f"Failed to add dependency 'agents-md' for unit {unit_id}", file=sys.stderr
-        )
-        return False
-    if not db.add_dependency(unit_id, "readme-md"):
-        print(
-            f"Failed to add dependency 'readme-md' for unit {unit_id}", file=sys.stderr
-        )
-        return False
+    for default_unit_id in LaforgeConfig().get_default_units():
+        if not db.add_dependency(unit_id, default_unit_id):
+            print(
+                f"Failed to add dependency '{default_unit_id}' for unit {unit_id}",
+                file=sys.stderr,
+            )
+            return False
 
     # Create initial PLAN.md file
     dependencies = db.get_unit_dependencies(unit_id)
@@ -696,6 +706,7 @@ def cmd_checkout(args: List[str]):
 
     # Collect all files that will be restored
     files_to_keep, tree_units = db.get_all_files(unit_id)
+    files_to_keep.remove("PLAN.md")
 
     work_dir.mkdir(parents=True, exist_ok=True)
 
@@ -713,6 +724,7 @@ def cmd_checkout(args: List[str]):
             if item.name in files_to_keep:
                 continue
             # Delete this item
+            print(f" - Deleting {item}...")
             if item.is_file():
                 item.unlink()
             else:
@@ -724,11 +736,13 @@ def cmd_checkout(args: List[str]):
     # Restore all artifact files to current directory
     for tree_unit in tree_units:
         print(f" -> Restoring files from {tree_unit}...")
-        if not registry.restore_files(tree_unit, work_dir):
+        if not registry.restore_files(
+            tree_unit, work_dir, include_internal=tree_unit == unit_id
+        ):
             return False
 
     # Update current unit
-    if not LaforgeUnit().save(unit_id):
+    if not LaforgeUnit().save(unit_id, work_dir):
         return False
 
     print(f"Checked out unit: '{unit_id}'")
