@@ -39,6 +39,7 @@ the artifact registry with tables for Units, their dependencies and files.
 """
 
 import json
+import os
 import shutil
 import sqlite3
 import sys
@@ -415,31 +416,58 @@ class LaforgeRegistry:
 
     def restore_files(
         self, unit_id: str, dest_dir: Path, include_internal: bool
-    ) -> bool:
+    ) -> set[str]:
         """Restore artifact files to destination"""
         artifact_dir = self.registry_path / unit_id
         if not artifact_dir.exists():
             # Nothing to restore
-            return True
+            return set()
 
         try:
+            restored_files = set()
             dest_dir.mkdir(parents=True, exist_ok=True)
-            for item in artifact_dir.iterdir():
-                if not include_internal and item.name in [
-                    "PLAN.md",
-                    "REVIEW.md",
-                    "WANTS.md",
-                ]:
-                    continue
-                dst = dest_dir / item.name
-                if item.is_file():
-                    shutil.copy2(item, dst)
-                else:
-                    shutil.copytree(item, dst, dirs_exist_ok=True)
-            return True
+
+            # Recursively traverse artifact_dir using os.walk for compatibility
+            artifact_dir_str = str(artifact_dir)
+            for root, dirs, files in os.walk(artifact_dir_str):
+                root_path = Path(root)
+                # Get relative path from artifact_dir
+                rel_path = root_path.relative_to(artifact_dir)
+
+                # Handle files
+                for file_name in files:
+                    file_rel_path = (
+                        rel_path / file_name
+                        if rel_path != Path(".")
+                        else Path(file_name)
+                    )
+
+                    # Check if internal file should be skipped (only if at root of artifact directory)
+                    is_at_root = rel_path == Path(".")
+                    if (
+                        not include_internal
+                        and is_at_root
+                        and file_rel_path.name.lower()
+                        in [
+                            "plan.md",
+                            "review.md",
+                            "wants.md",
+                        ]
+                    ):
+                        print(f"Skipping {file_rel_path} in {unit_id}")  # donotcheckin
+                        continue
+
+                    src_file = root_path / file_name
+                    dst_file = dest_dir / file_rel_path
+                    dst_file.parent.mkdir(parents=True, exist_ok=True)
+
+                    print(f"Restoring {file_rel_path} in {unit_id}")  # donotcheckin
+                    shutil.copy2(src_file, dst_file)
+                    restored_files.add(str(file_rel_path))
+
+            return restored_files
         except Exception as e:
-            print(f"Error restoring files: {e}", file=sys.stderr)
-            return False
+            raise Exception(f"Error restoring files: {e}")
 
 
 def print_unit_tree(
@@ -458,7 +486,7 @@ def print_unit_tree(
     dependencies = db.get_unit_dependencies(unit_id)
 
     # Print wants
-    extension = "    " if is_last else "│   "
+    extension = "    " if is_last else "|   "
     total_items = len(dependencies)
 
     # Print each dependency
@@ -500,10 +528,10 @@ def cmd_init(args: List[str]):
 
 
 def cmd_create(args: List[str]):
-    """laforge create <unit_name> <description> <acceptance_criteria>"""
+    """laforge create <unit_name> <description> <acceptance_criteria> [<dependency> ...]"""
     if len(args) < 3:
         print(
-            "Usage: laforge create <unit_id> <description> <acceptance_criteria>",
+            "Usage: laforge create <unit_id> <description> <acceptance_criteria> [<dependency> ...]",
             file=sys.stderr,
         )
         return False
@@ -511,6 +539,7 @@ def cmd_create(args: List[str]):
     unit_id = args[0]
     description = args[1]
     acceptance_criteria = args[2]
+    dependencies = args[3:]
 
     # Get registry
     registry_path = LaforgeConfig().get_registry_path()
@@ -537,6 +566,14 @@ def cmd_create(args: List[str]):
         if not db.add_dependency(unit_id, default_unit_id):
             print(
                 f"Failed to add dependency '{default_unit_id}' for unit {unit_id}",
+                file=sys.stderr,
+            )
+            return False
+
+    for dependency in dependencies:
+        if not db.add_dependency(unit_id, dependency):
+            print(
+                f"Failed to add dependency '{dependency}' for unit {unit_id}",
                 file=sys.stderr,
             )
             return False
@@ -705,8 +742,7 @@ def cmd_checkout(args: List[str]):
         return False
 
     # Collect all files that will be restored
-    files_to_keep, tree_units = db.get_all_files(unit_id)
-    files_to_keep.remove("PLAN.md")
+    _, tree_units = db.get_all_files(unit_id)
 
     work_dir.mkdir(parents=True, exist_ok=True)
 
@@ -714,32 +750,86 @@ def cmd_checkout(args: List[str]):
     if not (work_dir / ".laforge").exists():
         shutil.copy(".laforge", str(work_dir / ".laforge"))
 
+    # Restore all artifact files to current directory
+    files_to_keep = set()
+    for tree_unit in tree_units:
+        print(f" -> Restoring files from {tree_unit}...")
+        restored_files = registry.restore_files(
+            tree_unit, work_dir, include_internal=tree_unit == unit_id
+        )
+        print(f"  restored files {restored_files}")  # donotcheckin
+        files_to_keep |= restored_files
+
     # Delete non-dotfiles not in the checkout
+    # Recursively traverse work_dir to find files/directories to delete
     try:
+        work_dir_str = str(work_dir)
+        # Traverse bottom-up (post-order) so we can delete directories after their contents
+        for root, dirs, files in os.walk(work_dir_str, topdown=False):
+            root_path = Path(root)
+
+            # Handle files
+            for file_name in files:
+                file_path = root_path / file_name
+                rel_path = file_path.relative_to(work_dir)
+
+                # Skip dotfiles
+                if rel_path.parts[0].startswith("."):
+                    continue
+
+                # Skip files that are in the checkout
+                if str(rel_path) in files_to_keep:
+                    continue
+
+                # Delete this file
+                print(f" - Deleting {rel_path}...")
+                file_path.unlink()
+
+            # Handle directories (processed after files in bottom-up traversal)
+            if root_path != work_dir:  # Don't delete the work_dir itself
+                rel_path = root_path.relative_to(work_dir)
+
+                # Skip dotdirectories
+                if rel_path.parts[0].startswith("."):
+                    continue
+
+                # Try to delete directory (will only succeed if empty)
+                # This ensures we don't delete directories that contain files we want to keep
+                try:
+                    root_path.rmdir()
+                    print(f" - Deleting {rel_path}...")
+                except OSError:
+                    # Directory not empty, skip (contains files that should be kept)
+                    pass
+
+        # Handle top-level items that might not be directories
         for item in work_dir.iterdir():
             # Skip dotfiles and dotdirectories
             if item.name.startswith("."):
                 continue
-            # Skip files that are in the checkout
-            if item.name in files_to_keep:
+
+            # Get relative path for comparison
+            rel_path = item.relative_to(work_dir)
+
+            # Skip items that are in the checkout
+            if str(rel_path) in files_to_keep:
                 continue
-            # Delete this item
-            print(f" - Deleting {item}...")
+
+            # Delete this item (shouldn't happen often since walk covers most cases)
             if item.is_file():
+                print(f" - Deleting {rel_path}...")
                 item.unlink()
-            else:
-                shutil.rmtree(item)
+            elif item.is_dir():
+                # Only delete if directory is empty
+                try:
+                    item.rmdir()
+                    print(f" - Deleting {rel_path}...")
+                except OSError:
+                    # Directory not empty, skip (contains files that should be kept)
+                    pass
     except Exception as e:
         print(f"Error cleaning working directory: {e}", file=sys.stderr)
         return False
-
-    # Restore all artifact files to current directory
-    for tree_unit in tree_units:
-        print(f" -> Restoring files from {tree_unit}...")
-        if not registry.restore_files(
-            tree_unit, work_dir, include_internal=tree_unit == unit_id
-        ):
-            return False
 
     # Update current unit
     if not LaforgeUnit().save(unit_id, work_dir):
