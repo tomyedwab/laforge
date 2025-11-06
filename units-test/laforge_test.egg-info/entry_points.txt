@@ -1,0 +1,2 @@
+[console_scripts]
+laforge-test = laforge_test.main:main

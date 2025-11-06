@@ -1,0 +1,156 @@
+- action: CREATE
+  id: project-setup
+  title: Python project structure, dependencies, and configuration setup
+  acceptance_criteria:
+    - Initialize Python project with proper directory structure
+    - Create requirements.txt with all dependencies (playwright, openai, pyyaml, pillow)
+    - Create config.yaml configuration file with start URL, LLM provider settings, browser settings, exploration limits, and output directory settings
+    - Set up output directory structure (events, screenshots)
+    - Basic project README with setup instructions
+  dependencies: []
+
+- action: CREATE
+  id: browser-controller
+  title: Playwright-based browser controller for page navigation
+  acceptance_criteria:
+    - Implement BrowserController class that initializes Playwright browser in headless mode
+    - Provides page loading with proper wait conditions
+    - Implements navigation methods (goto, back, reload)
+    - Handles browser lifecycle (startup, shutdown)
+    - Includes error handling and retry logic for network issues
+    - Waits for network idle before considering page loaded
+    - Unit tests for basic navigation scenarios
+  dependencies:
+    - project-setup
+
+- action: CREATE
+  id: event-capture
+  title: Network request interception to capture analytics events
+  acceptance_criteria:
+    - Implement EventCapture class that sets up Playwright network request interception
+    - Filters requests matching pattern _analytics/publish_event?type=EVENT_TYPE
+    - Extracts event type from URL parameters
+    - Parses request body to extract event metadata (event field)
+    - Returns structured event data with timestamp
+    - Handles malformed requests gracefully
+    - Unit tests with mock network requests
+  dependencies:
+    - project-setup
+    - browser-controller
+
+- action: CREATE
+  id: element-identifier
+  title: DOM analysis to identify interactive elements on pages
+  acceptance_criteria:
+    - Implement ElementIdentifier class that extracts all interactive elements (buttons, links, inputs, selects, clickable divs)
+    - Generates descriptions for each element (text content, aria-label, role, tag name)
+    - Captures element bounding boxes and coordinates
+    - Filters out hidden, disabled, or duplicate elements
+    - Returns list of interactive elements with metadata
+    - Handles dynamic DOM changes
+    - Unit tests with mock DOM structures
+  dependencies:
+    - project-setup
+    - browser-controller
+
+- action: CREATE
+  id: screenshot-capture
+  title: Screenshot capture functionality integrated with browser controller
+  acceptance_criteria:
+    - Extend BrowserController or create ScreenshotCapture class that captures full-page screenshots
+    - Generates filenames with timestamp and URL slug
+    - Saves screenshots to configured directory
+    - Optionally highlights specific elements on screenshots
+    - Returns path to saved screenshot
+    - Handle viewport scrolling for full-page captures
+    - Unit tests for screenshot generation
+  dependencies:
+    - project-setup
+    - browser-controller
+
+- action: CREATE
+  id: data-collector
+  title: JSON data storage and file organization
+  acceptance_criteria:
+    - Implement DataCollector class that accepts event data with all required fields (event type, metadata, URLs, element description, screenshot path, element location, timestamp)
+    - Writes events to JSONL file (one event per line)
+    - Creates organized directory structure
+    - Handles file I/O errors gracefully
+    - Provides method to flush data to disk
+    - Define clear data schema matching the plan
+    - Unit tests for data writing and schema validation
+  dependencies:
+    - project-setup
+
+- action: CREATE
+  id: llm-navigator
+  title: OpenAI LLM integration for intelligent navigation
+  acceptance_criteria:
+    - Implement LLMNavigator class that integrates with OpenAI API
+    - Creates prompt templates for element selection
+    - Sends page context plus element list to LLM
+    - Parses LLM response to select next element to interact with
+    - Determines if interaction will trigger navigation
+    - Decides when to explore new pages vs continue on current page
+    - Handles LLM API errors and rate limits (exponential backoff)
+    - Respects depth limits to prevent infinite exploration
+    - Configuration for LLM parameters (model, temperature, API key)
+    - Unit tests with mocked LLM responses
+  dependencies:
+    - project-setup
+
+- action: CREATE
+  id: navigation-stack
+  title: Stack management for page exploration state
+  acceptance_criteria:
+    - Implement NavigationStack class that maintains stack/queue of pages to explore
+    - Tracks navigation history (previous page URLs)
+    - Records which elements have been interacted with per page
+    - Prevents duplicate exploration of same page+element combinations
+    - Provides methods to push/pop pages
+    - Tracks current depth in navigation tree
+    - Enforces max depth and max pages limits
+    - Unit tests for stack operations and deduplication
+  dependencies:
+    - project-setup
+
+- action: CREATE
+  id: element-interaction
+  title: Safe element interaction handling
+  acceptance_criteria:
+    - Implement element interaction logic that safely interacts with different element types (click, type, select)
+    - Validates elements exist and are visible before interaction
+    - Waits for potential navigation after interaction
+    - Captures events that occur before navigation
+    - Handles popups, modals, and alerts
+    - Implements proper waiting and retry logic
+    - Handles interaction failures gracefully
+    - Integration with BrowserController and EventCapture
+    - Unit tests for various interaction scenarios
+  dependencies:
+    - project-setup
+    - browser-controller
+    - element-identifier
+
+- action: CREATE
+  id: main-orchestration
+  title: Main entry point that orchestrates all components
+  acceptance_criteria:
+    - Implement main script that loads configuration from YAML file
+    - Initializes all components (browser, event capture, LLM, etc.)
+    - Implements main exploration loop (pop page, load, screenshot, identify elements, LLM selection, interact, capture events, push new pages)
+    - Sets up logging and progress reporting
+    - Handles graceful shutdown on interruption (Ctrl+C)
+    - Comprehensive error handling throughout
+    - Command-line interface for running the script
+    - Integration tests with all components
+  dependencies:
+    - project-setup
+    - browser-controller
+    - event-capture
+    - element-identifier
+    - screenshot-capture
+    - data-collector
+    - llm-navigator
+    - navigation-stack
+    - element-interaction

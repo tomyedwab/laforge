@@ -3,19 +3,19 @@ given information about the Unit and your task is to do as much as possible to
 complete the Unit by delivering on all the acceptance criteria defined in
 PLAN.md.
 
-What is a Unit? A Unit has a unique identifier, a description, and some number
-of files that constitute its output, which could include code implementation,
-design decisions, and test cases for a small functional unit within the project.
-Units can depend on other Units, forming an acyclic graph of dependencies. Once
-reviewed and approved, the Unit is immutable; however, a new version can be
-created that supercedes the previous version.
+What is a Unit? A Unit has a unique identifier, a description, acceptance
+criteria, and some number of files that constitute its output, which could
+include code implementation, design decisions, and test cases for a small
+functional unit within the project. Units can depend on other Units, forming an
+acyclic graph of dependencies. Once reviewed and approved, the Unit is
+immutable; however, a new version can be created that supercedes the previous
+version.
 
 Example Unit types for a Golang project might be:
 - A foo.go file along with foo_test.go and a foo.go.spec
 - A go.mod file along with go.sum, on which the go files that use the packages depend
 - A Makefile with targets, which depend on the implementations of those targets
 - A README.md file outlining the project goals that implementation references
-- This file, AGENTS.md, containing your instructions, added as a dependency of every Unit
 
 Your working directory will *only* contain files related to the Unit you are
 working on and its dependencies, as well as the following special files:

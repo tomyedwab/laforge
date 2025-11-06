@@ -43,6 +43,7 @@ import os
 import shutil
 import sqlite3
 import sys
+import yaml
 from datetime import datetime
 from pathlib import Path
 from typing import Dict, List, Optional
@@ -499,6 +500,193 @@ def print_unit_tree(
     return ret
 
 
+def validate_yaml_operations(operations: List[Dict], db: LaforgeDB) -> tuple[bool, str]:
+    """Validate YAML operations before execution.
+
+    Returns (success, error_message)
+    """
+    if not isinstance(operations, list):
+        return False, "YAML file must contain a list of operations"
+
+    # Track units that will be created in this batch
+    units_to_create = set()
+
+    # First pass: collect all units that will be created
+    for i, op in enumerate(operations):
+        if not isinstance(op, dict):
+            return False, f"Operation {i} is not a valid dictionary"
+
+        if "action" not in op:
+            return False, f"Operation {i} missing 'action' field"
+
+        action = op["action"]
+
+        if action == "CREATE":
+            if "id" not in op:
+                return False, f"CREATE operation {i} missing 'id' field"
+            if "title" not in op:
+                return False, f"CREATE operation {i} missing 'title' field"
+            if "acceptance_criteria" not in op:
+                return False, f"CREATE operation {i} missing 'acceptance_criteria' field"
+
+            unit_id = op["id"]
+
+            # Check if unit already exists in database
+            existing = db.get_unit(unit_id)
+            if existing:
+                return False, f"Unit '{unit_id}' already exists in database"
+
+            # Check for duplicates in the same file
+            if unit_id in units_to_create:
+                return False, f"Duplicate CREATE operation for unit '{unit_id}'"
+
+            units_to_create.add(unit_id)
+
+            # Validate acceptance_criteria is a list
+            if not isinstance(op["acceptance_criteria"], list):
+                return False, f"Unit '{unit_id}': acceptance_criteria must be a list"
+
+            # Validate dependencies if present
+            if "dependencies" in op:
+                if not isinstance(op["dependencies"], list):
+                    return False, f"Unit '{unit_id}': dependencies must be a list"
+
+        elif action == "ADD_DEPENDENCIES":
+            if "id" not in op:
+                return False, f"ADD_DEPENDENCIES operation {i} missing 'id' field"
+            if "dependencies" not in op:
+                return False, f"ADD_DEPENDENCIES operation {i} missing 'dependencies' field"
+            if not isinstance(op["dependencies"], list):
+                return False, f"ADD_DEPENDENCIES operation {i}: dependencies must be a list"
+
+        elif action == "REMOVE_DEPENDENCIES":
+            if "id" not in op:
+                return False, f"REMOVE_DEPENDENCIES operation {i} missing 'id' field"
+            if "dependencies" not in op:
+                return False, f"REMOVE_DEPENDENCIES operation {i} missing 'dependencies' field"
+            if not isinstance(op["dependencies"], list):
+                return False, f"REMOVE_DEPENDENCIES operation {i}: dependencies must be a list"
+
+        else:
+            return False, f"Unknown action '{action}' in operation {i}"
+
+    # Second pass: validate all referenced units exist or will be created
+    for i, op in enumerate(operations):
+        action = op["action"]
+
+        if action == "CREATE":
+            unit_id = op["id"]
+            dependencies = op.get("dependencies", [])
+
+            for dep_id in dependencies:
+                # Check if dependency exists in DB or will be created
+                if dep_id not in units_to_create and not db.get_unit(dep_id):
+                    return False, f"Unit '{unit_id}' depends on '{dep_id}' which does not exist"
+
+        elif action in ["ADD_DEPENDENCIES", "REMOVE_DEPENDENCIES"]:
+            unit_id = op["id"]
+
+            # Check if the unit exists or will be created
+            if unit_id not in units_to_create and not db.get_unit(unit_id):
+                return False, f"{action} operation for unit '{unit_id}' which does not exist"
+
+            # For ADD_DEPENDENCIES, validate dependency units exist
+            if action == "ADD_DEPENDENCIES":
+                for dep_id in op["dependencies"]:
+                    if dep_id not in units_to_create and not db.get_unit(dep_id):
+                        return False, f"Cannot add dependency '{dep_id}' to unit '{unit_id}': dependency does not exist"
+
+    return True, ""
+
+
+def execute_yaml_operations(operations: List[Dict], db: LaforgeDB, registry: LaforgeRegistry) -> bool:
+    """Execute validated YAML operations.
+
+    Assumes operations have already been validated.
+    """
+    for op in operations:
+        action = op["action"]
+
+        if action == "CREATE":
+            unit_id = op["id"]
+            title = op["title"]
+            acceptance_criteria = op["acceptance_criteria"]
+            dependencies = op.get("dependencies", [])
+
+            # Format acceptance criteria as a string
+            criteria_text = "\n".join(f"- {criterion}" for criterion in acceptance_criteria)
+
+            # Create the unit
+            db.create_unit(unit_id, title)
+            print(f"Created unit: '{unit_id}'")
+
+            # Add default dependencies
+            for default_unit_id in LaforgeConfig().get_default_units():
+                if not db.add_dependency(unit_id, default_unit_id):
+                    print(
+                        f"Warning: Failed to add default dependency '{default_unit_id}' to unit '{unit_id}'",
+                        file=sys.stderr,
+                    )
+
+            # Add specified dependencies
+            for dep_id in dependencies:
+                if not db.add_dependency(unit_id, dep_id):
+                    print(
+                        f"Warning: Failed to add dependency '{dep_id}' to unit '{unit_id}'",
+                        file=sys.stderr,
+                    )
+
+            # Create PLAN.md file
+            deps = db.get_unit_dependencies(unit_id)
+            total_items = len(deps)
+            unit_dependencies = "".join(
+                [
+                    print_unit_tree(db, dep["unit_id"], "", i == total_items - 1)
+                    for i, dep in enumerate(deps)
+                ]
+            )
+
+            registry.store_file(
+                unit_id,
+                "PLAN.md",
+                PLAN_TEMPLATE.format(
+                    unit_id=unit_id,
+                    description=title,
+                    acceptance_criteria=criteria_text,
+                    unit_dependencies=unit_dependencies,
+                ),
+            )
+            db.associate_file(unit_id, "PLAN.md")
+
+        elif action == "ADD_DEPENDENCIES":
+            unit_id = op["id"]
+            dependencies = op["dependencies"]
+
+            for dep_id in dependencies:
+                if db.add_dependency(unit_id, dep_id):
+                    print(f"Added dependency '{dep_id}' to unit '{unit_id}'")
+                else:
+                    print(
+                        f"Warning: Failed to add dependency '{dep_id}' to unit '{unit_id}'",
+                        file=sys.stderr,
+                    )
+
+        elif action == "REMOVE_DEPENDENCIES":
+            unit_id = op["id"]
+            dependencies = op["dependencies"]
+
+            for dep_id in dependencies:
+                if db.remove_dependency(unit_id, dep_id):
+                    print(f"Removed dependency '{dep_id}' from unit '{unit_id}'")
+                else:
+                    print(
+                        f"Warning: Failed to remove dependency '{dep_id}' from unit '{unit_id}'",
+                        file=sys.stderr,
+                    )
+
+    return True
+
+
 def cmd_init(args: List[str]):
     """laforge init - Create root Unit"""
     config = LaforgeConfig().load()
@@ -883,12 +1071,92 @@ def cmd_tree(args: List[str]):
     return True
 
 
+def cmd_apply(args: List[str]):
+    """laforge apply <yaml_file> [--dry-run] - Apply operations from a YAML file"""
+    if len(args) < 1:
+        print("Usage: laforge apply <yaml_file> [--dry-run]", file=sys.stderr)
+        return False
+
+    # Parse arguments
+    dry_run = "--dry-run" in args
+    yaml_file_args = [arg for arg in args if arg != "--dry-run"]
+
+    if len(yaml_file_args) < 1:
+        print("Usage: laforge apply <yaml_file> [--dry-run]", file=sys.stderr)
+        return False
+
+    yaml_file = Path(yaml_file_args[0])
+
+    if not yaml_file.exists():
+        print(f"Error: File '{yaml_file}' not found", file=sys.stderr)
+        return False
+
+    # Get registry
+    registry_path = LaforgeConfig().get_registry_path()
+    if not registry_path:
+        print("Error: artifact_registry not configured", file=sys.stderr)
+        return False
+
+    db = LaforgeDB(str(registry_path / "laforge.db"))
+    registry = LaforgeRegistry(registry_path)
+
+    if not registry.ensure_exists():
+        return False
+
+    # Read and parse YAML file
+    try:
+        with open(yaml_file, "r") as f:
+            operations = yaml.safe_load(f)
+    except yaml.YAMLError as e:
+        print(f"Error parsing YAML file: {e}", file=sys.stderr)
+        return False
+    except Exception as e:
+        print(f"Error reading file: {e}", file=sys.stderr)
+        return False
+
+    # Validate operations BEFORE applying any
+    if dry_run:
+        print(f"[DRY RUN] Validating operations from '{yaml_file}'...")
+    else:
+        print(f"Validating operations from '{yaml_file}'...")
+
+    valid, error_msg = validate_yaml_operations(operations, db)
+    if not valid:
+        print(f"Validation failed: {error_msg}", file=sys.stderr)
+        return False
+
+    print(f"Validation successful. Found {len(operations)} operation(s).")
+
+    # Print summary of operations
+    if dry_run:
+        create_count = sum(1 for op in operations if op.get("action") == "CREATE")
+        add_dep_count = sum(1 for op in operations if op.get("action") == "ADD_DEPENDENCIES")
+        rm_dep_count = sum(1 for op in operations if op.get("action") == "REMOVE_DEPENDENCIES")
+
+        print(f"  - CREATE: {create_count}")
+        print(f"  - ADD_DEPENDENCIES: {add_dep_count}")
+        print(f"  - REMOVE_DEPENDENCIES: {rm_dep_count}")
+        print()
+        print("[DRY RUN] No changes were made to the database.")
+        return True
+
+    print("Applying operations...")
+
+    # Execute operations
+    if not execute_yaml_operations(operations, db, registry):
+        print("Error: Failed to execute operations", file=sys.stderr)
+        return False
+
+    print(f"Successfully applied all operations from '{yaml_file}'")
+    return True
+
+
 def main():
     """Main entry point"""
     if len(sys.argv) < 2:
         print("Usage: laforge <command> [args...]", file=sys.stderr)
         print(
-            "Commands: init, create, add, add-dep, rm-dep, checkout, tree",
+            "Commands: init, create, add, add-dep, rm-dep, checkout, tree, apply",
             file=sys.stderr,
         )
         sys.exit(1)
@@ -904,6 +1172,7 @@ def main():
         "rm-dep": cmd_rm_dep,
         "checkout": cmd_checkout,
         "tree": cmd_tree,
+        "apply": cmd_apply,
     }
 
     if command not in commands:

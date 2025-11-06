@@ -8,6 +8,9 @@ version = "0.1.0"
 description = "A utility for managing Units and dependencies in a project with artifact registry"
 readme = "README.md"
 requires-python = ">=3.7"
+dependencies = [
+    "PyYAML>=5.1",
+]
 authors = [
     {name = "Tom Yedwab", email = "sincerelyyourstom@gmail.com"}
 ]
