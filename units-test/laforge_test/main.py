@@ -30,6 +30,9 @@ laforge add-dep <unit_id> - Adds a dependency to the current Unit with the given
 laforge rm-dep <unit_id> - Removes a dependency from the current Unit with the given unit ID.
 laforge checkout <unit_id> - Updates local working directory to the contents of a given unit by copying in all files from all the dependencies.
 laforge tree - Prints the current Unit and all its dependencies in a tree format.
+laforge finalize [unit_id] - Marks a Unit as finalized (immutable). If no unit_id is provided, finalizes the current Unit.
+laforge apply <yaml_file> [--dry-run] - Applies operations from a YAML file to create or modify units.
+laforge next - Lists units that are ready to work on (not finalized, all dependencies finalized).
 
 The artifact registry is a directory with subdirectories for each unit, e.g.
 /path/to/artifact_registry/unit_id.
@@ -479,9 +482,10 @@ def print_unit_tree(
     if not unit:
         return ""
 
-    # Print current unit
+    # Print current unit with status indicator
     connector = "└── " if is_last else "├── "
-    ret = f"{prefix}{connector}{unit['unit_id']}: {unit['description']}\n"
+    status_emoji = "✅" if unit['finalized'] else "🚧"
+    ret = f"{prefix}{connector}{status_emoji} {unit['unit_id']}: {unit['description']}\n"
 
     # Get units that this unit depends on
     dependencies = db.get_unit_dependencies(unit_id)
@@ -500,77 +504,89 @@ def print_unit_tree(
     return ret
 
 
-def validate_yaml_operations(operations: List[Dict], db: LaforgeDB) -> tuple[bool, str]:
+def validate_yaml_operations(operations: List[Dict], db: LaforgeDB) -> tuple[bool, str, dict]:
     """Validate YAML operations before execution.
 
-    Returns (success, error_message)
+    Returns (success, error_message, id_remapping)
     """
     if not isinstance(operations, list):
-        return False, "YAML file must contain a list of operations"
+        return False, "YAML file must contain a list of operations", {}
 
     # Track units that will be created in this batch
     units_to_create = set()
+    # Track ID remappings (original_id -> new_id)
+    id_remapping = {}
 
     # First pass: collect all units that will be created
     for i, op in enumerate(operations):
         if not isinstance(op, dict):
-            return False, f"Operation {i} is not a valid dictionary"
+            return False, f"Operation {i} is not a valid dictionary", {}
 
         if "action" not in op:
-            return False, f"Operation {i} missing 'action' field"
+            return False, f"Operation {i} missing 'action' field", {}
 
         action = op["action"]
 
         if action == "CREATE":
             if "id" not in op:
-                return False, f"CREATE operation {i} missing 'id' field"
+                return False, f"CREATE operation {i} missing 'id' field", {}
             if "title" not in op:
-                return False, f"CREATE operation {i} missing 'title' field"
+                return False, f"CREATE operation {i} missing 'title' field", {}
             if "acceptance_criteria" not in op:
-                return False, f"CREATE operation {i} missing 'acceptance_criteria' field"
+                return False, f"CREATE operation {i} missing 'acceptance_criteria' field", {}
 
-            unit_id = op["id"]
+            original_unit_id = op["id"]
+            unit_id = original_unit_id
 
-            # Check if unit already exists in database
+            # Check if unit already exists in database - if so, remap to available ID
             existing = db.get_unit(unit_id)
             if existing:
-                return False, f"Unit '{unit_id}' already exists in database"
+                version = 2
+                while True:
+                    new_unit_id = f"{original_unit_id}-v{version}"
+                    if not db.get_unit(new_unit_id) and new_unit_id not in units_to_create:
+                        unit_id = new_unit_id
+                        id_remapping[original_unit_id] = new_unit_id
+                        op["id"] = new_unit_id
+                        print(f"Unit '{original_unit_id}' already exists, remapping to '{new_unit_id}'")
+                        break
+                    version += 1
 
             # Check for duplicates in the same file
             if unit_id in units_to_create:
-                return False, f"Duplicate CREATE operation for unit '{unit_id}'"
+                return False, f"Duplicate CREATE operation for unit '{unit_id}'", {}
 
             units_to_create.add(unit_id)
 
             # Validate acceptance_criteria is a list
             if not isinstance(op["acceptance_criteria"], list):
-                return False, f"Unit '{unit_id}': acceptance_criteria must be a list"
+                return False, f"Unit '{unit_id}': acceptance_criteria must be a list", {}
 
             # Validate dependencies if present
             if "dependencies" in op:
                 if not isinstance(op["dependencies"], list):
-                    return False, f"Unit '{unit_id}': dependencies must be a list"
+                    return False, f"Unit '{unit_id}': dependencies must be a list", {}
 
         elif action == "ADD_DEPENDENCIES":
             if "id" not in op:
-                return False, f"ADD_DEPENDENCIES operation {i} missing 'id' field"
+                return False, f"ADD_DEPENDENCIES operation {i} missing 'id' field", {}
             if "dependencies" not in op:
-                return False, f"ADD_DEPENDENCIES operation {i} missing 'dependencies' field"
+                return False, f"ADD_DEPENDENCIES operation {i} missing 'dependencies' field", {}
             if not isinstance(op["dependencies"], list):
-                return False, f"ADD_DEPENDENCIES operation {i}: dependencies must be a list"
+                return False, f"ADD_DEPENDENCIES operation {i}: dependencies must be a list", {}
 
         elif action == "REMOVE_DEPENDENCIES":
             if "id" not in op:
-                return False, f"REMOVE_DEPENDENCIES operation {i} missing 'id' field"
+                return False, f"REMOVE_DEPENDENCIES operation {i} missing 'id' field", {}
             if "dependencies" not in op:
-                return False, f"REMOVE_DEPENDENCIES operation {i} missing 'dependencies' field"
+                return False, f"REMOVE_DEPENDENCIES operation {i} missing 'dependencies' field", {}
             if not isinstance(op["dependencies"], list):
-                return False, f"REMOVE_DEPENDENCIES operation {i}: dependencies must be a list"
+                return False, f"REMOVE_DEPENDENCIES operation {i}: dependencies must be a list", {}
 
         else:
-            return False, f"Unknown action '{action}' in operation {i}"
+            return False, f"Unknown action '{action}' in operation {i}", {}
 
-    # Second pass: validate all referenced units exist or will be created
+    # Second pass: apply ID remapping to dependencies and validate all referenced units exist or will be created
     for i, op in enumerate(operations):
         action = op["action"]
 
@@ -578,25 +594,49 @@ def validate_yaml_operations(operations: List[Dict], db: LaforgeDB) -> tuple[boo
             unit_id = op["id"]
             dependencies = op.get("dependencies", [])
 
+            # Apply ID remapping to dependencies
+            remapped_dependencies = []
             for dep_id in dependencies:
+                remapped_dep_id = id_remapping.get(dep_id, dep_id)
+                remapped_dependencies.append(remapped_dep_id)
+
                 # Check if dependency exists in DB or will be created
-                if dep_id not in units_to_create and not db.get_unit(dep_id):
-                    return False, f"Unit '{unit_id}' depends on '{dep_id}' which does not exist"
+                if remapped_dep_id not in units_to_create and not db.get_unit(remapped_dep_id):
+                    return False, f"Unit '{unit_id}' depends on '{remapped_dep_id}' which does not exist", {}
+
+            # Update dependencies with remapped IDs
+            if dependencies:
+                op["dependencies"] = remapped_dependencies
 
         elif action in ["ADD_DEPENDENCIES", "REMOVE_DEPENDENCIES"]:
-            unit_id = op["id"]
+            original_unit_id = op["id"]
+            unit_id = id_remapping.get(original_unit_id, original_unit_id)
+
+            # Update the operation's ID if it was remapped
+            if original_unit_id in id_remapping:
+                op["id"] = unit_id
 
             # Check if the unit exists or will be created
             if unit_id not in units_to_create and not db.get_unit(unit_id):
-                return False, f"{action} operation for unit '{unit_id}' which does not exist"
+                return False, f"{action} operation for unit '{unit_id}' which does not exist", {}
 
-            # For ADD_DEPENDENCIES, validate dependency units exist
-            if action == "ADD_DEPENDENCIES":
-                for dep_id in op["dependencies"]:
-                    if dep_id not in units_to_create and not db.get_unit(dep_id):
-                        return False, f"Cannot add dependency '{dep_id}' to unit '{unit_id}': dependency does not exist"
+            # Apply ID remapping to dependencies and validate
+            dependencies = op.get("dependencies", [])
+            remapped_dependencies = []
+            for dep_id in dependencies:
+                remapped_dep_id = id_remapping.get(dep_id, dep_id)
+                remapped_dependencies.append(remapped_dep_id)
 
-    return True, ""
+                # For ADD_DEPENDENCIES, validate dependency units exist
+                if action == "ADD_DEPENDENCIES":
+                    if remapped_dep_id not in units_to_create and not db.get_unit(remapped_dep_id):
+                        return False, f"Cannot add dependency '{remapped_dep_id}' to unit '{unit_id}': dependency does not exist", {}
+
+            # Update dependencies with remapped IDs
+            if dependencies:
+                op["dependencies"] = remapped_dependencies
+
+    return True, "", id_remapping
 
 
 def execute_yaml_operations(operations: List[Dict], db: LaforgeDB, registry: LaforgeRegistry) -> bool:
@@ -1051,8 +1091,9 @@ def cmd_tree(args: List[str]):
         print(f"Error: Unit {current_unit_id} not found", file=sys.stderr)
         return False
 
-    # Print current unit and its tree
-    print(f"{current_unit_id}: {current_unit['description']}")
+    # Print current unit and its tree with status
+    status_emoji = "✅" if current_unit['finalized'] else "🚧"
+    print(f"{status_emoji} {current_unit_id}: {current_unit['description']}")
 
     # Get dependencies
     dependencies = db.get_unit_dependencies(current_unit_id)
@@ -1067,6 +1108,115 @@ def cmd_tree(args: List[str]):
                 "\n"
             )
         )
+
+    return True
+
+
+def cmd_finalize(args: List[str]):
+    """laforge finalize [unit_id] - Mark a unit as finalized"""
+    # Get registry
+    registry_path = LaforgeConfig().get_registry_path()
+    if not registry_path:
+        print("Error: artifact_registry not configured", file=sys.stderr)
+        return False
+
+    db = LaforgeDB(str(registry_path / "laforge.db"))
+
+    # Determine which unit to finalize
+    if len(args) >= 1:
+        unit_id = args[0]
+    else:
+        # Use current unit
+        unit_info = LaforgeUnit().load()
+        if not unit_info:
+            print("Error: No current unit. Run 'laforge init' first or provide a unit_id.", file=sys.stderr)
+            return False
+        unit_id = unit_info["unit_id"]
+
+    # Verify unit exists
+    unit = db.get_unit(unit_id)
+    if not unit:
+        print(f"Error: Unit '{unit_id}' not found", file=sys.stderr)
+        return False
+
+    # Check if already finalized
+    if unit["finalized"]:
+        print(f"Unit '{unit_id}' is already finalized", file=sys.stderr)
+        return False
+
+    # Mark as finalized
+    conn = db.get_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute(
+            "UPDATE units SET finalized = 1 WHERE unit_id = ?",
+            (unit_id,)
+        )
+        conn.commit()
+        print(f"Finalized unit: '{unit_id}'")
+        return True
+    except Exception as e:
+        print(f"Error finalizing unit: {e}", file=sys.stderr)
+        return False
+    finally:
+        conn.close()
+
+
+def cmd_next(args: List[str]):
+    """laforge next - List units that are ready to work on (not finalized, all dependencies finalized)"""
+    # Get registry
+    registry_path = LaforgeConfig().get_registry_path()
+    if not registry_path:
+        print("Error: artifact_registry not configured", file=sys.stderr)
+        return False
+
+    db = LaforgeDB(str(registry_path / "laforge.db"))
+
+    # Get all non-finalized units
+    conn = db.get_connection()
+    cursor = conn.cursor()
+    cursor.execute(
+        """
+        SELECT unit_id, description, created_at
+        FROM units
+        WHERE finalized = 0
+        ORDER BY created_at
+        """
+    )
+    rows = cursor.fetchall()
+    conn.close()
+
+    ready_units = []
+
+    for row in rows:
+        unit_id = row[0]
+        description = row[1]
+        created_at = row[2]
+
+        # Check if all dependencies are finalized
+        dependencies = db.get_unit_dependencies(unit_id)
+        all_deps_finalized = True
+
+        for dep in dependencies:
+            dep_unit = db.get_unit(dep["unit_id"])
+            if dep_unit and not dep_unit["finalized"]:
+                all_deps_finalized = False
+                break
+
+        if all_deps_finalized:
+            ready_units.append({
+                "unit_id": unit_id,
+                "description": description,
+                "created_at": created_at
+            })
+
+    if not ready_units:
+        print("No units are ready to work on.")
+        return True
+
+    print(f"Found {len(ready_units)} unit(s) ready to work on:\n")
+    for unit in ready_units:
+        print(f"  {unit['unit_id']}: {unit['description']}")
 
     return True
 
@@ -1120,23 +1270,52 @@ def cmd_apply(args: List[str]):
     else:
         print(f"Validating operations from '{yaml_file}'...")
 
-    valid, error_msg = validate_yaml_operations(operations, db)
+    valid, error_msg, id_remapping = validate_yaml_operations(operations, db)
     if not valid:
         print(f"Validation failed: {error_msg}", file=sys.stderr)
         return False
 
     print(f"Validation successful. Found {len(operations)} operation(s).")
+    print()
 
-    # Print summary of operations
-    if dry_run:
-        create_count = sum(1 for op in operations if op.get("action") == "CREATE")
-        add_dep_count = sum(1 for op in operations if op.get("action") == "ADD_DEPENDENCIES")
-        rm_dep_count = sum(1 for op in operations if op.get("action") == "REMOVE_DEPENDENCIES")
+    # Print detailed summary of operations
+    for i, op in enumerate(operations):
+        action = op.get("action")
+        unit_id = op.get("id")
 
-        print(f"  - CREATE: {create_count}")
-        print(f"  - ADD_DEPENDENCIES: {add_dep_count}")
-        print(f"  - REMOVE_DEPENDENCIES: {rm_dep_count}")
+        if action == "CREATE":
+            title = op.get("title", "")
+            dependencies = op.get("dependencies", [])
+
+            # Check if this unit was remapped
+            original_id = None
+            for orig, new in id_remapping.items():
+                if new == unit_id:
+                    original_id = orig
+                    break
+
+            if original_id:
+                print(f"{i+1}. CREATE '{unit_id}' (remapped from '{original_id}')")
+            else:
+                print(f"{i+1}. CREATE '{unit_id}'")
+
+            print(f"   Title: {title}")
+            if dependencies:
+                print(f"   Dependencies: {', '.join(dependencies)}")
+
+        elif action == "ADD_DEPENDENCIES":
+            dependencies = op.get("dependencies", [])
+            print(f"{i+1}. ADD_DEPENDENCIES to '{unit_id}'")
+            print(f"   Adding: {', '.join(dependencies)}")
+
+        elif action == "REMOVE_DEPENDENCIES":
+            dependencies = op.get("dependencies", [])
+            print(f"{i+1}. REMOVE_DEPENDENCIES from '{unit_id}'")
+            print(f"   Removing: {', '.join(dependencies)}")
+
         print()
+
+    if dry_run:
         print("[DRY RUN] No changes were made to the database.")
         return True
 
@@ -1156,7 +1335,7 @@ def main():
     if len(sys.argv) < 2:
         print("Usage: laforge <command> [args...]", file=sys.stderr)
         print(
-            "Commands: init, create, add, add-dep, rm-dep, checkout, tree, apply",
+            "Commands: init, create, add, add-dep, rm-dep, checkout, tree, finalize, apply, next",
             file=sys.stderr,
         )
         sys.exit(1)
@@ -1172,7 +1351,9 @@ def main():
         "rm-dep": cmd_rm_dep,
         "checkout": cmd_checkout,
         "tree": cmd_tree,
+        "finalize": cmd_finalize,
         "apply": cmd_apply,
+        "next": cmd_next,
     }
 
     if command not in commands:
