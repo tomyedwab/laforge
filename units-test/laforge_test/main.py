@@ -54,6 +54,12 @@ from typing import Dict, List, Optional
 
 import yaml
 
+INTERNAL_FILES = [
+    "plan.md",
+    "review.md",
+    "wants.md",
+]
+
 PLAN_TEMPLATE = """
 # Plan file for unit `{unit_id}`
 
@@ -333,7 +339,10 @@ class LaforgeDB:
         return set(row[0] for row in rows)
 
     def get_all_files(
-        self, unit_id: str, visited: Optional[set[str]] = None
+        self,
+        unit_id: str,
+        visited: Optional[set[str]] = None,
+        include_internal=True,
     ) -> tuple[set[str], set[str]]:
         """Get all artifacts for a unit and all its dependencies recursively"""
         if visited is None:
@@ -343,13 +352,21 @@ class LaforgeDB:
             return set(), set()
 
         visited.add(unit_id)
-        files = self.get_unit_files(unit_id)
+        files = set(
+            [
+                file_path
+                for file_path in self.get_unit_files(unit_id)
+                if include_internal or file_path.lower() not in INTERNAL_FILES
+            ]
+        )
         units = set([unit_id])
 
         # Recursively get artifacts from dependencies
         dependencies = self.get_unit_dependencies(unit_id)
         for dep in dependencies:
-            dep_files, dep_units = self.get_all_files(dep["unit_id"], visited)
+            dep_files, dep_units = self.get_all_files(
+                dep["unit_id"], visited, include_internal=False
+            )
             files.update(dep_files)
             units.update(dep_units)
 
@@ -540,12 +557,7 @@ class LaforgeRegistry:
                     if (
                         not include_internal
                         and is_at_root
-                        and file_rel_path.name.lower()
-                        in [
-                            "plan.md",
-                            "review.md",
-                            "wants.md",
-                        ]
+                        and file_rel_path.name.lower() in INTERNAL_FILES
                     ):
                         print(f"Skipping {file_rel_path} in {unit_id}")  # donotcheckin
                         continue
@@ -1393,7 +1405,7 @@ def cmd_diff(args: List[str]):
     unit_files = db.get_unit_files(current_unit_id)
 
     # Get all files from dependencies to exclude them from new file detection
-    all_files, all_units = db.get_all_files(current_unit_id)
+    all_files, _ = db.get_all_files(current_unit_id)
     dependency_files = all_files - unit_files  # Files from dependencies only
 
     # Track file changes
@@ -1407,7 +1419,7 @@ def cmd_diff(args: List[str]):
     work_dir = Path(".")
     for root, dirs, files in os.walk(work_dir):
         # Skip hidden directories
-        dirs[:] = [d for d in dirs if not d.startswith('.')]
+        dirs[:] = [d for d in dirs if not d.startswith(".")]
 
         root_path = Path(root)
         for file_name in files:
@@ -1415,7 +1427,7 @@ def cmd_diff(args: List[str]):
             rel_path = file_path.relative_to(work_dir)
 
             # Skip hidden files
-            if any(part.startswith('.') for part in rel_path.parts):
+            if any(part.startswith(".") for part in rel_path.parts):
                 continue
 
             working_files.add(str(rel_path))
@@ -1448,16 +1460,17 @@ def cmd_diff(args: List[str]):
 
                 # Show unified diff for text files
                 try:
-                    artifact_text = artifact_content.decode('utf-8')
-                    working_text = working_content.decode('utf-8')
+                    artifact_text = artifact_content.decode("utf-8")
+                    working_text = working_content.decode("utf-8")
 
                     import difflib
+
                     diff = difflib.unified_diff(
                         artifact_text.splitlines(keepends=True),
                         working_text.splitlines(keepends=True),
                         fromfile=f"artifact/{file_path}",
                         tofile=f"working/{file_path}",
-                        lineterm=""
+                        lineterm="",
                     )
                     diff_lines = list(diff)
                     if diff_lines:
@@ -1469,7 +1482,6 @@ def cmd_diff(args: List[str]):
                     # Binary file, just note it's different
                     print(f"   (Binary file changed)\n")
             else:
-                print(f"✅ {file_path}: Unchanged")
                 unchanged_files.append(file_path)
 
         except Exception as e:
@@ -1478,7 +1490,6 @@ def cmd_diff(args: List[str]):
     # Find new files (in working directory but not tracked in current unit or dependencies)
     new_files = working_files - unit_files - dependency_files
     for file_path in sorted(new_files):
-        print(f"➕ {file_path}: New file (not tracked)")
         created_files.append(file_path)
 
     # Print summary
@@ -1739,41 +1750,52 @@ def cmd_update(args: List[str]):
 
         if unit["finalized"]:
             # Create COPY_UNIT operation
-            operations.append({
-                "action": "COPY_UNIT",
-                "source_id": old_id,
-                "new_id": new_id,
-                "dependencies": updated_deps,
-            })
+            operations.append(
+                {
+                    "action": "COPY_UNIT",
+                    "source_id": old_id,
+                    "new_id": new_id,
+                    "dependencies": updated_deps,
+                }
+            )
             print(f"Creating COPY_UNIT: {old_id} -> {new_id}")
         else:
             # Create REMOVE and ADD operations for changed dependencies
-            deps_to_remove = [dep_ids[i] for i in range(len(dep_ids))
-                            if dep_ids[i] != updated_deps[i]]
-            deps_to_add = [updated_deps[i] for i in range(len(updated_deps))
-                          if dep_ids[i] != updated_deps[i]]
+            deps_to_remove = [
+                dep_ids[i] for i in range(len(dep_ids)) if dep_ids[i] != updated_deps[i]
+            ]
+            deps_to_add = [
+                updated_deps[i]
+                for i in range(len(updated_deps))
+                if dep_ids[i] != updated_deps[i]
+            ]
 
             if deps_to_remove:
-                operations.append({
-                    "action": "REMOVE_DEPENDENCIES",
-                    "id": old_id,
-                    "dependencies": deps_to_remove,
-                })
+                operations.append(
+                    {
+                        "action": "REMOVE_DEPENDENCIES",
+                        "id": old_id,
+                        "dependencies": deps_to_remove,
+                    }
+                )
                 print(f"Removing dependencies from {old_id}: {deps_to_remove}")
 
             if deps_to_add:
-                operations.append({
-                    "action": "ADD_DEPENDENCIES",
-                    "id": old_id,
-                    "dependencies": deps_to_add,
-                })
+                operations.append(
+                    {
+                        "action": "ADD_DEPENDENCIES",
+                        "id": old_id,
+                        "dependencies": deps_to_add,
+                    }
+                )
                 print(f"Adding dependencies to {old_id}: {deps_to_add}")
 
     print()
 
     # Print summary
-    new_versions = {k: v for k, v in version_mapping.items()
-                   if k != old_unit_id and k != v}  # Exclude initial change and in-place updates
+    new_versions = {
+        k: v for k, v in version_mapping.items() if k != old_unit_id and k != v
+    }  # Exclude initial change and in-place updates
 
     if new_versions:
         print(f"Summary: Will create {len(new_versions)} new version(s):")
