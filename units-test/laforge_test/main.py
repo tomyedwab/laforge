@@ -25,6 +25,7 @@ The following commands are supported:
 
 laforge init - Creates a new root Unit in the project and adds it to the artifact registry.
 laforge create <unit_name> <description> - Creates a new Unit with a unique ID.
+laforge copy <source_unit_id> <new_unit_id> [dependency_ids...] - Copies a unit with optional new dependencies.
 laforge add <files...> - Updates the current Unit with new files, adding them to the artifact registry.
 laforge add-dep <unit_id> - Adds a dependency to the current Unit with the given unit ID.
 laforge rm-dep <unit_id> - Removes a dependency from the current Unit with the given unit ID.
@@ -413,14 +414,19 @@ class LaforgeDB:
 
     def find_available_version(self, base_unit_id: str) -> str:
         """Find an available versioned unit ID (e.g., base-v2, base-v3, etc.)"""
-        # First check if the base ID itself exists
-        if not self.get_unit(base_unit_id):
-            return base_unit_id
+        import re
+
+        # Strip existing version suffix if present (e.g., "unit-v2" -> "unit")
+        base_without_version = re.sub(r'-v\d+$', '', base_unit_id)
+
+        # First check if the base ID (without version) itself exists
+        if not self.get_unit(base_without_version):
+            return base_without_version
 
         # Try versioned IDs
         version = 2
         while True:
-            versioned_id = f"{base_unit_id}-v{version}"
+            versioned_id = f"{base_without_version}-v{version}"
             if not self.get_unit(versioned_id):
                 return versioned_id
             version += 1
@@ -525,9 +531,16 @@ class LaforgeRegistry:
             return False
 
     def restore_files(
-        self, unit_id: str, dest_dir: Path, include_internal: bool
+        self,
+        unit_id: str,
+        dest_dir: Path,
+        include_internal: bool,
+        skip_files: set[str] = None,
     ) -> set[str]:
         """Restore artifact files to destination"""
+        if skip_files is None:
+            skip_files = set()
+
         artifact_dir = self.registry_path / unit_id
         if not artifact_dir.exists():
             # Nothing to restore
@@ -562,13 +575,22 @@ class LaforgeRegistry:
                         print(f"Skipping {file_rel_path} in {unit_id}")  # donotcheckin
                         continue
 
+                    # Check if file is already up-to-date
+                    file_rel_path_str = str(file_rel_path)
+                    if file_rel_path_str in skip_files:
+                        print(
+                            f"Skipping {file_rel_path} in {unit_id} (already up-to-date)"
+                        )  # donotcheckin
+                        restored_files.add(file_rel_path_str)
+                        continue
+
                     src_file = root_path / file_name
                     dst_file = dest_dir / file_rel_path
                     dst_file.parent.mkdir(parents=True, exist_ok=True)
 
                     print(f"Restoring {file_rel_path} in {unit_id}")  # donotcheckin
                     shutil.copy2(src_file, dst_file)
-                    restored_files.add(str(file_rel_path))
+                    restored_files.add(file_rel_path_str)
 
             return restored_files
         except Exception as e:
@@ -1093,6 +1115,78 @@ def cmd_create(args: List[str]):
     return True
 
 
+def cmd_copy(args: List[str]):
+    """laforge copy <source_unit_id> <new_unit_id> [dependency_ids...] - Copy a unit with optional new dependencies"""
+    if len(args) < 2:
+        print(
+            "Usage: laforge copy <source_unit_id> <new_unit_id> [dependency_ids...]",
+            file=sys.stderr,
+        )
+        return False
+
+    source_unit_id = args[0]
+    new_unit_id = args[1]
+    new_dependencies = args[2:] if len(args) > 2 else None
+
+    # Get registry
+    registry_path = LaforgeConfig().get_registry_path()
+    if not registry_path:
+        print("Error: artifact_registry not configured", file=sys.stderr)
+        return False
+
+    db = LaforgeDB(str(registry_path / "laforge.db"))
+    registry = LaforgeRegistry(registry_path)
+
+    if not registry.ensure_exists():
+        return False
+
+    # Verify source unit exists
+    source_unit = db.get_unit(source_unit_id)
+    if not source_unit:
+        print(f"Error: Source unit '{source_unit_id}' not found", file=sys.stderr)
+        return False
+
+    # Verify new unit ID is available
+    existing_unit = db.get_unit(new_unit_id)
+    if existing_unit:
+        print(f"Error: Unit '{new_unit_id}' already exists", file=sys.stderr)
+        return False
+
+    # Verify all new dependencies exist (if provided)
+    if new_dependencies:
+        for dep_id in new_dependencies:
+            dep_unit = db.get_unit(dep_id)
+            if not dep_unit:
+                print(f"Error: Dependency unit '{dep_id}' not found", file=sys.stderr)
+                return False
+
+    # Copy the unit
+    if not db.copy_unit(source_unit_id, new_unit_id, registry):
+        print(f"Error: Failed to copy unit '{source_unit_id}'", file=sys.stderr)
+        return False
+
+    print(f"Copied unit: '{source_unit_id}' -> '{new_unit_id}'")
+
+    # Update dependencies if provided
+    if new_dependencies is not None:
+        # Remove all existing dependencies
+        existing_deps = db.get_unit_dependencies(new_unit_id)
+        for dep in existing_deps:
+            db.remove_dependency(new_unit_id, dep["unit_id"])
+
+        # Add new dependencies
+        for dep_id in new_dependencies:
+            if not db.add_dependency(new_unit_id, dep_id):
+                print(
+                    f"Warning: Failed to add dependency '{dep_id}' to unit '{new_unit_id}'",
+                    file=sys.stderr,
+                )
+            else:
+                print(f"Added dependency '{dep_id}' to unit '{new_unit_id}'")
+
+    return True
+
+
 def cmd_add(args: List[str]):
     """laforge add <files...>"""
     if len(args) < 1:
@@ -1236,19 +1330,141 @@ def cmd_checkout(args: List[str]):
 
     work_dir.mkdir(parents=True, exist_ok=True)
 
+    # Preview: collect files that will be restored and track which unit provides them
+    files_to_restore = {}  # file_path -> unit_id
+    for tree_unit in tree_units:
+        artifact_dir = registry.registry_path / tree_unit
+        if not artifact_dir.exists():
+            continue
+
+        # Scan artifact directory to find all files
+        for root, dirs, files in os.walk(str(artifact_dir)):
+            root_path = Path(root)
+            rel_path = root_path.relative_to(artifact_dir)
+
+            for file_name in files:
+                file_rel_path = (
+                    rel_path / file_name if rel_path != Path(".") else Path(file_name)
+                )
+
+                # Check if internal file should be skipped
+                is_at_root = rel_path == Path(".")
+                if (
+                    tree_unit != unit_id
+                    and is_at_root
+                    and file_rel_path.name.lower() in INTERNAL_FILES
+                ):
+                    continue
+
+                files_to_restore[str(file_rel_path)] = tree_unit
+
+    # Scan working directory to find existing files
+    existing_files = set()
+    if work_dir.exists():
+        for root, dirs, files in os.walk(str(work_dir)):
+            # Skip hidden directories
+            dirs[:] = [d for d in dirs if not d.startswith(".")]
+
+            root_path = Path(root)
+            for file_name in files:
+                file_path = root_path / file_name
+                rel_path = file_path.relative_to(work_dir)
+
+                # Skip dotfiles
+                if any(part.startswith(".") for part in rel_path.parts):
+                    continue
+
+                existing_files.add(str(rel_path))
+
+    # Compare file contents to determine what actually changed
+    files_to_overwrite = []
+    files_up_to_date = []
+
+    for file_path in existing_files & files_to_restore.keys():
+        artifact_path = registry.registry_path / files_to_restore[file_path] / file_path
+        working_path = work_dir / file_path
+
+        try:
+            with open(artifact_path, "rb") as f:
+                artifact_content = f.read()
+            with open(working_path, "rb") as f:
+                working_content = f.read()
+
+            if artifact_content != working_content:
+                files_to_overwrite.append(file_path)
+            else:
+                files_up_to_date.append(file_path)
+        except Exception as e:
+            # If we can't read/compare, treat as needing overwrite
+            files_to_overwrite.append(file_path)
+
+    files_to_delete = list(existing_files - files_to_restore.keys())
+
+    # Show preview and prompt for confirmation
+    has_changes = bool(files_to_overwrite or files_to_delete)
+    new_files = list(files_to_restore.keys() - existing_files)
+
+    if has_changes or new_files:
+        print(f"Checkout preview for unit '{unit_id}':\n")
+
+        if new_files:
+            print(f"➕ New files to be created ({len(new_files)}):")
+            for f in sorted(new_files):
+                print(f"   - {f}")
+            print()
+
+        if files_to_overwrite:
+            print(f"📝 Files to be overwritten ({len(files_to_overwrite)}):")
+            for f in sorted(files_to_overwrite):
+                print(f"   - {f}")
+            print()
+
+        if files_to_delete:
+            print(f"🗑️  Files to be deleted ({len(files_to_delete)}):")
+            for f in sorted(files_to_delete):
+                print(f"   - {f}")
+            print()
+
+        if files_up_to_date:
+            print(f"✅ Files already up-to-date ({len(files_up_to_date)})")
+            print()
+
+        # Prompt for confirmation
+        try:
+            response = input("Proceed with checkout? [y/N]: ").strip().lower()
+            if response not in ["y", "yes"]:
+                print("Checkout cancelled.")
+                return False
+        except (EOFError, KeyboardInterrupt):
+            print("\nCheckout cancelled.")
+            return False
+    else:
+        print(
+            f"✅ Working directory already matches unit '{unit_id}' ({len(files_up_to_date)} file(s) up-to-date).\n"
+        )
+
     # Copy .laforge file to working directory
     if not (work_dir / ".laforge").exists():
         shutil.copy(".laforge", str(work_dir / ".laforge"))
 
     # Restore all artifact files to current directory
+    # Build set of files that don't need copying (already up-to-date)
+    skip_files = set(files_up_to_date)
+
     files_to_keep = set()
     for tree_unit in tree_units:
         print(f" -> Restoring files from {tree_unit}...")
         restored_files = registry.restore_files(
-            tree_unit, work_dir, include_internal=tree_unit == unit_id
+            tree_unit,
+            work_dir,
+            include_internal=tree_unit == unit_id,
+            skip_files=skip_files,
         )
         print(f"  restored files {restored_files}")  # donotcheckin
         files_to_keep |= restored_files
+
+    # Add skipped files to files_to_keep (they're already there and correct)
+    files_to_keep |= skip_files
 
     # Delete non-dotfiles not in the checkout
     # Recursively traverse work_dir to find files/directories to delete
@@ -1961,7 +2177,7 @@ def main():
     if len(sys.argv) < 2:
         print("Usage: laforge <command> [args...]", file=sys.stderr)
         print(
-            "Commands: init, create, add, add-dep, rm-dep, checkout, tree, diff, finalize, apply, update, next",
+            "Commands: init, create, copy, add, add-dep, rm-dep, checkout, tree, diff, finalize, apply, update, next",
             file=sys.stderr,
         )
         sys.exit(1)
@@ -1972,6 +2188,7 @@ def main():
     commands = {
         "init": cmd_init,
         "create": cmd_create,
+        "copy": cmd_copy,
         "add": cmd_add,
         "add-dep": cmd_add_dep,
         "rm-dep": cmd_rm_dep,
