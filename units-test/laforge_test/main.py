@@ -506,10 +506,10 @@ def cmd_create(args: List[str]):
 
 
 def cmd_add_dep(args: List[str]):
-    """laforge add-dep <unit_id> [<branch_name>]"""
+    """laforge add-dep <unit_tag_id> [<branch_name>]"""
     if len(args) < 1:
         print(
-            "Usage: laforge add-dep <unit_id> [<branch_name>]",
+            "Usage: laforge add-dep <unit_tag_id> [<branch_name>]",
             file=sys.stderr,
         )
         return False
@@ -525,38 +525,21 @@ def cmd_add_dep(args: List[str]):
 
 
 def cmd_rm_dep(args: List[str]):
-    """laforge rm-dep <unit_id>"""
+    """laforge rm-dep <unit_id> [<branch_name>]"""
     if len(args) < 1:
-        print("Usage: laforge rm-dep <unit_id>", file=sys.stderr)
+        print("Usage: laforge rm-dep <unit_id> [<branch_name>]", file=sys.stderr)
         return False
 
     depends_on_unit_id = args[0]
+    if len(args) > 1:
+        branch_name = args[1]
+    else:
+        branch_name = git_exec("branch", ["--show-current"]).strip()
 
-    raise NotImplementedError("create not yet implemented")
-    """
-    # Get current unit
-    unit_info = LaforgeUnit().load()
-    if not unit_info:
-        print("Error: No current unit. Run 'laforge init' first.", file=sys.stderr)
-        return False
-
-    current_unit_id = unit_info["unit_id"]
-
-    # Get registry
-    registry_path = LaforgeConfig().get_registry_path()
-    if not registry_path:
-        print("Error: artifact_registry not configured", file=sys.stderr)
-        return False
-
-    db = LaforgeDB(str(registry_path / "laforge.db"))
-
-    # Remove dependency
-    if not db.remove_dependency(current_unit_id, depends_on_unit_id):
-        return False
-
-    print(f"Removed dependency: {depends_on_unit_id}")
-    return True
-    """
+    UnitDB().delete_dependency(branch_name, depends_on_unit_id)
+    print(
+        f"Successfully removed dependency {depends_on_unit_id} to branch {branch_name}"
+    )
 
 
 def cmd_tree(args: List[str]):

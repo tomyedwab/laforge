@@ -141,18 +141,65 @@ class UnitDB(object):
 
         git_exec("update-ref", [f"refs/heads/{unit_branch}", commit_hash])
 
+    def delete_dependency(self, unit_branch: str, dependency_unit_id: str):
+        if not unit_branch.startswith("uip/"):
+            raise Exception("Dependencies can only be removed from units in progress")
+        try:
+            commit_hash = git_exec(
+                "show-ref", [f"refs/heads/{unit_branch}", "-s"]
+            ).strip()
+            root_tree_hash = git_exec(
+                "show", [commit_hash, "--format=%T", "--no-patch"]
+            ).strip()
+        except Exception:
+            raise Exception(f"Unit in-progress branch {unit_branch} not found.")
+
+        root_tree = GitTree.from_hash(root_tree_hash)
+        self._remove_unit_dependency(root_tree, dependency_unit_id)
+        merged_hash = root_tree.finalize()
+        commit_message = f"Removed unit dependency {dependency_unit_id}"
+        commit_hash = git_exec(
+            "commit-tree",
+            [merged_hash, "-p", commit_hash],
+            commit_message,
+        ).strip()
+
+        git_exec("update-ref", [f"refs/heads/{unit_branch}", commit_hash])
+
+    def _update_transitive_dependencies(self, deps_tree: GitTree) -> dict[str, GitTree]:
+        transitive_deps = {}
+        dep_stack = [(name, tree) for name, tree in deps_tree.trees.items()]
+        while len(dep_stack) > 0:
+            dep_path, dep_tree = dep_stack.pop()
+            sub_deps_tree = dep_tree.trees.get(".lf-deps", None)
+            if sub_deps_tree:
+                for sub_dep_name, sub_dep_tree in sub_deps_tree.trees.items():
+                    sub_dep_path = f"{dep_path}/.lf-deps/{sub_dep_name}"
+                    if sub_dep_name not in transitive_deps:
+                        transitive_deps[sub_dep_name] = (sub_dep_path, sub_dep_tree)
+                    dep_stack.append((sub_dep_path, sub_dep_tree))
+
+        deps_tree.symlinks = {}
+        for dep_name, (target, _) in transitive_deps.items():
+            if dep_name not in deps_tree.trees:
+                deps_tree.add_symlink(dep_name, target)
+
+        return {dep_name: tree for dep_name, (_, tree) in transitive_deps.items()}
+
     def _add_unit_dependency(self, tree: GitTree, unit: FinalizedUnit):
         deps_tree = tree.get_or_create_path(".lf-deps")
         unit_tree = GitTree.from_hash(unit.tree_hash)
         deps_tree.add_tree(unit.unit_id, unit_tree)
 
-        # Create symlinks!
-        def callback(path, item_type, value):
+        # Create symlinks in .lf-deps to transitive dependencies so each
+        # dependency is located at exactly one path
+        transitive_trees = self._update_transitive_dependencies(deps_tree)
+
+        # Create blob symlinks into the first-level .lf-deps paths
+        def callback(dep_id, path, item_type):
             parsed_path = pathlib.Path(path)
             if item_type == "tree":
-                if parsed_path.name.startswith("."):
-                    return False
-                return True
+                return parsed_path.name != ".lf-deps"
 
             if item_type == "blob":
                 if path.lower() in INTERNAL_FILES:
@@ -163,9 +210,50 @@ class UnitDB(object):
                 )
                 target = (
                     len(parsed_path.parts) - 1
-                ) * "../" + f".lf-deps/{unit.unit_id}/{path}"
+                ) * "../" + f".lf-deps/{dep_id}/{path}"
                 parent_tree.add_symlink(parsed_path.name, target)
 
             return True
 
-        unit_tree.traverse(callback)
+        unit_tree.traverse(
+            lambda tree, path, item_type, _: callback(unit.unit_id, path, item_type)
+        )
+        for transitive_dep_name, transitive_dep_tree in transitive_trees.items():
+            transitive_dep_tree.traverse(
+                lambda tree, path, item_type, _: callback(
+                    transitive_dep_name, path, item_type
+                )
+            )
+
+    def _remove_unit_dependency(self, tree: GitTree, unit_id: str):
+        if not tree.trees[".lf-deps"]:
+            raise Exception(f"Branch has no dependency {unit_id}")
+        deps_tree = tree.trees[".lf-deps"]
+        if unit_id not in deps_tree.trees:
+            raise Exception(f"Branch has no dependency {unit_id}")
+        del deps_tree.trees[unit_id]
+        # Clean out transitive dependency symlinks
+        _ = self._update_transitive_dependencies(deps_tree)
+        remaining_deps = set(deps_tree.trees.keys()) | set(deps_tree.symlinks.keys())
+        symlinks_to_remove = []
+
+        def callback(tree, path, item_type, value):
+            parsed_path = pathlib.Path(path)
+            # Don't recuse into .lf-deps
+            if item_type == "tree":
+                return parsed_path.name != ".lf-deps"
+
+            if item_type == "symlink":
+                target = git_exec("cat-file", ["-p", value]).strip()
+                try:
+                    idx = target.index(".lf-deps")
+                    unit_id = target[idx + 9 :].split("/", 1)[0]
+                    if unit_id not in remaining_deps:
+                        symlinks_to_remove.append((tree, parsed_path.name))
+                except ValueError:
+                    pass
+
+        tree.traverse(callback)
+
+        for tree, name in symlinks_to_remove:
+            del tree.symlinks[name]

@@ -85,18 +85,18 @@ class GitTree(object):
         # Visit all subtrees
         for tree_name, tree in self.trees.items():
             tree_path = f"{path}/{tree_name}" if path else tree_name
-            if callback(tree_path, "tree", tree):
+            if callback(self, tree_path, "tree", tree):
                 tree.traverse(callback, tree_path)
 
         # Visit all blobs
         for blob_name, blob_hash in self.blobs.items():
             blob_path = f"{path}/{blob_name}" if path else blob_name
-            callback(blob_path, "blob", blob_hash)
+            callback(self, blob_path, "blob", blob_hash)
 
         # Visit all symlinks
         for link_name, link_hash in self.symlinks.items():
             link_path = f"{path}/{link_name}" if path else link_name
-            callback(link_path, "symlink", link_hash)
+            callback(self, link_path, "symlink", link_hash)
 
     def pretty_print(self, indent: int = 0, prefix: str = ""):
         """Print a human-readable representation of the tree structure."""
