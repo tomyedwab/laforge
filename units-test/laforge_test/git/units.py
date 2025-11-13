@@ -1,9 +1,16 @@
 import base64
 import datetime
+import pathlib
 from dataclasses import dataclass
 
 from .exec import git_exec
 from .tree import GitTree
+
+INTERNAL_FILES = [
+    "plan.md",
+    "review.md",
+    "wants.md",
+]
 
 PLAN_TEMPLATE = """
 # Plan file for unit `{unit_id}`
@@ -68,6 +75,7 @@ class UnitDB(object):
                 raise Exception(f"No tag for finalized unit u/{unit_tag} found")
 
         # TODO: Support creating a unit from one or more existing units
+        # TODO: Sometimes the base64 id is not a valid branch name!
         ts = int(datetime.datetime.now(datetime.UTC).timestamp())
         ts_b64 = base64.b64encode(ts.to_bytes(6)).decode()
         branch_name = f"uip/{unit_id}_{ts_b64}"
@@ -100,4 +108,29 @@ class UnitDB(object):
 
     def _add_unit_dependency(self, tree: GitTree, unit: FinalizedUnit):
         deps_tree = tree.get_or_create_path(".lf-deps")
-        deps_tree.add_hashed_tree(unit.unit_id, unit.tree_hash)
+        unit_tree = GitTree.from_hash(unit.tree_hash)
+        deps_tree.add_tree(unit.unit_id, unit_tree)
+
+        # Create symlinks!
+        def callback(path, item_type, value):
+            parsed_path = pathlib.Path(path)
+            if item_type == "tree":
+                if parsed_path.name.startswith("."):
+                    return False
+                return True
+
+            if item_type == "blob":
+                if path.lower() in INTERNAL_FILES:
+                    return False
+                parent_dir = parsed_path.parent.as_posix()
+                parent_tree = (
+                    tree if parent_dir == "." else tree.get_or_create_path(parent_dir)
+                )
+                target = (
+                    len(parsed_path.parts) - 1
+                ) * "../" + f".lf-deps/{unit.unit_id}/{path}"
+                parent_tree.add_symlink(parsed_path.name, target)
+
+            return True
+
+        unit_tree.traverse(callback)

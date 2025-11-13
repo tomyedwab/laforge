@@ -42,6 +42,67 @@ class GitTree(object):
             cur_tree = cur_tree.trees[path_part]
         return cur_tree
 
+    @classmethod
+    def from_hash(cls, tree_hash: str) -> "GitTree":
+        """Parse a tree object from its hash and return a GitTree with fixed_hash set."""
+        tree_content = git_exec("cat-file", ["-p", tree_hash])
+        tree = cls(fixed_hash=tree_hash)
+
+        if not tree_content.strip():
+            return tree
+
+        for line in tree_content.strip().split("\n"):
+            if not line:
+                continue
+
+            # Parse: <mode> <type> <hash>\t<name>
+            parts = line.split("\t", 1)
+            if len(parts) != 2:
+                continue
+
+            meta, name = parts
+            meta_parts = meta.split()
+            if len(meta_parts) != 3:
+                continue
+
+            mode, obj_type, obj_hash = meta_parts
+
+            if mode == "040000" and obj_type == "tree":
+                tree.trees[name] = cls.from_hash(obj_hash)
+            elif mode == "100644" and obj_type == "blob":
+                tree.blobs[name] = obj_hash
+            elif mode == "120000" and obj_type == "blob":
+                tree.symlinks[name] = obj_hash
+
+        return tree
+
+    def traverse(self, callback, path: str = ""):
+        """
+        Traverse the tree structure, calling callback for each item.
+
+        Args:
+            callback: Function called with (path, item_type, value) where:
+                - path: str - the full path to the item
+                - item_type: str - "tree", "blob", or "symlink"
+                - value: GitTree | str - GitTree object for trees, hash for blobs/symlinks
+            path: str - current path prefix (used internally for recursion)
+        """
+        # Visit all subtrees
+        for tree_name, tree in self.trees.items():
+            tree_path = f"{path}/{tree_name}" if path else tree_name
+            if callback(tree_path, "tree", tree):
+                tree.traverse(callback, tree_path)
+
+        # Visit all blobs
+        for blob_name, blob_hash in self.blobs.items():
+            blob_path = f"{path}/{blob_name}" if path else blob_name
+            callback(blob_path, "blob", blob_hash)
+
+        # Visit all symlinks
+        for link_name, link_hash in self.symlinks.items():
+            link_path = f"{path}/{link_name}" if path else link_name
+            callback(link_path, "symlink", link_hash)
+
     def finalize(self) -> str:
         if self.fixed_hash:
             return self.fixed_hash
