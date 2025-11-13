@@ -5,22 +5,17 @@ from .exec import git_exec
 
 @dataclass
 class GitTree(object):
-    fixed_hash: str | None
     trees: dict[str, "GitTree"]
     blobs: dict[str, str]
     symlinks: dict[str, str]
 
-    def __init__(self, fixed_hash: str | None = None):
-        self.fixed_hash = fixed_hash
+    def __init__(self):
         self.trees = {}
         self.blobs = {}
         self.symlinks = {}
 
     def add_tree(self, name: str, tree: "GitTree"):
         self.trees[name] = tree
-
-    def add_hashed_tree(self, name: str, tree_hash: str):
-        self.trees[name] = GitTree(fixed_hash=tree_hash)
 
     def add_hashed_blob(self, name: str, blob_hash: str):
         self.blobs[name] = blob_hash
@@ -44,9 +39,9 @@ class GitTree(object):
 
     @classmethod
     def from_hash(cls, tree_hash: str) -> "GitTree":
-        """Parse a tree object from its hash and return a GitTree with fixed_hash set."""
+        """Parse a tree object from its hash and return a GitTree."""
         tree_content = git_exec("cat-file", ["-p", tree_hash])
-        tree = cls(fixed_hash=tree_hash)
+        tree = cls()
 
         if not tree_content.strip():
             return tree
@@ -103,10 +98,24 @@ class GitTree(object):
             link_path = f"{path}/{link_name}" if path else link_name
             callback(link_path, "symlink", link_hash)
 
-    def finalize(self) -> str:
-        if self.fixed_hash:
-            return self.fixed_hash
+    def pretty_print(self, indent: int = 0, prefix: str = ""):
+        """Print a human-readable representation of the tree structure."""
+        indent_str = "  " * indent
 
+        # Print trees (directories)
+        for tree_name, tree in sorted(self.trees.items()):
+            print(f"{indent_str}{prefix}{tree_name}")
+            tree.pretty_print(indent + 1, prefix="")
+
+        # Print blobs (files)
+        for blob_name, blob_hash in sorted(self.blobs.items()):
+            print(f"{indent_str}{prefix}{blob_name} [{blob_hash[:8]}]")
+
+        # Print symlinks
+        for link_name, link_hash in sorted(self.symlinks.items()):
+            print(f"{indent_str}{prefix}{link_name} -> [{link_hash[:8]}]")
+
+    def finalize(self) -> str:
         tree_content = "\n".join(
             [
                 f"040000 tree {tree.finalize()}\t{tree_name}"

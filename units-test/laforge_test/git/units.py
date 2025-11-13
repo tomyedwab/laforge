@@ -92,19 +92,54 @@ class UnitDB(object):
                 unit_dependencies=dependencies,  # TODO: Format as a tree
             ),
         )
-
-        for finalized_unit in finalized_deps.values():
-            if finalized_unit:
-                self._add_unit_dependency(root_tree, finalized_unit)
-
         root_tree_hash = root_tree.finalize()
 
         commit_message = f"Created new unit {unit_id}"
         commit_hash = git_exec("commit-tree", [root_tree_hash], commit_message).strip()
 
+        for finalized_unit in finalized_deps.values():
+            if finalized_unit:
+                self._add_unit_dependency(root_tree, finalized_unit)
+                merged_hash = root_tree.finalize()
+                commit_message = f"Added unit dependency {finalized_unit.unit_id}"
+                commit_hash = git_exec(
+                    "commit-tree",
+                    [merged_hash, "-p", commit_hash, "-p", finalized_unit.commit_hash],
+                    commit_message,
+                ).strip()
+
         git_exec("update-ref", [f"refs/heads/{branch_name}", commit_hash])
 
         return branch_name
+
+    def add_dependency(self, unit_branch: str, dependency_unit_tag: str):
+        if not unit_branch.startswith("uip/"):
+            raise Exception("Dependencies can only be added to units in progress")
+        try:
+            commit_hash = git_exec(
+                "show-ref", [f"refs/heads/{unit_branch}", "-s"]
+            ).strip()
+            root_tree_hash = git_exec(
+                "show", [commit_hash, "--format=%T", "--no-patch"]
+            ).strip()
+        except Exception:
+            raise Exception(f"Unit in-progress branch {unit_branch} not found.")
+
+        finalized_unit = self.get_finalized_unit(dependency_unit_tag)
+        if not finalized_unit:
+            raise Exception(f"Finalized unit {dependency_unit_tag} not found.")
+
+        root_tree = GitTree.from_hash(root_tree_hash)
+        self._add_unit_dependency(root_tree, finalized_unit)
+        merged_hash = root_tree.finalize()
+        commit_message = f"Added unit dependency {finalized_unit.unit_id}"
+        commit_hash = git_exec(
+            "commit-tree",
+            [merged_hash, "-p", commit_hash, "-p", finalized_unit.commit_hash],
+            commit_message,
+        ).strip()
+
+        git_exec("update-ref", [f"refs/heads/{unit_branch}", commit_hash])
 
     def _add_unit_dependency(self, tree: GitTree, unit: FinalizedUnit):
         deps_tree = tree.get_or_create_path(".lf-deps")
