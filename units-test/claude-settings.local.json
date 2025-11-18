@@ -1,0 +1,7 @@
+{
+  "permissions": {
+    "allow": ["Bash(mkdir:*)"],
+    "deny": ["Write(./.lf-deps/**)", "Edit(./.lf-deps/**)"],
+    "ask": []
+  }
+}

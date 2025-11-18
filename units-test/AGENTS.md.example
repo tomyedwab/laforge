@@ -22,26 +22,62 @@ working on and its dependencies, as well as the following special files:
 
 - PLAN.md: This file is for internal bookkeeping and is kept updated with a plan
   for implementing the Unit, including the goals, tasks, and dependencies.
-- WANTS.md: This file documents requirements for any additional Units that are
-  required to deliver this Unit that are not already dependencies. DO NOT
-  document wants for future Units, ONLY document work that is required to
-  deliver the acceptance criteria for the current Unit.
-- REVIEW.md: When this file is written, the Unit is considered "ready for review".
-  REVIEW.md CANNOT BE CREATED until all the needs in WANTS.md are satisfied!
+- STATUS.yaml: This file communicates the current status of the Unit
+  implementation to stakeholders, including "wants" - documented requirements
+  for additional or updated Unit dependencies that are required to deliver this
+  unit. If the unit is ready for review, this file includes the review request
+  and responses from the reviewer. The format is documented below.
+- CHANGELOG.md: This file contains a description of the changes made since the
+  last version of the Unit and should be kept up to date as the implementation
+  evolves.
 
 As you are only working on this Unit and this Unit alone, you are not allowed to
-create or edit files belonging to another Unit.
+create or edit files belonging to another Unit, which appear as symlinks in the
+working directory.
 
 When you are given a Unit as a task, you should follow these steps:
 1. Read the PLAN.md file to understand the goals and tasks of the Unit.
-2. Review any new dependencies or requirements passed in via the PLAN.md file.
-   If dependencies satisfy wants in WANTS.md, remove them from WANTS.md. Update
-   the PLAN.md file with work to be done.
+2. Review any new dependencies or requirements passed in via the STATUS.yaml file.
+   If dependencies satisfy wants in the "wants" list, remove them. Update the
+   PLAN.md file with work to be done.
 3. Implement the Unit according to the PLAN.md file, keeping the changes small
    and focused on the requirements given. Thoroughly test all changes. DO NOT
    ADD ANY FUNCTIONALITY BEYOND THE SCOPE OF THIS UNIT.
 4. If additional work needs to be done beyond the scope of this Unit, document
-   the required work as a set of requirements in the WANTS.md file and STOP
+   the required work as a set of "wants" in the STATUS.yaml file and STOP
    WORKING.
-5. If no additional work needs to be done, write a summary to the REVIEW.md file
-   to mark the Unit as ready for review and STOP WORKING.
+5. If no additional work needs to be done, set the status in STATUS.yaml to
+   "review" to mark the Unit as ready for review and STOP WORKING.
+
+## Format of `STATUS.yaml`
+
+The status file contains a single object, which will be updated before you start
+work and can be updated by you to reflect your current status.
+
+Ready for work state:
+```STATUS.yaml
+status: ready
+updates:
+ - "Dependency 'go-mod' has been added."
+wants:
+ - "A go.mod file with sqlite3 library"
+```
+
+Waiting for dependencies state:
+```STATUS.yaml
+status: waiting
+wants:
+ - "A Go module implementing main.go"
+ - "A go.mod file with sqlite3 library"
+```
+*NOTE:* DO NOT document wants for future Units, ONLY document work that is
+required to deliver the acceptance criteria for the current Unit.
+
+Ready for review state:
+```STATUS.yaml
+status: review
+message: The design document in `docs/design/feature.md` is ready for review.
+```
+
+*NOTE:* THE 'REVIEW' STATUS SHOULD NOT BE SET until all the dependencies are
+satisfied and the implementation is complete and tested!
