@@ -8,8 +8,8 @@ from .tree import GitTree
 
 INTERNAL_FILES = [
     "plan.md",
-    "review.md",
-    "wants.md",
+    "status.yaml",
+    "changelog.md",
 ]
 
 PLAN_TEMPLATE = """
@@ -107,6 +107,57 @@ class UnitDB(object):
                     [merged_hash, "-p", commit_hash, "-p", finalized_unit.commit_hash],
                     commit_message,
                 ).strip()
+
+        git_exec("update-ref", [f"refs/heads/{branch_name}", commit_hash])
+
+        return branch_name
+
+    def import_unit(
+        self,
+        unit_id: str,
+        description: str,
+        files: list[str],
+    ):
+        # TODO: Sometimes the base64 id is not a valid branch name!
+        ts = int(datetime.datetime.now(datetime.UTC).timestamp())
+        ts_b64 = base64.b64encode(ts.to_bytes(6)).decode()
+        branch_name = f"uip/{unit_id}_{ts_b64}"
+
+        root_tree = GitTree()
+
+        # Import files from working directory
+        for file_path in files:
+            path = pathlib.Path(file_path)
+            if not path.exists():
+                raise Exception(f"File '{file_path}' does not exist")
+            if not path.is_file():
+                raise Exception(f"'{file_path}' is not a file")
+
+            # Hash the file and add as blob
+            blob_hash = git_exec("hash-object", ["-w", str(path)]).strip()
+
+            # Handle nested paths
+            if "/" in file_path:
+                parent_path = str(path.parent)
+                parent_tree = root_tree.get_or_create_path(parent_path)
+                parent_tree.add_hashed_blob(path.name, blob_hash)
+            else:
+                root_tree.add_hashed_blob(file_path, blob_hash)
+
+        # Create a PLAN.md file for the new unit
+        root_tree.add_string_blob(
+            "PLAN.md",
+            PLAN_TEMPLATE.format(
+                unit_id=unit_id,
+                description=description,
+                acceptance_criteria="(Imported from existing files)",
+                unit_dependencies="",
+            ),
+        )
+        root_tree_hash = root_tree.finalize()
+
+        commit_message = f"Imported unit {unit_id} with {len(files)} file(s)"
+        commit_hash = git_exec("commit-tree", [root_tree_hash], commit_message).strip()
 
         git_exec("update-ref", [f"refs/heads/{branch_name}", commit_hash])
 

@@ -24,15 +24,16 @@ uip branch.
 
 Since Units depend on other Units, each Unit commit stores the other (finalized)
 unit dependencies as parent commits, and those Unit's Git trees are imported
-into a ".lf-deps" directory. The files are symlinked into their correct
-locations at checkout time using git hooks, but should not be writeable. Each
-unit also contains a ".lf-info" directory for storing work-in-progress files
-such as PLAN.md, WANTS.md, and REVIEW.md. These are not symlinked into dependent
-Units.
+into a ".lf-deps" directory. Files from dependencies are also symlinked into the
+root folder, targeting the copies in .lf-deps; these should NOT be written to
+directly. In the root, a Unit can contain info files such as PLAN.md, WANTS.md,
+and REVIEW.md. These are not symlinked into dependent Units so are considered
+"internal".
 
 The following commands are supported:
 
 laforge create <unit_name> <description> - Creates a new Unit with a unique ID.
+laforge import <unit_id> <description> <file_or_glob> [<file_or_glob> ...] - Creates a new Unit and imports files from the working directory (supports glob patterns).
 laforge add-dep <unit_id> - Adds a dependency to the current Unit with the given unit ID.
 laforge rm-dep <unit_id> - Removes a dependency from the current Unit with the given unit ID.
 laforge tree - Prints the current Unit and all its dependencies in a tree format.
@@ -40,12 +41,6 @@ laforge finalize [unit_id] - Marks a Unit as finalized (immutable). If no unit_i
 laforge apply <yaml_file> [--dry-run] - Applies operations from a YAML file to create or modify units.
 laforge update <old_unit_id> <new_unit_id> [output_file] - Generates a YAML file with operations to update dependencies. For finalized units, creates new versions recursively. Default output: updates.yaml
 laforge next - Lists units that are ready to work on (not finalized, all dependencies finalized).
-
-The artifact registry is a directory with subdirectories for each unit, e.g.
-/path/to/artifact_registry/unit_id.
-
-The Unit database is a simple sqlite3 database stored in the same directory as
-the artifact registry with tables for Units, their dependencies and files.
 """
 
 import json
@@ -503,6 +498,38 @@ def cmd_create(args: List[str]):
         unit_id, description, acceptance_criteria, dependencies
     )
     print(f"Successfully created unit {unit_id} in branch {branch_name}")
+
+
+def cmd_import(args: List[str]):
+    """laforge import <unit_id> <description> <file_or_glob> [<file_or_glob> ...]"""
+    if len(args) < 3:
+        print(
+            "Usage: laforge import <unit_id> <description> <file_or_glob> [<file_or_glob> ...]",
+            file=sys.stderr,
+        )
+        return False
+
+    unit_id = args[0]
+    description = args[1]
+    file_patterns = args[2:]
+
+    # Expand glob patterns
+    import glob
+    files = []
+    for pattern in file_patterns:
+        matches = glob.glob(pattern, recursive=True)
+        if not matches:
+            print(f"Warning: Pattern '{pattern}' did not match any files", file=sys.stderr)
+        else:
+            # Filter out directories, only include files
+            files.extend([f for f in matches if os.path.isfile(f)])
+
+    if not files:
+        print("Error: No files matched the provided patterns", file=sys.stderr)
+        return False
+
+    branch_name = UnitDB().import_unit(unit_id, description, files)
+    print(f"Successfully imported unit {unit_id} with {len(files)} file(s) in branch {branch_name}")
 
 
 def cmd_add_dep(args: List[str]):
@@ -1022,7 +1049,7 @@ def main():
     if len(sys.argv) < 2:
         print("Usage: laforge <command> [args...]", file=sys.stderr)
         print(
-            "Commands: create, add-dep, rm-dep, tree, finalize, apply, update, next",
+            "Commands: create, import, add-dep, rm-dep, tree, finalize, apply, update, next",
             file=sys.stderr,
         )
         sys.exit(1)
@@ -1032,6 +1059,7 @@ def main():
 
     commands = {
         "create": cmd_create,
+        "import": cmd_import,
         "add-dep": cmd_add_dep,
         "rm-dep": cmd_rm_dep,
         "tree": cmd_tree,
