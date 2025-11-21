@@ -120,10 +120,9 @@ class UnitDB(object):
         description: str,
         files: list[str],
     ):
-        # TODO: Sometimes the base64 id is not a valid branch name!
-        ts = int(datetime.datetime.now(datetime.UTC).timestamp())
-        ts_b64 = base64.b64encode(ts.to_bytes(6)).decode()
-        branch_name = f"uip/{unit_id}_{ts_b64}"
+        unit_tag = f"u/{unit_id}"
+        if self.get_finalized_unit(unit_tag):
+            raise Exception(f"Finalized unit {unit_tag} already exists!")
 
         root_tree = GitTree()
 
@@ -161,9 +160,9 @@ class UnitDB(object):
         commit_message = f"Imported unit {unit_id} with {len(files)} file(s)"
         commit_hash = git_exec("commit-tree", [root_tree_hash], commit_message).strip()
 
-        git_exec("update-ref", [f"refs/heads/{branch_name}", commit_hash])
+        git_exec("tag", [unit_tag, commit_hash])
 
-        return branch_name
+        return unit_tag
 
     def add_dependency(self, unit_branch: str, dependency_unit_tag: str):
         if not unit_branch.startswith("uip/"):
@@ -236,17 +235,25 @@ class UnitDB(object):
                     "show-ref", [f"refs/heads/{unit_ref}", "-s"]
                 ).strip()
                 if not commit_hash:
-                    print(f"Error: Unit in progress branch '{unit_ref}' not found", file=sys.stderr)
+                    print(
+                        f"Error: Unit in progress branch '{unit_ref}' not found",
+                        file=sys.stderr,
+                    )
                     return False
                 tree_hash = git_exec(
                     "show", [commit_hash, "--format=%T", "--no-patch"]
                 ).strip()
                 unit_tree = GitTree.from_hash(tree_hash)
             except Exception as e:
-                print(f"Error: Unit in progress branch '{unit_ref}' not found", file=sys.stderr)
+                print(
+                    f"Error: Unit in progress branch '{unit_ref}' not found",
+                    file=sys.stderr,
+                )
                 return False
         else:
-            print(f"Error: Unit reference must start with 'u/' or 'uip/'", file=sys.stderr)
+            print(
+                f"Error: Unit reference must start with 'u/' or 'uip/'", file=sys.stderr
+            )
             return False
 
         # Collect all files to copy (excluding internal files and .lf-deps)

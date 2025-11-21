@@ -533,9 +533,9 @@ def cmd_import(args: List[str]):
         print("Error: No files matched the provided patterns", file=sys.stderr)
         return False
 
-    branch_name = UnitDB().import_unit(unit_id, description, files)
+    tag_name = UnitDB().import_unit(unit_id, description, files)
     print(
-        f"Successfully imported unit {unit_id} with {len(files)} file(s) in branch {branch_name}"
+        f"Successfully imported unit {unit_id} with {len(files)} file(s) in tag {tag_name}"
     )
 
 
@@ -543,14 +543,20 @@ def cmd_merge(args: List[str]):
     """laforge merge <unit_tag_or_branch> - Copy files from a finalized unit (u/) or unit in progress (uip/) and its dependencies into working directory"""
     if len(args) < 1:
         print("Usage: laforge merge <unit_tag_or_branch>", file=sys.stderr)
-        print("  unit_tag_or_branch: Either a unit tag (u/<unit_id>) or branch name (uip/<unit_id>_<timestamp>)", file=sys.stderr)
+        print(
+            "  unit_tag_or_branch: Either a unit tag (u/<unit_id>) or branch name (uip/<unit_id>_<timestamp>)",
+            file=sys.stderr,
+        )
         return False
 
     unit_ref = args[0]
 
     # Validate that the reference starts with either u/ or uip/
     if not unit_ref.startswith("u/") and not unit_ref.startswith("uip/"):
-        print("Error: Unit reference must start with 'u/' (unit tag) or 'uip/' (branch name)", file=sys.stderr)
+        print(
+            "Error: Unit reference must start with 'u/' (unit tag) or 'uip/' (branch name)",
+            file=sys.stderr,
+        )
         return False
 
     files_written = UnitDB().merge_unit(unit_ref)
