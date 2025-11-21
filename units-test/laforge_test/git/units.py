@@ -1,6 +1,8 @@
 import base64
 import datetime
+import os
 import pathlib
+import sys
 from dataclasses import dataclass
 
 from .exec import git_exec
@@ -216,6 +218,180 @@ class UnitDB(object):
         ).strip()
 
         git_exec("update-ref", [f"refs/heads/{unit_branch}", commit_hash])
+
+    def merge_unit(self, unit_ref):
+        # Handle both finalized units (u/<tag>) and units in progress (uip/<branch>)
+        if unit_ref.startswith("u/"):
+            # Finalized unit - use tag
+            unit_tag = unit_ref[2:]  # Remove "u/" prefix
+            finalized_unit = self.get_finalized_unit(unit_tag)
+            if not finalized_unit:
+                print(f"Error: Finalized unit '{unit_ref}' not found", file=sys.stderr)
+                return False
+            unit_tree = GitTree.from_hash(finalized_unit.tree_hash)
+        elif unit_ref.startswith("uip/"):
+            # Unit in progress - use branch
+            try:
+                commit_hash = git_exec(
+                    "show-ref", [f"refs/heads/{unit_ref}", "-s"]
+                ).strip()
+                if not commit_hash:
+                    print(f"Error: Unit in progress branch '{unit_ref}' not found", file=sys.stderr)
+                    return False
+                tree_hash = git_exec(
+                    "show", [commit_hash, "--format=%T", "--no-patch"]
+                ).strip()
+                unit_tree = GitTree.from_hash(tree_hash)
+            except Exception as e:
+                print(f"Error: Unit in progress branch '{unit_ref}' not found", file=sys.stderr)
+                return False
+        else:
+            print(f"Error: Unit reference must start with 'u/' or 'uip/'", file=sys.stderr)
+            return False
+
+        # Collect all files to copy (excluding internal files and .lf-deps)
+        files_to_copy = []  # List of (relative_path, blob_hash)
+
+        def collect_files(tree, path, item_type, value):
+            parsed_path = pathlib.Path(path)
+
+            # Skip .lf-deps directory
+            if item_type == "tree" and parsed_path.name == ".lf-deps":
+                return False
+
+            # Skip internal files
+            if item_type == "blob" and path.lower() in INTERNAL_FILES:
+                return True
+
+            # Collect blob files (resolve symlinks to actual blobs)
+            if item_type == "blob":
+                files_to_copy.append((path, value))
+            elif item_type == "symlink":
+                # Resolve symlink to get the actual blob
+                target = git_exec("cat-file", ["-p", value]).strip()
+                # If it points to .lf-deps, follow it
+                if ".lf-deps/" in target:
+                    # Construct the full path by resolving the relative symlink
+                    symlink_dir = parsed_path.parent
+                    target_path = (symlink_dir / target).resolve()
+                    # Convert back to relative path from root
+                    try:
+                        # Extract the path within .lf-deps
+                        parts = target.split(".lf-deps/", 1)
+                        if len(parts) == 2:
+                            # Navigate from root: count ../ to determine depth
+                            depth = target.count("../")
+                            dep_path = parts[1]
+
+                            # Resolve the blob by navigating the tree
+                            dep_parts = dep_path.split("/")
+                            current_tree = unit_tree
+
+                            # Navigate to .lf-deps
+                            if ".lf-deps" in current_tree.trees:
+                                current_tree = current_tree.trees[".lf-deps"]
+
+                                # Navigate through the dependency path
+                                for i, part in enumerate(dep_parts[:-1]):
+                                    if part in current_tree.trees:
+                                        current_tree = current_tree.trees[part]
+                                    elif part in current_tree.symlinks:
+                                        # Follow symlink
+                                        link_target = git_exec(
+                                            "cat-file",
+                                            ["-p", current_tree.symlinks[part]],
+                                        ).strip()
+                                        # This gets complex, skip for now
+                                        break
+                                    else:
+                                        break
+                                else:
+                                    # Get the final blob
+                                    filename = dep_parts[-1]
+                                    if filename in current_tree.blobs:
+                                        blob_hash = current_tree.blobs[filename]
+                                        files_to_copy.append((path, blob_hash))
+                    except Exception:
+                        pass
+
+            return True
+
+        unit_tree.traverse(collect_files)
+
+        # Check which files already exist in working directory
+        files_to_overwrite = []
+        identical_files = []
+        new_files = []
+
+        for file_path, blob_hash in files_to_copy:
+            if os.path.exists(file_path):
+                # Check if the file content is identical
+                # Hash the existing file and compare with blob_hash
+                try:
+                    existing_hash = git_exec("hash-object", [file_path]).strip()
+
+                    if existing_hash == blob_hash:
+                        identical_files.append(file_path)
+                    else:
+                        files_to_overwrite.append(file_path)
+                except Exception:
+                    # If we can't hash it, treat it as different
+                    files_to_overwrite.append(file_path)
+            else:
+                new_files.append(file_path)
+
+        # Print summary
+        print(f"Merging unit '{unit_ref}' into working directory:")
+        print(f"  New files: {len(new_files)}")
+        print(f"  Identical files (will skip): {len(identical_files)}")
+        print(f"  Files to overwrite: {len(files_to_overwrite)}")
+        print()
+
+        if new_files:
+            print("New files to create:")
+            for file_path in sorted(new_files):
+                print(f"  + {file_path}")
+            print()
+
+        if identical_files:
+            print("Identical files (skipping):")
+            for file_path in sorted(identical_files):
+                print(f"  = {file_path}")
+            print()
+
+        if files_to_overwrite:
+            print("Files that will be overwritten:")
+            for file_path in sorted(files_to_overwrite):
+                print(f"  ! {file_path}")
+            print()
+
+            # Prompt for confirmation
+            response = input("Overwrite existing files? [y/N]: ").strip().lower()
+            if response not in ["y", "yes"]:
+                print("Merge cancelled.")
+                return False
+
+        # Copy all files (except identical ones)
+        print("Copying files...")
+        files_written = 0
+        for file_path, blob_hash in files_to_copy:
+            # Skip identical files
+            if file_path in identical_files:
+                continue
+
+            # Create parent directories if needed
+            parent_dir = os.path.dirname(file_path)
+            if parent_dir:
+                os.makedirs(parent_dir, exist_ok=True)
+
+            # Get blob content as bytes directly using subprocess
+            blob_content = git_exec("cat-file", ["-p", blob_hash])
+            with open(file_path, "w") as f:
+                f.write(blob_content)
+
+            files_written += 1
+
+        return files_written
 
     def _update_transitive_dependencies(self, deps_tree: GitTree) -> dict[str, GitTree]:
         transitive_deps = {}

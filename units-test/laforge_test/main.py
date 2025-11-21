@@ -34,6 +34,7 @@ The following commands are supported:
 
 laforge create <unit_name> <description> - Creates a new Unit with a unique ID.
 laforge import <unit_id> <description> <file_or_glob> [<file_or_glob> ...] - Creates a new Unit and imports files from the working directory (supports glob patterns).
+laforge merge <unit_tag> - Copies all files from a finalized unit and its dependencies into the working directory.
 laforge add-dep <unit_id> - Adds a dependency to the current Unit with the given unit ID.
 laforge rm-dep <unit_id> - Removes a dependency from the current Unit with the given unit ID.
 laforge tree - Prints the current Unit and all its dependencies in a tree format.
@@ -47,6 +48,7 @@ import json
 import os
 import shutil
 import sqlite3
+import subprocess
 import sys
 from datetime import datetime
 from pathlib import Path
@@ -515,11 +517,14 @@ def cmd_import(args: List[str]):
 
     # Expand glob patterns
     import glob
+
     files = []
     for pattern in file_patterns:
         matches = glob.glob(pattern, recursive=True)
         if not matches:
-            print(f"Warning: Pattern '{pattern}' did not match any files", file=sys.stderr)
+            print(
+                f"Warning: Pattern '{pattern}' did not match any files", file=sys.stderr
+            )
         else:
             # Filter out directories, only include files
             files.extend([f for f in matches if os.path.isfile(f)])
@@ -529,7 +534,29 @@ def cmd_import(args: List[str]):
         return False
 
     branch_name = UnitDB().import_unit(unit_id, description, files)
-    print(f"Successfully imported unit {unit_id} with {len(files)} file(s) in branch {branch_name}")
+    print(
+        f"Successfully imported unit {unit_id} with {len(files)} file(s) in branch {branch_name}"
+    )
+
+
+def cmd_merge(args: List[str]):
+    """laforge merge <unit_tag_or_branch> - Copy files from a finalized unit (u/) or unit in progress (uip/) and its dependencies into working directory"""
+    if len(args) < 1:
+        print("Usage: laforge merge <unit_tag_or_branch>", file=sys.stderr)
+        print("  unit_tag_or_branch: Either a unit tag (u/<unit_id>) or branch name (uip/<unit_id>_<timestamp>)", file=sys.stderr)
+        return False
+
+    unit_ref = args[0]
+
+    # Validate that the reference starts with either u/ or uip/
+    if not unit_ref.startswith("u/") and not unit_ref.startswith("uip/"):
+        print("Error: Unit reference must start with 'u/' (unit tag) or 'uip/' (branch name)", file=sys.stderr)
+        return False
+
+    files_written = UnitDB().merge_unit(unit_ref)
+    print(f"Successfully merged unit '{unit_ref}': {files_written} file(s) written")
+
+    return True
 
 
 def cmd_add_dep(args: List[str]):
@@ -1049,7 +1076,7 @@ def main():
     if len(sys.argv) < 2:
         print("Usage: laforge <command> [args...]", file=sys.stderr)
         print(
-            "Commands: create, import, add-dep, rm-dep, tree, finalize, apply, update, next",
+            "Commands: create, import, merge, add-dep, rm-dep, tree, finalize, apply, update, next",
             file=sys.stderr,
         )
         sys.exit(1)
@@ -1060,6 +1087,7 @@ def main():
     commands = {
         "create": cmd_create,
         "import": cmd_import,
+        "merge": cmd_merge,
         "add-dep": cmd_add_dep,
         "rm-dep": cmd_rm_dep,
         "tree": cmd_tree,
