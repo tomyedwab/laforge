@@ -400,6 +400,105 @@ class UnitDB(object):
 
         return files_written
 
+    def finalize_unit(self, branch_name, unit_id) -> str | None:
+        # Get the branch commit
+        try:
+            commit_hash = git_exec(
+                "show-ref", [f"refs/heads/{branch_name}", "-s"]
+            ).strip()
+            if not commit_hash:
+                print(f"Error: Branch '{branch_name}' not found", file=sys.stderr)
+                return None
+        except Exception:
+            print(f"Error: Branch '{branch_name}' not found", file=sys.stderr)
+            return None
+
+        # Load the latest commit tree
+        tree_hash = git_exec("show", [commit_hash, "--format=%T", "--no-patch"]).strip()
+        tree = GitTree.from_hash(tree_hash)
+
+        # Read CHANGELOG.md for the commit message (check both cases)
+        changelog_content = None
+        for key in ["CHANGELOG.md", "changelog.md"]:
+            if key in tree.blobs:
+                changelog_hash = tree.blobs[key]
+                changelog_content = git_exec("cat-file", ["-p", changelog_hash]).strip()
+                break
+
+        if not changelog_content:
+            print("Error: CHANGELOG.md not found in branch", file=sys.stderr)
+            return None
+
+        # Remove internal files (STATUS.yaml and CHANGELOG.md in any case)
+        files_to_remove = ["STATUS.yaml", "status.yaml", "CHANGELOG.md", "changelog.md"]
+        removed_count = 0
+        for filename in files_to_remove:
+            if filename in tree.blobs:
+                del tree.blobs[filename]
+                removed_count += 1
+
+        # Create the new tree
+        final_tree_hash = tree.finalize()
+
+        # Create the squash commit
+        # Check if the tag already exists to find the merge base
+        tag_name = f"u/{unit_id}"
+        commit_args = [final_tree_hash]
+
+        try:
+            existing_tag_commit = git_exec(
+                "show-ref", [f"refs/tags/{tag_name}", "-s"]
+            ).strip()
+            print(f"Existing tag commit: {existing_tag_commit}")  # donotcheckin
+            if existing_tag_commit:
+                # Tag exists, find merge base between branch and tag
+                try:
+                    merge_base = git_exec(
+                        "merge-base", [commit_hash, existing_tag_commit]
+                    ).strip()
+                    print(f"Merge base found: {merge_base}")  # donotcheckin
+                    if merge_base:
+                        # Use merge base as the only parent
+                        commit_args.extend(["-p", merge_base])
+                except Exception:
+                    # No merge base found, create commit with no parents
+                    pass
+        except Exception:
+            pass
+
+        # Create commit with the changelog as message
+        final_commit_hash = git_exec(
+            "commit-tree", commit_args, changelog_content
+        ).strip()
+
+        # Create or update the tag
+        tag_name = f"u/{unit_id}"
+        try:
+            # Check if tag exists
+            existing_tag = git_exec("show-ref", [f"refs/tags/{tag_name}", "-s"]).strip()
+            if existing_tag:
+                # Tag exists, force update it
+                git_exec("tag", ["-f", tag_name, final_commit_hash])
+                print(
+                    f"Successfully finalized unit '{unit_id}': updated tag {tag_name} (removed {removed_count} internal file(s))"
+                )
+            else:
+                # Create new tag
+                git_exec("tag", [tag_name, final_commit_hash])
+                print(
+                    f"Successfully finalized unit '{unit_id}': created tag {tag_name} (removed {removed_count} internal file(s))"
+                )
+        except Exception:
+            # Tag doesn't exist, create it
+            git_exec("tag", [tag_name, final_commit_hash])
+            print(
+                f"Successfully finalized unit '{unit_id}': created tag {tag_name} (removed {removed_count} internal file(s))"
+            )
+
+        git_exec("update-ref", [f"refs/heads/{branch_name}", final_commit_hash])
+
+        return commit_hash
+
     def _update_transitive_dependencies(self, deps_tree: GitTree) -> dict[str, GitTree]:
         transitive_deps = {}
         dep_stack = [(name, tree) for name, tree in deps_tree.trees.items()]

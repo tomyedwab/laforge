@@ -651,56 +651,40 @@ def cmd_tree(args: List[str]):
 
 
 def cmd_finalize(args: List[str]):
-    """laforge finalize [unit_id] - Mark a unit as finalized"""
-    raise NotImplementedError("not yet implemented")
-    """
-    # Get registry
-    registry_path = LaforgeConfig().get_registry_path()
-    if not registry_path:
-        print("Error: artifact_registry not configured", file=sys.stderr)
+    """laforge finalize <unit_id> [branch_name] - Mark a unit as finalized (squash merge uip/ branch to u/ tag)"""
+    if len(args) < 1:
+        print("Usage: laforge finalize <unit_id> [branch_name]", file=sys.stderr)
+        print("  unit_id: Unit identifier to finalize", file=sys.stderr)
+        print(
+            "  branch_name: Optional branch name (defaults to current branch). Must start with 'uip/'",
+            file=sys.stderr,
+        )
         return False
 
-    db = LaforgeDB(str(registry_path / "laforge.db"))
+    unit_id = args[0]
 
-    # Determine which unit to finalize
-    if len(args) >= 1:
-        unit_id = args[0]
+    # Get branch name from args or current branch
+    if len(args) > 1:
+        branch_name = args[1]
     else:
-        # Use current unit
-        unit_info = LaforgeUnit().load()
-        if not unit_info:
+        branch_name = git_exec("branch", ["--show-current"]).strip()
+        if not branch_name:
             print(
-                "Error: No current unit. Run 'laforge init' first or provide a unit_id.",
+                "Error: Not currently on any branch and no branch name provided",
                 file=sys.stderr,
             )
             return False
-        unit_id = unit_info["unit_id"]
 
-    # Verify unit exists
-    unit = db.get_unit(unit_id)
-    if not unit:
-        print(f"Error: Unit '{unit_id}' not found", file=sys.stderr)
+    # Validate branch name format
+    if not branch_name.startswith("uip/"):
+        print("Error: Branch name must start with 'uip/'", file=sys.stderr)
         return False
 
-    # Check if already finalized
-    if unit["finalized"]:
-        print(f"Unit '{unit_id}' is already finalized", file=sys.stderr)
-        return False
-
-    # Mark as finalized
-    conn = db.get_connection()
-    cursor = conn.cursor()
-    try:
-        cursor.execute("UPDATE units SET finalized = 1 WHERE unit_id = ?", (unit_id,))
-        conn.commit()
-        print(f"Finalized unit: '{unit_id}'")
+    commit_hash = UnitDB().finalize_unit(branch_name, unit_id)
+    if commit_hash:
+        print(f"Successfully finalized unit '{unit_id}'. Old commit: {commit_hash}")
         return True
-    except Exception as e:
-        print(f"Error finalizing unit: {e}", file=sys.stderr)
-        return False
-    finally:
-        conn.close()
-    """
+    return False
 
 
 def cmd_next(args: List[str]):
