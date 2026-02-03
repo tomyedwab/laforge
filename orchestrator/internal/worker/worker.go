@@ -8,16 +8,22 @@ import (
 	"time"
 
 	"github.com/hibiken/asynq"
+	"github.com/tom/laforge/orchestrator/internal/docker"
 	"github.com/tom/laforge/orchestrator/internal/gitea"
+	"github.com/tom/laforge/orchestrator/internal/prfetch"
 	"github.com/tom/laforge/orchestrator/internal/queue"
 )
 
 // Server wraps the Asynq server for processing tasks
 type Server struct {
-	asynq     *asynq.Server
-	mux       *asynq.ServeMux
-	gitea     *gitea.Client
-	redisAddr string
+	asynq      *asynq.Server
+	mux        *asynq.ServeMux
+	gitea      *gitea.Client
+	redisAddr  string
+	giteaURL   string
+	giteaToken string
+	gitImage   string
+	agentImage string
 }
 
 // Config holds the configuration for the worker server
@@ -25,6 +31,10 @@ type Config struct {
 	RedisAddr   string
 	Concurrency int
 	GiteaClient *gitea.Client
+	GiteaURL    string
+	GiteaToken  string
+	GitImage    string // Docker image with git (e.g., "alpine/git:latest")
+	AgentImage  string // Docker image for agent (currently just sleeps)
 }
 
 // NewServer creates a new worker server
@@ -46,10 +56,14 @@ func NewServer(cfg Config) *Server {
 	mux := asynq.NewServeMux()
 
 	return &Server{
-		asynq:     srv,
-		mux:       mux,
-		gitea:     cfg.GiteaClient,
-		redisAddr: cfg.RedisAddr,
+		asynq:      srv,
+		mux:        mux,
+		gitea:      cfg.GiteaClient,
+		redisAddr:  cfg.RedisAddr,
+		giteaURL:   cfg.GiteaURL,
+		giteaToken: cfg.GiteaToken,
+		gitImage:   cfg.GitImage,
+		agentImage: cfg.AgentImage,
 	}
 }
 
@@ -111,33 +125,12 @@ func (s *Server) handlePRJob(ctx context.Context, t *asynq.Task) error {
 		// Continue processing even if status update fails
 	}
 
-	// Process the job (for now, just sleep for 1 minute)
-	slog.Info("job running, sleeping for 1 minute",
-		"repository", payload.Repository,
-		"pr_number", payload.PRNumber,
-	)
-
-	select {
-	case <-time.After(1 * time.Minute):
-		// Job completed successfully
-		slog.Info("job completed",
+	// Process the job
+	if err := s.processJob(ctx, &payload); err != nil {
+		slog.Error("job failed",
 			"repository", payload.Repository,
 			"pr_number", payload.PRNumber,
-		)
-
-		// Update Gitea status to "success"
-		if err := s.gitea.UpdateStatus(ctx, payload.HeadRepository, payload.SHA, gitea.StatusSuccess); err != nil {
-			slog.Error("failed to update status to success", "error", err)
-			return fmt.Errorf("failed to update final status: %w", err)
-		}
-
-		return nil
-
-	case <-ctx.Done():
-		// Context cancelled
-		slog.Warn("job cancelled",
-			"repository", payload.Repository,
-			"pr_number", payload.PRNumber,
+			"error", err,
 		)
 
 		// Update Gitea status to "failure"
@@ -145,6 +138,126 @@ func (s *Server) handlePRJob(ctx context.Context, t *asynq.Task) error {
 			slog.Error("failed to update status to failure", "error", err)
 		}
 
-		return ctx.Err()
+		return fmt.Errorf("job processing failed: %w", err)
 	}
+
+	// Job completed successfully
+	slog.Info("job completed",
+		"repository", payload.Repository,
+		"pr_number", payload.PRNumber,
+	)
+
+	// Update Gitea status to "success"
+	if err := s.gitea.UpdateStatus(ctx, payload.Repository, payload.SHA, gitea.StatusSuccess); err != nil {
+		slog.Error("failed to update status to success", "error", err)
+		return fmt.Errorf("failed to update final status: %w", err)
+	}
+
+	return nil
+}
+
+// processJob handles the actual PR job processing
+func (s *Server) processJob(ctx context.Context, payload *queue.PRJobPayload) error {
+	// Generate unique volume name
+	volumeName := fmt.Sprintf("laforge-pr-%s-%d-%d",
+		payload.Repository,
+		payload.PRNumber,
+		time.Now().Unix(),
+	)
+	// Replace slashes with dashes for Docker volume name
+	volumeName = fmt.Sprintf("laforge-pr-%s-%d-%d",
+		fmt.Sprintf("%s", payload.Repository),
+		payload.PRNumber,
+		time.Now().Unix(),
+	)
+	// Docker volume names can't contain slashes
+	volumeName = "laforge-pr-" + fmt.Sprintf("%d-%d", payload.PRNumber, time.Now().Unix())
+
+	slog.Info("setting up workspace",
+		"volume", volumeName,
+		"repository", payload.Repository,
+		"pr_number", payload.PRNumber,
+	)
+
+	// Initialize Docker client
+	dockerClient, err := docker.NewClient()
+	if err != nil {
+		return fmt.Errorf("failed to create Docker client: %w", err)
+	}
+	defer dockerClient.Close()
+
+	// Pull git image if needed
+	slog.Info("pulling git image", "image", s.gitImage)
+	if err := dockerClient.PullImage(ctx, s.gitImage); err != nil {
+		return fmt.Errorf("failed to pull git image: %w", err)
+	}
+
+	// Create Docker volume
+	if err := dockerClient.CreateVolume(ctx, volumeName); err != nil {
+		return fmt.Errorf("failed to create volume: %w", err)
+	}
+
+	// Ensure volume cleanup on exit
+	defer func() {
+		cleanupCtx := context.Background()
+		if err := dockerClient.DeleteVolume(cleanupCtx, volumeName); err != nil {
+			slog.Error("failed to delete volume", "volume", volumeName, "error", err)
+		}
+	}()
+
+	// Construct git clone URL with authentication
+	cloneURL, err := prfetch.GetCloneURL(s.giteaURL, s.giteaToken, payload.Repository, payload.SHA)
+	if err != nil {
+		return fmt.Errorf("failed to construct clone URL: %w", err)
+	}
+
+	// Run init container to clone repository
+	if err := dockerClient.RunInitContainer(ctx, volumeName, cloneURL, payload.SHA, s.gitImage); err != nil {
+		return fmt.Errorf("failed to run init container: %w", err)
+	}
+
+	// Fetch PR history and attachments
+	fetcher := prfetch.NewFetcher(s.gitea.GetSDKClient(), s.giteaURL, s.giteaToken)
+	history, err := fetcher.FetchPRHistory(ctx, payload.Repository, payload.PRNumber)
+	if err != nil {
+		return fmt.Errorf("failed to fetch PR history: %w", err)
+	}
+
+	// Prepare files to copy to volume
+	files := make(map[string][]byte)
+	files[".pr/history.md"] = []byte(history.Markdown)
+
+	// Add attachment files
+	for _, att := range history.Attachments {
+		if len(att.Content) > 0 {
+			files[att.LocalPath] = att.Content
+		}
+	}
+
+	// Copy .pr files to volume
+	if err := dockerClient.CopyFilesToVolume(ctx, volumeName, files, s.gitImage); err != nil {
+		return fmt.Errorf("failed to copy files to volume: %w", err)
+	}
+
+	// Pull agent image if needed
+	slog.Info("pulling agent image", "image", s.agentImage)
+	if err := dockerClient.PullImage(ctx, s.agentImage); err != nil {
+		return fmt.Errorf("failed to pull agent image: %w", err)
+	}
+
+	// Run agent container (placeholder: sleep for 2 minutes)
+	// TODO: Replace with actual agent execution
+	slog.Info("running agent container (sleep placeholder)",
+		"volume", volumeName,
+		"duration", "2m",
+	)
+
+	if err := dockerClient.RunAgentContainer(ctx, volumeName, s.agentImage, 2*time.Minute); err != nil {
+		return fmt.Errorf("failed to run agent container: %w", err)
+	}
+
+	// TODO: After agent completes, collect status updates and push changes back to Gitea
+	// This will be implemented in a future PR
+
+	return nil
 }

@@ -69,7 +69,7 @@ type GiteaWebhookPayload struct {
 func main() {
 	// Set up JSON structured logging
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
-		Level: slog.LevelInfo,
+		Level: slog.LevelDebug,
 	}))
 	slog.SetDefault(logger)
 
@@ -113,6 +113,16 @@ func main() {
 		botUsername = defaultBotUsername
 	}
 
+	gitImage := os.Getenv("GIT_IMAGE")
+	if gitImage == "" {
+		gitImage = "alpine/git:latest"
+	}
+
+	agentImage := os.Getenv("AGENT_IMAGE")
+	if agentImage == "" {
+		agentImage = "alpine:latest" // Placeholder for now
+	}
+
 	// Initialize Gitea client
 	giteaClient, err := gitea.NewClient(giteaURL, giteaToken)
 	if err != nil {
@@ -129,6 +139,10 @@ func main() {
 		RedisAddr:   redisAddr,
 		Concurrency: workerConcurrency,
 		GiteaClient: giteaClient,
+		GiteaURL:    giteaURL,
+		GiteaToken:  giteaToken,
+		GitImage:    gitImage,
+		AgentImage:  agentImage,
 	})
 	workerServer.RegisterHandlers()
 

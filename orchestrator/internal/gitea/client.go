@@ -39,6 +39,11 @@ func NewClient(url, token string) (*Client, error) {
 	return &Client{client: client}, nil
 }
 
+// GetSDKClient returns the underlying Gitea SDK client
+func (c *Client) GetSDKClient() *gitea.Client {
+	return c.client
+}
+
 // UpdateStatus updates the commit status for a PR
 func (c *Client) UpdateStatus(ctx context.Context, repository, sha string, status Status) error {
 	// Parse repository into owner and repo

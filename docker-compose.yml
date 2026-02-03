@@ -73,6 +73,8 @@ services:
     container_name: orchestrator
     networks:
       - gitea
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
     environment:
       - PORT=8080
       - WEBHOOK_SECRET=${WEBHOOK_SECRET:-}
