@@ -30,6 +30,7 @@ type PRJobPayload struct {
 	Action         string `json:"action"`          // Webhook action (e.g., "opened", "synchronized")
 	Sender         string `json:"sender"`          // User who triggered the webhook
 	HeadRepository string `json:"head_repository"` // Head repository (may differ for forks)
+	Branch         string `json:"branch"`          // PR branch name (head ref)
 	PromptType     string `json:"prompt_type"`     // Prompt type (e.g., "implement", "plan", "critique")
 	Model          string `json:"model"`           // Full model ID (e.g., "claude-sonnet-4-5-20250929")
 }

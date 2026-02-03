@@ -470,6 +470,7 @@ func handleWebhook(secret string, botUsername string, queueClient *queue.Client,
 		var prNumber int
 		var headSHA string
 		var headRepo string
+		var branch string
 
 		switch eventType {
 		case "pull_request":
@@ -483,6 +484,7 @@ func handleWebhook(secret string, botUsername string, queueClient *queue.Client,
 				Number int `json:"number"`
 				Head   struct {
 					SHA  string `json:"sha"`
+					Ref  string `json:"ref"`
 					Repo struct {
 						FullName string `json:"full_name"`
 					} `json:"repo"`
@@ -495,6 +497,7 @@ func handleWebhook(secret string, botUsername string, queueClient *queue.Client,
 			}
 			prNumber = pr.Number
 			headSHA = pr.Head.SHA
+			branch = pr.Head.Ref
 			headRepo = pr.Head.Repo.FullName
 			if headRepo == "" {
 				headRepo = payload.Repository.FullName
@@ -542,6 +545,7 @@ func handleWebhook(secret string, botUsername string, queueClient *queue.Client,
 				Number int `json:"number"`
 				Head   struct {
 					SHA  string `json:"sha"`
+					Ref  string `json:"ref"`
 					Repo struct {
 						FullName string `json:"full_name"`
 					} `json:"repo"`
@@ -554,6 +558,7 @@ func handleWebhook(secret string, botUsername string, queueClient *queue.Client,
 			}
 			prNumber = pr.Number
 			headSHA = pr.Head.SHA
+			branch = pr.Head.Ref
 			headRepo = pr.Head.Repo.FullName
 			if headRepo == "" {
 				headRepo = payload.Repository.FullName
@@ -566,8 +571,8 @@ func handleWebhook(secret string, botUsername string, queueClient *queue.Client,
 			return
 		}
 
-		// For issue_comment events, we need to fetch the PR head SHA
-		if eventType == "issue_comment" && headSHA == "" {
+		// For issue_comment events, we need to fetch the PR details including head SHA and branch
+		if eventType == "issue_comment" {
 			// Fetch PR details from Gitea API
 			pr, err := giteaClient.GetPullRequest(ctx, payload.Repository.FullName, prNumber)
 			if err != nil {
@@ -581,6 +586,7 @@ func handleWebhook(secret string, botUsername string, queueClient *queue.Client,
 			}
 			headSHA = pr.HeadSHA
 			headRepo = pr.HeadRepo
+			branch = pr.Branch
 		}
 
 		// Create job payload
@@ -591,6 +597,7 @@ func handleWebhook(secret string, botUsername string, queueClient *queue.Client,
 			Action:         payload.Action,
 			Sender:         payload.Sender.Login,
 			HeadRepository: headRepo,
+			Branch:         branch,
 			PromptType:     promptType,
 			Model:          fullModelID,
 		}

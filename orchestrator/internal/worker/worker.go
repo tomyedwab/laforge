@@ -10,6 +10,7 @@ import (
 	"github.com/hibiken/asynq"
 	"github.com/tom/laforge/orchestrator/internal/docker"
 	"github.com/tom/laforge/orchestrator/internal/gitea"
+	"github.com/tom/laforge/orchestrator/internal/poststatus"
 	"github.com/tom/laforge/orchestrator/internal/prfetch"
 	"github.com/tom/laforge/orchestrator/internal/queue"
 )
@@ -256,8 +257,51 @@ func (s *Server) processJob(ctx context.Context, payload *queue.PRJobPayload) er
 		return fmt.Errorf("failed to run agent container: %w", err)
 	}
 
-	// TODO: After agent completes, collect status updates and push changes back to Gitea
-	// This will be implemented in a future PR
+	// Agent completed successfully - now run teardown to collect and commit changes
+	slog.Info("agent completed successfully, running teardown")
 
+	// Extract files we need from the volume
+	filesToExtract := []string{".pr/commit.md", ".pr/status.yaml"}
+	extractedFiles, err := dockerClient.CopyFilesFromVolume(ctx, volumeName, filesToExtract, s.gitImage)
+	if err != nil {
+		return fmt.Errorf("failed to extract files from volume: %w", err)
+	}
+
+	// Commit and push changes to the PR branch
+	commitMessage := extractedFiles[".pr/commit.md"]
+	headSHA, err := dockerClient.CommitAndPushChanges(
+		ctx,
+		volumeName,
+		s.gitImage,
+		s.giteaURL,
+		s.giteaToken,
+		payload.Repository,
+		payload.Branch,
+		commitMessage,
+	)
+	if err != nil {
+		return fmt.Errorf("failed to commit and push changes: %w", err)
+	}
+
+	// If there were changes committed, use the new HEAD SHA for status posting
+	// Otherwise, use the original SHA
+	statusCommitSHA := payload.SHA
+	if headSHA != "" {
+		statusCommitSHA = headSHA
+		slog.Info("changes committed to PR", "new_head_sha", headSHA)
+	} else {
+		slog.Info("no changes to commit")
+	}
+
+	// Post status updates to the PR if status.yaml exists
+	if statusYAML, ok := extractedFiles[".pr/status.yaml"]; ok {
+		if err := poststatus.PostStatus(ctx, statusYAML, statusCommitSHA, payload.Repository, payload.PRNumber, s.gitea); err != nil {
+			return fmt.Errorf("failed to post status to PR: %w", err)
+		}
+	} else {
+		slog.Info("no status.yaml found, skipping status post")
+	}
+
+	slog.Info("teardown completed successfully")
 	return nil
 }

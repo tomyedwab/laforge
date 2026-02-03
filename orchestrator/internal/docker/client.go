@@ -320,6 +320,273 @@ func (c *Client) RunAgentContainer(ctx context.Context, volumeName, imageName st
 	return nil
 }
 
+// CopyFilesFromVolume extracts files from a volume back to the host
+// Returns a map of file paths to file contents, or an error
+func (c *Client) CopyFilesFromVolume(ctx context.Context, volumeName string, filePaths []string, imageName string) (map[string][]byte, error) {
+	slog.Info("copying files from volume",
+		"volume", volumeName,
+		"file_count", len(filePaths),
+	)
+
+	if len(filePaths) == 0 {
+		return make(map[string][]byte), nil
+	}
+
+	// Create a temporary container with the volume mounted
+	containerConfig := &container.Config{
+		Image:      imageName,
+		Cmd:        []string{"sleep", "3600"},
+		WorkingDir: "/workspace",
+	}
+
+	hostConfig := &container.HostConfig{
+		Mounts: []mount.Mount{
+			{
+				Type:   mount.TypeVolume,
+				Source: volumeName,
+				Target: "/workspace",
+			},
+		},
+	}
+
+	// Create the temporary container
+	resp, err := c.docker.ContainerCreate(ctx, containerConfig, hostConfig, nil, nil, "")
+	if err != nil {
+		return nil, fmt.Errorf("failed to create temporary container for file extraction: %w", err)
+	}
+
+	containerID := resp.ID
+	slog.Debug("created temporary file extraction container", "id", containerID)
+
+	// Ensure we clean up the container when done
+	defer func() {
+		removeCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		if err := c.docker.ContainerRemove(removeCtx, containerID, container.RemoveOptions{Force: true}); err != nil {
+			slog.Warn("failed to remove temporary file extraction container", "id", containerID, "error", err)
+		}
+	}()
+
+	// Start the container so we can copy files from it
+	if err := c.docker.ContainerStart(ctx, containerID, container.StartOptions{}); err != nil {
+		return nil, fmt.Errorf("failed to start temporary container: %w", err)
+	}
+
+	// Extract each file
+	result := make(map[string][]byte)
+	for _, filePath := range filePaths {
+		// Construct full path in container
+		fullPath := "/workspace/repo/" + filePath
+
+		// Copy file from container
+		reader, _, err := c.docker.CopyFromContainer(ctx, containerID, fullPath)
+		if err != nil {
+			// File might not exist, which is OK for optional files like status.yaml
+			slog.Debug("failed to copy file from container (file may not exist)", "file", filePath, "error", err)
+			continue
+		}
+
+		// Extract content from tar archive
+		content, err := extractTarFile(reader, filePath)
+		reader.Close()
+		if err != nil {
+			slog.Warn("failed to extract file from tar", "file", filePath, "error", err)
+			continue
+		}
+
+		result[filePath] = content
+		slog.Debug("extracted file from volume", "file", filePath, "size", len(content))
+	}
+
+	slog.Info("files extracted successfully", "count", len(result))
+	return result, nil
+}
+
+// extractTarFile extracts a single file from a tar archive reader
+func extractTarFile(reader io.Reader, fileName string) ([]byte, error) {
+	tr := tar.NewReader(reader)
+
+	// Find the file in the tar archive
+	for {
+		header, err := tr.Next()
+		if err == io.EOF {
+			return nil, fmt.Errorf("file %s not found in tar archive", fileName)
+		}
+		if err != nil {
+			return nil, fmt.Errorf("error reading tar archive: %w", err)
+		}
+
+		// Check if this is the file we want (match basename)
+		if filepath.Base(header.Name) == filepath.Base(fileName) || header.Name == fileName {
+			// Read the file content
+			content, err := io.ReadAll(tr)
+			if err != nil {
+				return nil, fmt.Errorf("error reading file content: %w", err)
+			}
+			return content, nil
+		}
+	}
+}
+
+// CommitAndPushChanges commits and pushes changes from the volume to the PR branch
+// Returns the HEAD commit SHA after committing, or empty string if no changes
+func (c *Client) CommitAndPushChanges(ctx context.Context, volumeName, imageName, giteaURL, giteaToken, repository, branch string, commitMessage []byte) (string, error) {
+	slog.Info("committing and pushing changes",
+		"volume", volumeName,
+		"repository", repository,
+		"branch", branch,
+	)
+
+	// Determine commit message
+	message := "Agent: updating PR status"
+	if len(commitMessage) > 0 {
+		message = string(commitMessage)
+	}
+
+	// Derive base git URL from API URL (remove /api/v1 suffix)
+	gitBaseURL := strings.TrimSuffix(giteaURL, "/api/v1")
+	gitBaseURL = strings.TrimSuffix(gitBaseURL, "/api")
+
+	// Construct authenticated push URL
+	// Format: http://username:token@host/repo.git
+	pushURL := gitBaseURL
+	if strings.HasPrefix(pushURL, "http://") {
+		pushURL = "http://laforge:" + giteaToken + "@" + strings.TrimPrefix(gitBaseURL, "http://")
+	} else if strings.HasPrefix(pushURL, "https://") {
+		pushURL = "https://laforge:" + giteaToken + "@" + strings.TrimPrefix(gitBaseURL, "https://")
+	}
+	pushURL = pushURL + "/" + repository + ".git"
+
+	// Build git command script
+	script := fmt.Sprintf(`#!/bin/sh
+set -e
+cd /workspace/repo
+
+# Configure git
+git config user.name "Laforge agent"
+git config user.email "laforge@tomyedwab.com"
+
+# Stage all changes except special files
+git add .
+git reset HEAD .pr/history.md .pr/status.yaml .pr/status.md .pr/commit.md 2>/dev/null || true
+
+# Check if there are changes to commit
+if git diff --cached --quiet; then
+    echo "NO_CHANGES"
+    exit 0
+fi
+
+# Commit changes
+git commit -m %s
+
+# Push to remote
+git push %s HEAD:%s
+
+# Output the HEAD SHA with a clear marker
+echo "NEW_HEAD_SHA: $(git rev-parse HEAD)"
+`, shellQuote(message), shellQuote(pushURL), shellQuote(branch))
+
+	// Create container config
+	// Note: Override the entrypoint to use sh instead of git, since the git image
+	// has git as its default entrypoint which would prepend "git" to our commands
+	containerConfig := &container.Config{
+		Image:      imageName,
+		Entrypoint: []string{"sh", "-c"},
+		Cmd:        []string{script},
+		WorkingDir: "/workspace/repo",
+	}
+
+	// Mount the volume
+	hostConfig := &container.HostConfig{
+		Mounts: []mount.Mount{
+			{
+				Type:   mount.TypeVolume,
+				Source: volumeName,
+				Target: "/workspace",
+			},
+		},
+		// Note: Don't use AutoRemove here because we need to get logs after the container exits
+	}
+
+	// Create the container
+	resp, err := c.docker.ContainerCreate(ctx, containerConfig, hostConfig, nil, nil, "")
+	if err != nil {
+		return "", fmt.Errorf("failed to create git commit container: %w", err)
+	}
+
+	containerID := resp.ID
+	slog.Debug("created git commit container", "id", containerID)
+
+	// Ensure container is removed after we're done
+	defer func() {
+		if err := c.docker.ContainerRemove(ctx, containerID, container.RemoveOptions{Force: true}); err != nil {
+			slog.Warn("failed to remove git commit container", "id", containerID, "error", err)
+		}
+	}()
+
+	// Start the container
+	if err := c.docker.ContainerStart(ctx, containerID, container.StartOptions{}); err != nil {
+		return "", fmt.Errorf("failed to start git commit container: %w", err)
+	}
+
+	// Wait for container to finish
+	statusCh, errCh := c.docker.ContainerWait(ctx, containerID, container.WaitConditionNotRunning)
+	select {
+	case err := <-errCh:
+		if err != nil {
+			return "", fmt.Errorf("error waiting for git commit container: %w", err)
+		}
+	case status := <-statusCh:
+		if status.StatusCode != 0 {
+			logs, _ := c.getContainerLogs(ctx, containerID)
+			return "", fmt.Errorf("git commit container exited with code %d: %s", status.StatusCode, logs)
+		}
+	}
+
+	// Get output to check if there were changes and get the SHA
+	logs, err := c.getContainerLogs(ctx, containerID)
+	if err != nil {
+		return "", fmt.Errorf("failed to get git commit logs: %w", err)
+	}
+
+	// Check if there were no changes
+	if strings.Contains(logs, "NO_CHANGES") {
+		slog.Info("no changes to commit")
+		return "", nil
+	}
+
+	// Extract HEAD SHA from logs (look for "NEW_HEAD_SHA: <sha>" marker)
+	headSHA := ""
+	for _, line := range strings.Split(logs, "\n") {
+		line = strings.TrimSpace(line)
+		if strings.HasPrefix(line, "NEW_HEAD_SHA: ") {
+			headSHA = strings.TrimPrefix(line, "NEW_HEAD_SHA: ")
+			break
+		}
+	}
+
+	// Validate we found the SHA
+	if headSHA == "" {
+		slog.Warn("could not find NEW_HEAD_SHA marker in logs", "logs", logs)
+		return "", fmt.Errorf("could not find NEW_HEAD_SHA marker in output")
+	}
+
+	// Validate SHA format (should be 40 hex characters)
+	if len(headSHA) != 40 {
+		slog.Warn("unexpected HEAD SHA format", "sha", headSHA, "logs", logs)
+		return "", fmt.Errorf("unexpected HEAD SHA format: %s", headSHA)
+	}
+
+	slog.Info("changes committed and pushed successfully", "head_sha", headSHA)
+	return headSHA, nil
+}
+
+// shellQuote properly quotes a string for use in a shell script
+func shellQuote(s string) string {
+	// Use single quotes and escape any single quotes in the string
+	return "'" + strings.ReplaceAll(s, "'", "'\"'\"'") + "'"
+}
+
 // getContainerLogs retrieves logs from a container
 func (c *Client) getContainerLogs(ctx context.Context, containerID string) (string, error) {
 	options := container.LogsOptions{
