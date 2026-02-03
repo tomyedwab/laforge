@@ -200,8 +200,6 @@ func parseSlashCommand(commentBody string) (string, string, bool) {
 	// Match /<word> <word> pattern
 	// Allowed prompt types: implement, plan, critique
 	for promptType := range validPromptTypes {
-		// Build regex pattern for this prompt type
-		pattern := `/` + promptType + `\s+(\w+)`
 		if idx := strings.Index(commentBody, "/"+promptType); idx != -1 {
 			// Extract the model name after the prompt type
 			remaining := commentBody[idx:]
