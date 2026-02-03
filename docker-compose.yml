@@ -84,6 +84,7 @@ services:
       - GITEA_TOKEN=${GITEA_TOKEN:-}
       - WORKER_CONCURRENCY=${WORKER_CONCURRENCY:-5}
       - NTFY_ENDPOINT=${NTFY_ENDPOINT:-http://ntfy:80}
+      - AGENT_IMAGE=laforge/claudecode
     ports:
       - "8080:8080"
     depends_on:

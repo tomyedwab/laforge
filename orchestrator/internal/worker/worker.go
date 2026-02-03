@@ -37,8 +37,8 @@ type Config struct {
 	NotifyClient *notify.Client
 	GiteaURL     string
 	GiteaToken   string
-	GitImage     string // Docker image with git (e.g., "alpine/git:latest")
-	AgentImage   string // Docker image for agent (currently just sleeps)
+	GitImage     string
+	AgentImage   string
 }
 
 // NewServer creates a new worker server
@@ -146,11 +146,11 @@ func (s *Server) handlePRJob(ctx context.Context, t *asynq.Task) error {
 		// Send failure notification only if retries are exhausted
 		// Asynq will retry the task, so we check if this is the final attempt
 		retried, err := asynq.GetRetryCount(ctx)
-		if err != nil {
+		if err {
 			slog.Warn("failed to get retry count", "error", err)
 		}
 		maxRetry, err := asynq.GetMaxRetry(ctx)
-		if err != nil {
+		if err {
 			slog.Warn("failed to get max retry", "error", err)
 		}
 
@@ -275,20 +275,18 @@ func (s *Server) processJob(ctx context.Context, payload *queue.PRJobPayload) er
 		return fmt.Errorf("failed to copy files to volume: %w", err)
 	}
 
+	/* TODO: If we end up hosting the images somewhere, pull them.
 	// Pull agent image if needed
 	slog.Info("pulling agent image", "image", s.agentImage)
 	if err := dockerClient.PullImage(ctx, s.agentImage); err != nil {
 		return fmt.Errorf("failed to pull agent image: %w", err)
 	}
+	*/
 
-	// Run agent container (placeholder: sleep for 2 minutes)
-	// TODO: Replace with actual agent execution
-	slog.Info("running agent container (sleep placeholder)",
-		"volume", volumeName,
-		"duration", "2m",
-	)
+	// Run agent container
+	slog.Info("running agent container", "volume", volumeName)
 
-	if err := dockerClient.RunAgentContainer(ctx, volumeName, s.agentImage, 2*time.Minute); err != nil {
+	if err := dockerClient.RunAgentContainer(ctx, volumeName, s.agentImage, payload.PromptType, payload.Model); err != nil {
 		return fmt.Errorf("failed to run agent container: %w", err)
 	}
 

@@ -1,0 +1,20 @@
+FROM debian:bookworm-slim
+
+# Install packages and clean up temporary files
+RUN apt update && apt install -y curl zip sqlite3 curl && apt clean && rm -rf /var/lib/apt/lists/*
+
+# Install Node.js and Claude Code
+ENV NVM_DIR="/root/.nvm"
+RUN curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.3/install.sh | bash
+RUN bash -c ". /root/.nvm/nvm.sh && nvm install 22.21.1 && nvm alias default 22 && \
+    nvm use default && npm install -g @anthropic-ai/claude-code"
+ENV NODE_VERSION=22.21.1
+ENV PATH=$NVM_DIR/versions/node/v$NODE_VERSION/bin:$PATH
+
+COPY claudecode/format-claude-output.js /bin/
+COPY claudecode/*.sh /bin/
+COPY claudecode/settings.local.json /config/
+ADD AGENTS.md /config/CLAUDE.md
+COPY prompts/* /config/prompts/
+
+WORKDIR /src

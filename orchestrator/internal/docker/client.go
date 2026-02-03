@@ -262,17 +262,19 @@ func createTarArchive(files map[string][]byte) (*bytes.Reader, error) {
 }
 
 // RunAgentContainer runs the agent container with the workspace volume mounted
-func (c *Client) RunAgentContainer(ctx context.Context, volumeName, imageName string, sleepDuration time.Duration) error {
+func (c *Client) RunAgentContainer(ctx context.Context, volumeName, imageName, promptType, model string) error {
 	slog.Info("running agent container",
 		"volume", volumeName,
 		"image", imageName,
-		"sleep_duration", sleepDuration,
+		"prompt", promptType,
+		"model", model,
 	)
 
 	// For now, just run a sleep command as a placeholder
 	containerConfig := &container.Config{
 		Image:      imageName,
-		Cmd:        []string{"sh", "-c", fmt.Sprintf("sleep %d", int(sleepDuration.Seconds()))},
+		Cmd:        []string{"/bin/run.sh"},
+		Env:        []string{"PROMPTNAME=" + promptType, "MODELNAME=" + model},
 		WorkingDir: "/workspace/repo",
 	}
 
@@ -283,6 +285,11 @@ func (c *Client) RunAgentContainer(ctx context.Context, volumeName, imageName st
 				Type:   mount.TypeVolume,
 				Source: volumeName,
 				Target: "/workspace",
+			},
+			{
+				Type:   mount.TypeVolume,
+				Source: "laforge-claude-credentials",
+				Target: "/credentials",
 			},
 		},
 		AutoRemove: true,
