@@ -406,7 +406,7 @@ func handleWebhook(secret string, botUsername string, queueClient *queue.Client,
 		}
 
 		// Update Gitea status to "pending" (queued)
-		if err := giteaClient.UpdateStatus(ctx, jobPayload.Repository, jobPayload.SHA, gitea.StatusPending); err != nil {
+		if err := giteaClient.UpdateStatus(ctx, jobPayload.HeadRepository, jobPayload.SHA, gitea.StatusPending); err != nil {
 			slog.Error("failed to update status to pending",
 				"error", err,
 				"repository", jobPayload.Repository,

@@ -106,7 +106,7 @@ func (s *Server) handlePRJob(ctx context.Context, t *asynq.Task) error {
 	defer lock.Release(ctx)
 
 	// Update Gitea status to "running"
-	if err := s.gitea.UpdateStatus(ctx, payload.Repository, payload.SHA, gitea.StatusRunning); err != nil {
+	if err := s.gitea.UpdateStatus(ctx, payload.HeadRepository, payload.SHA, gitea.StatusRunning); err != nil {
 		slog.Error("failed to update status to running", "error", err)
 		// Continue processing even if status update fails
 	}
@@ -126,7 +126,7 @@ func (s *Server) handlePRJob(ctx context.Context, t *asynq.Task) error {
 		)
 
 		// Update Gitea status to "success"
-		if err := s.gitea.UpdateStatus(ctx, payload.Repository, payload.SHA, gitea.StatusSuccess); err != nil {
+		if err := s.gitea.UpdateStatus(ctx, payload.HeadRepository, payload.SHA, gitea.StatusSuccess); err != nil {
 			slog.Error("failed to update status to success", "error", err)
 			return fmt.Errorf("failed to update final status: %w", err)
 		}
@@ -141,7 +141,7 @@ func (s *Server) handlePRJob(ctx context.Context, t *asynq.Task) error {
 		)
 
 		// Update Gitea status to "failure"
-		if err := s.gitea.UpdateStatus(ctx, payload.Repository, payload.SHA, gitea.StatusFailure); err != nil {
+		if err := s.gitea.UpdateStatus(ctx, payload.HeadRepository, payload.SHA, gitea.StatusFailure); err != nil {
 			slog.Error("failed to update status to failure", "error", err)
 		}
 

@@ -69,6 +69,15 @@ func (c *Client) UpdateStatus(ctx context.Context, repository, sha string, statu
 		return fmt.Errorf("unknown status: %d", status)
 	}
 
+	// Debug logging before API call
+	slog.Debug("creating commit status",
+		"owner", owner,
+		"repo", repo,
+		"sha", sha,
+		"status", giteaStatus,
+		"context", statusContext,
+	)
+
 	// Create the status
 	_, resp, err := c.client.CreateStatus(owner, repo, sha, gitea.CreateStatusOption{
 		State:       giteaStatus,
@@ -79,11 +88,12 @@ func (c *Client) UpdateStatus(ctx context.Context, repository, sha string, statu
 	if err != nil {
 		// Add more context to the error
 		statusCode := 0
+		body := ""
 		if resp != nil {
 			statusCode = resp.StatusCode
 		}
-		return fmt.Errorf("failed to create status (HTTP %d) for %s/%s@%s: %w",
-			statusCode, owner, repo, sha[:min(7, len(sha))], err)
+		return fmt.Errorf("failed to create status (HTTP %d) for %s/%s@%s: %w (response: %s)",
+			statusCode, owner, repo, sha[:min(7, len(sha))], err, body)
 	}
 
 	slog.Info("updated commit status",
@@ -110,6 +120,13 @@ func (c *Client) GetPullRequest(ctx context.Context, repository string, prNumber
 		return nil, fmt.Errorf("invalid repository format: %s (expected owner/repo)", repository)
 	}
 	owner, repo := parts[0], parts[1]
+
+	// Debug logging before API call
+	slog.Debug("fetching pull request",
+		"owner", owner,
+		"repo", repo,
+		"pr_number", prNumber,
+	)
 
 	// Fetch PR from Gitea
 	pr, resp, err := c.client.GetPullRequest(owner, repo, int64(prNumber))
