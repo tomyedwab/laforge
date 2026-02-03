@@ -19,6 +19,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/tom/laforge/orchestrator/internal/gitea"
+	"github.com/tom/laforge/orchestrator/internal/notify"
 	"github.com/tom/laforge/orchestrator/internal/queue"
 	"github.com/tom/laforge/orchestrator/internal/worker"
 )
@@ -96,6 +97,12 @@ func main() {
 		os.Exit(1)
 	}
 
+	giteaExternalURL := os.Getenv("GITEA_EXTERNAL_URL")
+	if giteaExternalURL == "" {
+		// Default to internal URL if not set
+		giteaExternalURL = giteaURL
+	}
+
 	giteaToken := os.Getenv("GITEA_TOKEN")
 	if giteaToken == "" {
 		slog.Warn("GITEA_TOKEN not set, commit status updates will fail")
@@ -123,6 +130,11 @@ func main() {
 		agentImage = "alpine:latest" // Placeholder for now
 	}
 
+	ntfyEndpoint := os.Getenv("NTFY_ENDPOINT")
+	if ntfyEndpoint == "" {
+		ntfyEndpoint = "http://ntfy:80"
+	}
+
 	// Initialize Gitea client
 	giteaClient, err := gitea.NewClient(giteaURL, giteaToken)
 	if err != nil {
@@ -130,19 +142,26 @@ func main() {
 		os.Exit(1)
 	}
 
+	// Initialize notification client
+	notifyClient := notify.NewClient(notify.Config{
+		Endpoint: ntfyEndpoint,
+		GiteaURL: giteaExternalURL,
+	})
+
 	// Initialize queue client
 	queueClient := queue.NewClient(redisAddr)
 	defer queueClient.Close()
 
 	// Initialize and start worker server in a goroutine
 	workerServer := worker.NewServer(worker.Config{
-		RedisAddr:   redisAddr,
-		Concurrency: workerConcurrency,
-		GiteaClient: giteaClient,
-		GiteaURL:    giteaURL,
-		GiteaToken:  giteaToken,
-		GitImage:    gitImage,
-		AgentImage:  agentImage,
+		RedisAddr:    redisAddr,
+		Concurrency:  workerConcurrency,
+		GiteaClient:  giteaClient,
+		NotifyClient: notifyClient,
+		GiteaURL:     giteaURL,
+		GiteaToken:   giteaToken,
+		GitImage:     gitImage,
+		AgentImage:   agentImage,
 	})
 	workerServer.RegisterHandlers()
 

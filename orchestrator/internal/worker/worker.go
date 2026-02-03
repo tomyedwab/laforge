@@ -10,6 +10,7 @@ import (
 	"github.com/hibiken/asynq"
 	"github.com/tom/laforge/orchestrator/internal/docker"
 	"github.com/tom/laforge/orchestrator/internal/gitea"
+	"github.com/tom/laforge/orchestrator/internal/notify"
 	"github.com/tom/laforge/orchestrator/internal/poststatus"
 	"github.com/tom/laforge/orchestrator/internal/prfetch"
 	"github.com/tom/laforge/orchestrator/internal/queue"
@@ -20,6 +21,7 @@ type Server struct {
 	asynq      *asynq.Server
 	mux        *asynq.ServeMux
 	gitea      *gitea.Client
+	notify     *notify.Client
 	redisAddr  string
 	giteaURL   string
 	giteaToken string
@@ -29,13 +31,14 @@ type Server struct {
 
 // Config holds the configuration for the worker server
 type Config struct {
-	RedisAddr   string
-	Concurrency int
-	GiteaClient *gitea.Client
-	GiteaURL    string
-	GiteaToken  string
-	GitImage    string // Docker image with git (e.g., "alpine/git:latest")
-	AgentImage  string // Docker image for agent (currently just sleeps)
+	RedisAddr    string
+	Concurrency  int
+	GiteaClient  *gitea.Client
+	NotifyClient *notify.Client
+	GiteaURL     string
+	GiteaToken   string
+	GitImage     string // Docker image with git (e.g., "alpine/git:latest")
+	AgentImage   string // Docker image for agent (currently just sleeps)
 }
 
 // NewServer creates a new worker server
@@ -60,6 +63,7 @@ func NewServer(cfg Config) *Server {
 		asynq:      srv,
 		mux:        mux,
 		gitea:      cfg.GiteaClient,
+		notify:     cfg.NotifyClient,
 		redisAddr:  cfg.RedisAddr,
 		giteaURL:   cfg.GiteaURL,
 		giteaToken: cfg.GiteaToken,
@@ -139,6 +143,31 @@ func (s *Server) handlePRJob(ctx context.Context, t *asynq.Task) error {
 			slog.Error("failed to update status to failure", "error", err)
 		}
 
+		// Send failure notification only if retries are exhausted
+		// Asynq will retry the task, so we check if this is the final attempt
+		retried, err := asynq.GetRetryCount(ctx)
+		if err != nil {
+			slog.Warn("failed to get retry count", "error", err)
+		}
+		maxRetry, err := asynq.GetMaxRetry(ctx)
+		if err != nil {
+			slog.Warn("failed to get max retry", "error", err)
+		}
+
+		// MaxRetry is 3, so after 3 retries (Retried=3), this is the final failure
+		if retried >= maxRetry {
+			slog.Info("retries exhausted, sending failure notification",
+				"repository", payload.Repository,
+				"pr_number", payload.PRNumber,
+				"retried", retried,
+				"max_retry", maxRetry,
+			)
+			if err := s.notify.NotifyFailure(ctx, payload.Repository, payload.PRNumber); err != nil {
+				slog.Error("failed to send failure notification", "error", err)
+				// Don't fail the job if notification fails
+			}
+		}
+
 		return fmt.Errorf("job processing failed: %w", err)
 	}
 
@@ -152,6 +181,12 @@ func (s *Server) handlePRJob(ctx context.Context, t *asynq.Task) error {
 	if err := s.gitea.UpdateStatus(ctx, payload.Repository, payload.SHA, gitea.StatusSuccess); err != nil {
 		slog.Error("failed to update status to success", "error", err)
 		return fmt.Errorf("failed to update final status: %w", err)
+	}
+
+	// Send success notification
+	if err := s.notify.NotifySuccess(ctx, payload.Repository, payload.PRNumber); err != nil {
+		slog.Error("failed to send success notification", "error", err)
+		// Don't fail the job if notification fails
 	}
 
 	return nil
