@@ -55,14 +55,40 @@ Generate a secure random string to use as the webhook secret:
 openssl rand -hex 32
 ```
 
-Save this secret - you'll need it in step 4.
+Save this secret - you'll need it in step 5.
 
-### 3. Set the Webhook Secret Environment Variable
+### 3. Generate a Gitea API Token
+
+The orchestrator needs a Gitea API token to update commit statuses (to show when jobs are queued, running, or complete).
+
+1. Log into Gitea (e.g., `http://localhost:3010`)
+2. Navigate to **Settings** → **Applications**
+3. Under **Generate New Token**, enter:
+   - **Token Name**: `orchestrator` (or any descriptive name)
+   - **Select permissions**:
+     - **Required**: Check **write:repository** (allows creating commit statuses)
+     - Or simply check the top-level **repository** checkbox (includes all repository permissions)
+4. Click **Generate Token**
+5. **Important**: Copy the token immediately - you won't be able to see it again
+
+**Note**: The token must be created by a user who has write access to the repository. If you're testing on a personal repository, use your own account to generate the token.
+
+### 4. Set Environment Variables
 
 Create a `.env` file in the root of the repository (or add to your existing one):
 
 ```bash
+# Webhook authentication secret
 WEBHOOK_SECRET=your-generated-secret-here
+
+# Gitea API token for commit status updates
+GITEA_TOKEN=your-gitea-token-here
+
+# Bot username (to prevent self-triggering on comments, default: laforge)
+BOT_USERNAME=laforge
+
+# Optional: Adjust worker concurrency (default: 5)
+WORKER_CONCURRENCY=5
 ```
 
 Then restart the orchestrator service:
@@ -71,7 +97,7 @@ Then restart the orchestrator service:
 docker-compose restart orchestrator
 ```
 
-### 4. Configure the Webhook in Gitea
+### 5. Configure the Webhook in Gitea
 
 1. Navigate to your repository in Gitea (e.g., `http://localhost:3010/tom/laforge`)
 2. Click on **Settings** → **Webhooks**
@@ -94,7 +120,7 @@ docker-compose restart orchestrator
 
 5. Click **Add Webhook**
 
-### 5. Test the Webhook
+### 6. Test the Webhook
 
 1. Click on the webhook you just created
 2. Scroll down to **Recent Deliveries**
@@ -128,11 +154,12 @@ The orchestrator is configured to handle the following webhook events, matching 
 - **Trigger**: Pull request created, reopened, or assigned
 - **Event Type**: `pull_request`
 - **Actions**: `opened`, `reopened`, `assigned`
+- **Does NOT trigger on**: `synchronized` (commits), `closed`, `edited`, `unassigned`
 
 ### Pull Request Review Events
-- **Trigger**: Review submitted or edited
+- **Trigger**: Review submitted (all types: approved, changes_requested, commented)
 - **Event Type**: `pull_request_review`
-- **Actions**: `submitted`, `edited`
+- **Actions**: `submitted`
 
 ### Pull Request Review Comment Events
 - **Trigger**: Comment on a PR diff created or edited
@@ -143,7 +170,23 @@ The orchestrator is configured to handle the following webhook events, matching 
 - **Trigger**: Comment on a PR created or edited
 - **Event Type**: `issue_comment`
 - **Actions**: `created`, `edited`
-- **Note**: The orchestrator should filter to only handle comments on PRs
+- **Note**: Only comments on pull requests trigger the agent, not regular issue comments
+
+### Event Filtering
+
+The orchestrator implements smart event filtering to prevent unnecessary agent runs:
+
+1. **Bot Self-Filtering**: Events triggered by the bot user (configured via `BOT_USERNAME`) are automatically ignored to prevent infinite loops. When the bot comments on a PR, it won't trigger itself.
+
+2. **Action Whitelisting**: Only specific actions within each event type trigger the agent. For example:
+   - ✅ `pull_request.opened` - Triggers agent
+   - ✅ `pull_request.assigned` - Triggers agent
+   - ❌ `pull_request.synchronized` - Does NOT trigger (commits to PR)
+   - ❌ `pull_request.closed` - Does NOT trigger
+
+3. **PR vs Issue Detection**: For `issue_comment` events, the orchestrator verifies the comment is on a pull request, not a regular issue, before triggering the agent.
+
+4. **Multiple Events**: Multiple events for the same PR can be queued and will be processed in order. The Redis lock ensures only one agent runs per PR at a time, even if multiple events are queued.
 
 ## Troubleshooting
 
@@ -178,9 +221,35 @@ ALLOWED_HOST_LIST = private, host.docker.internal
 - Verify the correct events are selected in the webhook configuration
 - Check Gitea's webhook delivery history for error messages
 
-## Next Steps
+### Commit status update fails with "not found"
 
-Currently, the orchestrator only logs webhook events. Future PRs will add:
-- Event processing logic
-- LLM integration for automated responses
-- Configuration system for orchestrator behavior
+If you see this error in the orchestrator logs:
+```json
+{
+  "level": "ERROR",
+  "msg": "failed to update status to pending",
+  "error": "failed to create status: not found"
+}
+```
+
+This typically means the Gitea API token doesn't have the correct permissions. To fix:
+
+1. **Check token permissions**: The token must have **write:repository** or **repo:status** scope
+   - In Gitea, go to **Settings** → **Applications**
+   - Delete the old token
+   - Create a new token with **repository** permissions (includes status updates)
+   - Update the `GITEA_TOKEN` environment variable
+   - Restart the orchestrator: `docker-compose restart orchestrator`
+
+2. **Verify the repository exists**: Ensure the repository name in the webhook payload matches exactly
+   - Check orchestrator logs for the repository name being used
+   - Repository format should be `owner/repo`
+
+3. **Check if commit exists**: For fork-based PRs, ensure the commit is accessible to the base repository
+   - The commit must be visible to Gitea at the time the webhook fires
+   - This is usually automatic when a PR is created
+
+4. **API token user permissions**: Ensure the user who owns the API token has write access to the repository
+   - The token owner must be able to push to the repository or have collaborator access
+
+If the issue persists, check the orchestrator logs for more detailed error information including HTTP status codes.

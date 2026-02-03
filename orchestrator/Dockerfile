@@ -3,6 +3,9 @@ FROM golang:1.25-alpine AS builder
 
 WORKDIR /build
 
+# Install git (required by Gitea SDK during go mod download)
+RUN apk add --no-cache git
+
 # Copy go mod files
 COPY go.mod go.sum* ./
 
