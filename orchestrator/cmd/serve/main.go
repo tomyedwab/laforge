@@ -12,6 +12,7 @@ import (
 	"os"
 	"os/signal"
 	"strconv"
+	"strings"
 	"syscall"
 	"time"
 
@@ -27,7 +28,27 @@ const (
 	defaultWorkerConcurrency = 5
 	defaultBotUsername       = "laforge"
 	giteaSignatureHeader     = "X-Gitea-Signature"
+
+	// Default prompt type and model
+	defaultPromptType = "implement"
+	defaultModel      = "sonnet"
 )
+
+// modelRegistry maps short model names to full model IDs
+var modelRegistry = map[string]string{
+	"sonnet": "claude-sonnet-4-5-20250929",
+	"opus":   "claude-opus-4-5-20251101",
+	"haiku":  "claude-haiku-4-5-20251001",
+	"qwen":   "lmstudio/qwen/qwen3-coder-30b",
+	"gpt":    "lmstudio/openai/gpt-oss-20b",
+}
+
+// validPromptTypes lists the allowed prompt types
+var validPromptTypes = map[string]bool{
+	"implement": true,
+	"plan":      true,
+	"critique":  true,
+}
 
 // GiteaWebhookPayload represents a generic Gitea webhook payload
 type GiteaWebhookPayload struct {
@@ -171,6 +192,53 @@ func handleHealth(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(map[string]bool{"healthy": true})
 }
 
+// parseSlashCommand extracts slash command from comment body
+// Format: /<prompt-type> <model>
+// Examples: /plan sonnet, /critique opus, /implement haiku
+// Returns: promptType, modelName, found
+func parseSlashCommand(commentBody string) (string, string, bool) {
+	// Match /<word> <word> pattern
+	// Allowed prompt types: implement, plan, critique
+	for promptType := range validPromptTypes {
+		// Build regex pattern for this prompt type
+		pattern := `/` + promptType + `\s+(\w+)`
+		if idx := strings.Index(commentBody, "/"+promptType); idx != -1 {
+			// Extract the model name after the prompt type
+			remaining := commentBody[idx:]
+			parts := strings.Fields(remaining)
+			if len(parts) >= 2 {
+				modelName := parts[1]
+				// Validate model name
+				if _, ok := modelRegistry[modelName]; ok {
+					return promptType, modelName, true
+				}
+			}
+		}
+	}
+	return "", "", false
+}
+
+// resolvePromptTypeAndModel resolves prompt type and model to full values
+// Returns: promptType, fullModelID
+func resolvePromptTypeAndModel(promptType, modelName string) (string, string) {
+	// Default values
+	if promptType == "" {
+		promptType = defaultPromptType
+	}
+	if modelName == "" {
+		modelName = defaultModel
+	}
+
+	// Resolve model name to full model ID
+	fullModelID := modelRegistry[modelName]
+	if fullModelID == "" {
+		// Fallback to default if invalid model name
+		fullModelID = modelRegistry[defaultModel]
+	}
+
+	return promptType, fullModelID
+}
+
 // shouldTriggerAgent determines if a webhook event should trigger an agent run
 // based on the event type, action, and sender.
 //
@@ -213,6 +281,87 @@ func shouldTriggerAgent(eventType, action, sender, botUsername string) bool {
 		// Unknown event type, don't trigger
 		return false
 	}
+}
+
+// shouldActivateAgent determines whether to activate the agent based on:
+// 1. Bot is assigned to the PR
+// 2. A new comment contains a slash command
+// Returns: shouldActivate, promptType, modelName, commentBody (for logging)
+func shouldActivateAgent(ctx context.Context, giteaClient *gitea.Client, eventType string, payload GiteaWebhookPayload, botUsername string) (bool, string, string, string) {
+	repository := payload.Repository.FullName
+	prNumber := payload.Number
+
+	// Check if bot is assigned
+	assignees, err := giteaClient.GetPullRequestAssignees(ctx, repository, prNumber)
+	if err != nil {
+		slog.Error("failed to get PR assignees", "error", err, "repository", repository, "pr_number", prNumber)
+		// Don't fail the webhook, just log and continue
+		assignees = []string{}
+	}
+
+	botIsAssigned := false
+	for _, assignee := range assignees {
+		if assignee == botUsername {
+			botIsAssigned = true
+			break
+		}
+	}
+
+	// Check for slash command in comments
+	var commentBody string
+	hasSlashCommand := false
+	var promptType, modelName string
+
+	// Extract comment body based on event type
+	switch eventType {
+	case "issue_comment":
+		if payload.Comment != nil {
+			var comment struct {
+				Body string `json:"body"`
+			}
+			if err := json.Unmarshal(payload.Comment, &comment); err == nil {
+				commentBody = comment.Body
+			}
+		}
+	case "pull_request_review":
+		if payload.Review != nil {
+			var review struct {
+				Body string `json:"body"`
+			}
+			if err := json.Unmarshal(payload.Review, &review); err == nil {
+				commentBody = review.Body
+			}
+		}
+	case "pull_request_review_comment":
+		if payload.Comment != nil {
+			var comment struct {
+				Body string `json:"body"`
+			}
+			if err := json.Unmarshal(payload.Comment, &comment); err == nil {
+				commentBody = comment.Body
+			}
+		}
+	}
+
+	// Parse slash command if we have a comment body
+	if commentBody != "" {
+		promptType, modelName, hasSlashCommand = parseSlashCommand(commentBody)
+	}
+
+	// Activation logic:
+	// - If bot is assigned AND slash command present: activate with slash command's prompt/model
+	// - If only bot is assigned (no slash command): activate with defaults
+	// - If only slash command (bot not assigned): activate with slash command's prompt/model
+	// - If neither: don't activate
+	shouldActivate := botIsAssigned || hasSlashCommand
+
+	// If activated but no slash command, use defaults
+	if shouldActivate && !hasSlashCommand {
+		promptType = defaultPromptType
+		modelName = defaultModel
+	}
+
+	return shouldActivate, promptType, modelName, commentBody
 }
 
 func handleWebhook(secret string, botUsername string, queueClient *queue.Client, giteaClient *gitea.Client) http.HandlerFunc {
@@ -277,6 +426,33 @@ func handleWebhook(secret string, botUsername string, queueClient *queue.Client,
 			})
 			return
 		}
+
+		// Check if agent should be activated (bot assigned or slash command present)
+		shouldActivate, promptType, modelName, commentBody := shouldActivateAgent(ctx, giteaClient, eventType, payload, botUsername)
+		if !shouldActivate {
+			slog.Info("agent not activated - bot not assigned and no slash command found",
+				"event", eventType,
+				"repository", payload.Repository.FullName,
+				"pr_number", payload.Number,
+			)
+			w.WriteHeader(http.StatusOK)
+			json.NewEncoder(w).Encode(map[string]string{
+				"status": "not_activated",
+			})
+			return
+		}
+
+		// Resolve prompt type and model to full values
+		promptType, fullModelID := resolvePromptTypeAndModel(promptType, modelName)
+
+		slog.Info("agent activated",
+			"event", eventType,
+			"repository", payload.Repository.FullName,
+			"pr_number", payload.Number,
+			"prompt_type", promptType,
+			"model", fullModelID,
+			"has_comment", commentBody != "",
+		)
 
 		// Extract PR information based on event type
 		var prNumber int
@@ -403,6 +579,8 @@ func handleWebhook(secret string, botUsername string, queueClient *queue.Client,
 			Action:         payload.Action,
 			Sender:         payload.Sender.Login,
 			HeadRepository: headRepo,
+			PromptType:     promptType,
+			Model:          fullModelID,
 		}
 
 		// Update Gitea status to "pending" (queued)
@@ -429,6 +607,8 @@ func handleWebhook(secret string, botUsername string, queueClient *queue.Client,
 			"pr_number", jobPayload.PRNumber,
 			"sha", jobPayload.SHA,
 			"head_repository", jobPayload.HeadRepository,
+			"prompt_type", jobPayload.PromptType,
+			"model", jobPayload.Model,
 		)
 
 		w.WriteHeader(http.StatusOK)

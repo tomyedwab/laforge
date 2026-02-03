@@ -151,6 +151,37 @@ func (c *Client) GetPullRequest(ctx context.Context, repository string, prNumber
 	}, nil
 }
 
+// GetPullRequestAssignees retrieves the list of assignees for a PR
+func (c *Client) GetPullRequestAssignees(ctx context.Context, repository string, prNumber int) ([]string, error) {
+	// Parse repository into owner and repo
+	parts := strings.Split(repository, "/")
+	if len(parts) != 2 {
+		return nil, fmt.Errorf("invalid repository format: %s (expected owner/repo)", repository)
+	}
+	owner, repo := parts[0], parts[1]
+
+	// Fetch PR from Gitea
+	pr, resp, err := c.client.GetPullRequest(owner, repo, int64(prNumber))
+	if err != nil {
+		statusCode := 0
+		if resp != nil {
+			statusCode = resp.StatusCode
+		}
+		return nil, fmt.Errorf("failed to get PR (HTTP %d) for %s/%s#%d: %w",
+			statusCode, owner, repo, prNumber, err)
+	}
+
+	// Extract assignee usernames
+	assignees := make([]string, 0, len(pr.Assignees))
+	for _, assignee := range pr.Assignees {
+		if assignee != nil {
+			assignees = append(assignees, assignee.UserName)
+		}
+	}
+
+	return assignees, nil
+}
+
 func min(a, b int) int {
 	if a < b {
 		return a
