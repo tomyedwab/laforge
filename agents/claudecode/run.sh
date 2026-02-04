@@ -2,6 +2,10 @@
 
 set -euo pipefail
 
+# Initialize firewall before running Claude Code
+echo "Initializing firewall..."
+sudo /usr/local/bin/init-firewall.sh
+
 echo "Invoking Claude Code: ${ANTHROPIC_BASE_URL}"
 
 mkdir -p .claude
@@ -10,7 +14,7 @@ cp /config/settings.local.json .claude/
 if [ -f CLAUDE.md ]; then
     mv CLAUDE.md .pr/CLAUDE-PROJECT.md
 fi
-mv /config/CLAUDE.md ./CLAUDE.md
+cp /config/CLAUDE.md ./CLAUDE.md
 
 PROMPT=$(cat /config/prompts/$PROMPTNAME.md)
 

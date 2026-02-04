@@ -383,6 +383,8 @@ func (c *Client) RunAgentContainer(ctx context.Context, volumeName, imageName, p
 			},
 		},
 		AutoRemove: true,
+		// Grant NET_ADMIN capability to allow iptables firewall initialization
+		CapAdd: []string{"NET_ADMIN"},
 	}
 
 	// Join the Docker network if configured
