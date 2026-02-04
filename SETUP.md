@@ -1,4 +1,4 @@
-# Gitea Webhook Configuration
+# Laforge Agent Configuration
 
 This document describes how to configure Gitea to send webhook events to the orchestrator service.
 
@@ -282,3 +282,11 @@ This typically means the Gitea API token doesn't have the correct permissions. T
    - The token owner must be able to push to the repository or have collaborator access
 
 If the issue persists, check the orchestrator logs for more detailed error information including HTTP status codes.
+
+## Claude Code
+
+To generate a Claude Code OAuth token tied to your Pro/Max account, run this command locally:
+
+```bash
+claude setup-token
+```
