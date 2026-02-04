@@ -117,6 +117,7 @@ type PRDetails struct {
 	HeadSHA  string
 	HeadRepo string
 	Branch   string
+	Title    string
 }
 
 // GetPullRequest retrieves basic PR information from Gitea
@@ -162,6 +163,7 @@ func (c *Client) GetPullRequest(ctx context.Context, repository string, prNumber
 		HeadSHA:  pr.Head.Sha,
 		HeadRepo: headRepo,
 		Branch:   branch,
+		Title:    pr.Title,
 	}, nil
 }
 
@@ -318,6 +320,39 @@ func (c *Client) UpdatePRAssignees(ctx context.Context, repository string, prNum
 	}
 
 	slog.Info("updated PR assignees", "repository", repository, "pr_number", prNumber, "assignees", assignees)
+	return nil
+}
+
+// UpdatePRTitle updates the title of a PR
+func (c *Client) UpdatePRTitle(ctx context.Context, repository string, prNumber int, title string) error {
+	// Parse repository into owner and repo
+	parts := strings.Split(repository, "/")
+	if len(parts) != 2 {
+		return fmt.Errorf("invalid repository format: %s (expected owner/repo)", repository)
+	}
+	owner, repo := parts[0], parts[1]
+
+	slog.Debug("updating PR title",
+		"owner", owner,
+		"repo", repo,
+		"pr_number", prNumber,
+		"title", title,
+	)
+
+	// Update title using EditIssue (PRs are issues in Gitea)
+	_, resp, err := c.client.EditIssue(owner, repo, int64(prNumber), gitea.EditIssueOption{
+		Title: title,
+	})
+	if err != nil {
+		statusCode := 0
+		if resp != nil {
+			statusCode = resp.StatusCode
+		}
+		return fmt.Errorf("failed to update title (HTTP %d) for %s/%s#%d: %w",
+			statusCode, owner, repo, prNumber, err)
+	}
+
+	slog.Info("updated PR title", "repository", repository, "pr_number", prNumber, "title", title)
 	return nil
 }
 

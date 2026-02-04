@@ -24,16 +24,17 @@ const (
 
 // PRJobPayload represents the payload for a PR job
 type PRJobPayload struct {
-	Repository     string `json:"repository"`      // Full repository name (e.g., "owner/repo")
-	PRNumber       int    `json:"pr_number"`       // Pull request number
-	SHA            string `json:"sha"`             // Commit SHA
-	Action         string `json:"action"`          // Webhook action (e.g., "opened", "synchronized")
-	Sender         string `json:"sender"`          // User who triggered the webhook
-	HeadRepository string `json:"head_repository"` // Head repository (may differ for forks)
-	Branch         string `json:"branch"`          // PR branch name (head ref)
-	PromptType     string `json:"prompt_type"`     // Prompt type (e.g., "implement", "plan", "critique")
-	Model          string `json:"model"`           // Full model ID (e.g., "claude-sonnet-4-5-20250929")
-	ModelImage     string `json:"model_image"`     // Container image for the model (e.g., "laforge/claudecode:sonnet")
+	Repository      string `json:"repository"`        // Full repository name (e.g., "owner/repo")
+	PRNumber        int    `json:"pr_number"`         // Pull request number
+	SHA             string `json:"sha"`               // Commit SHA
+	Action          string `json:"action"`            // Webhook action (e.g., "opened", "synchronized")
+	Sender          string `json:"sender"`            // User who triggered the webhook
+	HeadRepository  string `json:"head_repository"`   // Head repository (may differ for forks)
+	Branch          string `json:"branch"`            // PR branch name (head ref)
+	PromptType      string `json:"prompt_type"`       // Prompt type (e.g., "implement", "plan", "critique", "cleanup")
+	Model           string `json:"model"`             // Full model ID (e.g., "claude-sonnet-4-5-20250929")
+	ModelImage      string `json:"model_image"`       // Container image for the model (e.g., "laforge/claudecode:sonnet")
+	IsCleanupAction bool   `json:"is_cleanup_action"` // True if this is a cleanup action (bypasses agent processing)
 }
 
 // Client wraps the Asynq client for enqueueing tasks

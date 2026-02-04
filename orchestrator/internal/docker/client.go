@@ -90,6 +90,71 @@ func (c *Client) DeleteVolume(ctx context.Context, name string) error {
 	return nil
 }
 
+// RunCleanupContainer runs a container to remove the .pr directory
+func (c *Client) RunCleanupContainer(ctx context.Context, volumeName, imageName string) error {
+	slog.Info("running cleanup container", "volume", volumeName)
+
+	// Create container config to remove .pr directory
+	containerConfig := &container.Config{
+		Image:      imageName,
+		Entrypoint: []string{"sh", "-c"},
+		Cmd: []string{`
+			cd /workspace/repo
+			if [ -d ".pr" ]; then
+				rm -rf .pr
+				echo "Removed .pr directory"
+			else
+				echo ".pr directory does not exist"
+			fi
+		`},
+		WorkingDir: "/workspace",
+	}
+
+	// Mount the volume
+	hostConfig := &container.HostConfig{
+		Mounts: []mount.Mount{
+			{
+				Type:   mount.TypeVolume,
+				Source: volumeName,
+				Target: "/workspace",
+			},
+		},
+		AutoRemove: true,
+	}
+
+	// Create the container
+	resp, err := c.docker.ContainerCreate(ctx, containerConfig, hostConfig, nil, nil, c.jobName+"-cleanup")
+	if err != nil {
+		return fmt.Errorf("failed to create cleanup container: %w", err)
+	}
+
+	containerID := resp.ID
+	slog.Debug("created cleanup container", "id", containerID)
+
+	// Start the container
+	if err := c.docker.ContainerStart(ctx, containerID, container.StartOptions{}); err != nil {
+		return fmt.Errorf("failed to start cleanup container: %w", err)
+	}
+
+	// Wait for container to finish
+	statusCh, errCh := c.docker.ContainerWait(ctx, containerID, container.WaitConditionNotRunning)
+	select {
+	case err := <-errCh:
+		if err != nil {
+			return fmt.Errorf("error waiting for cleanup container: %w", err)
+		}
+	case status := <-statusCh:
+		if status.StatusCode != 0 {
+			logs, _ := c.getContainerLogs(ctx, containerID)
+			return fmt.Errorf("cleanup container exited with code %d: %s", status.StatusCode, logs)
+		}
+	}
+
+	logs, _ := c.getContainerLogs(ctx, containerID)
+	slog.Info("cleanup container completed successfully", "logs", logs)
+	return nil
+}
+
 // RunInitContainer runs a container to initialize the workspace with git clone
 func (c *Client) RunInitContainer(ctx context.Context, volumeName, cloneURL, sha, imageName string) error {
 	slog.Info("running init container",

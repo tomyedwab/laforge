@@ -126,6 +126,26 @@ func (s *Server) handlePRJob(ctx context.Context, t *asynq.Task) error {
 	}
 	defer lock.Release(ctx)
 
+	// Check if this is a cleanup action
+	if payload.IsCleanupAction {
+		slog.Info("routing to cleanup action handler")
+		// Process cleanup action (no status updates needed)
+		if err := s.processCleanupAction(ctx, &payload); err != nil {
+			slog.Error("cleanup action failed",
+				"repository", payload.Repository,
+				"pr_number", payload.PRNumber,
+				"error", err,
+			)
+			return fmt.Errorf("cleanup action failed: %w", err)
+		}
+
+		slog.Info("cleanup action completed",
+			"repository", payload.Repository,
+			"pr_number", payload.PRNumber,
+		)
+		return nil
+	}
+
 	// Update Gitea status to "running"
 	if err := s.gitea.UpdateStatus(ctx, payload.HeadRepository, payload.SHA, gitea.StatusRunning); err != nil {
 		slog.Error("failed to update status to running", "error", err)
@@ -191,6 +211,158 @@ func (s *Server) handlePRJob(ctx context.Context, t *asynq.Task) error {
 		// Don't fail the job if notification fails
 	}
 
+	return nil
+}
+
+// processCleanupAction handles cleanup of PR branch for merge
+func (s *Server) processCleanupAction(ctx context.Context, payload *queue.PRJobPayload) error {
+	slog.Info("processing cleanup action",
+		"repository", payload.Repository,
+		"pr_number", payload.PRNumber,
+		"branch", payload.Branch,
+	)
+
+	// Generate unique job name
+	jobName := fmt.Sprintf("laforge-cleanup-%s-%d-%d",
+		strings.ReplaceAll(payload.Repository, "/", "-"),
+		payload.PRNumber,
+		time.Now().Unix(),
+	)
+
+	// Initialize Docker client
+	dockerClient, err := docker.NewClient(jobName)
+	if err != nil {
+		return fmt.Errorf("failed to create Docker client: %w", err)
+	}
+	defer dockerClient.Close()
+
+	// Pull git image if needed
+	slog.Info("pulling git image", "image", s.gitImage)
+	if err := dockerClient.PullImage(ctx, s.gitImage); err != nil {
+		return fmt.Errorf("failed to pull git image: %w", err)
+	}
+
+	// Create Docker volume
+	if err := dockerClient.CreateVolume(ctx, jobName); err != nil {
+		return fmt.Errorf("failed to create volume: %w", err)
+	}
+
+	// Ensure volume cleanup on exit
+	defer func() {
+		cleanupCtx := context.Background()
+		if err := dockerClient.DeleteVolume(cleanupCtx, jobName); err != nil {
+			slog.Error("failed to delete volume", "volume", jobName, "error", err)
+		}
+	}()
+
+	// Construct git clone URL with authentication
+	cloneURL, err := gitea.GetCloneURL(s.giteaURL, s.giteaToken, payload.Repository, payload.SHA)
+	if err != nil {
+		return fmt.Errorf("failed to construct clone URL: %w", err)
+	}
+
+	// Run init container to clone repository
+	if err := dockerClient.RunInitContainer(ctx, jobName, cloneURL, payload.SHA, s.gitImage); err != nil {
+		return fmt.Errorf("failed to run init container: %w", err)
+	}
+
+	// Run cleanup: remove .pr directory if it exists
+	err = dockerClient.RunCleanupContainer(ctx, jobName, s.gitImage)
+	if err != nil {
+		return fmt.Errorf("failed to run cleanup: %w", err)
+	}
+
+	// Commit and push changes
+	commitMessage := []byte("Clean up .pr directory for merge")
+	headSHA, err := dockerClient.CommitAndPushChanges(
+		ctx,
+		jobName,
+		s.gitImage,
+		s.giteaURL,
+		s.giteaToken,
+		payload.Repository,
+		payload.Branch,
+		s.botUsername,
+		s.botEmail,
+		commitMessage,
+	)
+	if err != nil {
+		return fmt.Errorf("failed to commit and push cleanup changes: %w", err)
+	}
+
+	// Track cleanup actions
+	cleanupActions := []string{}
+	if headSHA != "" {
+		cleanupActions = append(cleanupActions, "Removed `.pr` directory")
+		slog.Info("cleanup: removed .pr directory", "new_head_sha", headSHA)
+	} else {
+		cleanupActions = append(cleanupActions, "`.pr` directory does not exist")
+		slog.Info("cleanup: .pr directory does not exist")
+	}
+
+	// Get current assignees
+	assignees, err := s.gitea.GetPullRequestAssignees(ctx, payload.Repository, payload.PRNumber)
+	if err != nil {
+		slog.Error("failed to get PR assignees", "error", err)
+		// Continue with cleanup even if this fails
+	} else {
+		// Remove bot from assignees
+		botUsername := "laforge" // TODO: Get from config
+		newAssignees := []string{}
+		botWasAssigned := false
+		for _, assignee := range assignees {
+			if assignee != botUsername {
+				newAssignees = append(newAssignees, assignee)
+			} else {
+				botWasAssigned = true
+			}
+		}
+
+		if botWasAssigned {
+			if err := s.gitea.UpdatePRAssignees(ctx, payload.Repository, payload.PRNumber, newAssignees); err != nil {
+				slog.Error("failed to update PR assignees", "error", err)
+				// Continue with cleanup even if this fails
+				cleanupActions = append(cleanupActions, "Failed to unassign laforge")
+			} else {
+				cleanupActions = append(cleanupActions, "Unassigned laforge")
+				slog.Info("cleanup: unassigned bot from PR")
+			}
+		}
+	}
+
+	// Get PR details to check title
+	prDetails, err := s.gitea.GetPullRequest(ctx, payload.Repository, payload.PRNumber)
+	if err != nil {
+		slog.Error("failed to get PR details", "error", err)
+		// Continue with cleanup even if this fails
+	} else {
+		// Check if title has "WIP:" prefix
+		if strings.HasPrefix(prDetails.Title, "WIP:") {
+			newTitle := strings.TrimSpace(strings.TrimPrefix(prDetails.Title, "WIP:"))
+			if err := s.gitea.UpdatePRTitle(ctx, payload.Repository, payload.PRNumber, newTitle); err != nil {
+				slog.Error("failed to update PR title", "error", err)
+				// Continue with cleanup even if this fails
+				cleanupActions = append(cleanupActions, "Failed to remove WIP: prefix from title")
+			} else {
+				cleanupActions = append(cleanupActions, "Removed `WIP:` prefix from title")
+				slog.Info("cleanup: removed WIP: prefix from title")
+			}
+		}
+	}
+
+	// Post cleanup confirmation comment
+	commentBody := "🧹 Cleanup completed:\n"
+	for _, action := range cleanupActions {
+		commentBody += fmt.Sprintf("- %s\n", action)
+	}
+	commentBody += "\nThis PR is now ready for merge."
+
+	if err := s.gitea.PostComment(ctx, payload.Repository, payload.PRNumber, commentBody); err != nil {
+		slog.Error("failed to post cleanup comment", "error", err)
+		return fmt.Errorf("failed to post cleanup comment: %w", err)
+	}
+
+	slog.Info("cleanup action completed successfully")
 	return nil
 }
 

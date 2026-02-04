@@ -165,10 +165,15 @@ func handleHealth(w http.ResponseWriter, r *http.Request) {
 }
 
 // parseSlashCommand extracts slash command from comment body
-// Format: /<prompt-type> <model>
-// Examples: /plan sonnet, /critique opus, /implement haiku
+// Format: /<prompt-type> <model> OR /cleanup
+// Examples: /plan sonnet, /critique opus, /implement haiku, /cleanup
 // Returns: promptType, modelName, found
 func parseSlashCommand(cfg *config.Config, commentBody string) (string, string, bool) {
+	// Check for /cleanup command first (takes precedence)
+	if strings.Contains(commentBody, "/cleanup") {
+		return "cleanup", "", true
+	}
+
 	// Match /<word> <word> pattern
 	// Allowed prompt types: implement, plan, critique
 	for _, promptType := range cfg.Prompts.ValidTypes {
@@ -546,16 +551,17 @@ func handleWebhook(cfg *config.Config, queueClient *queue.Client, giteaClient *g
 
 		// Create job payload
 		jobPayload := queue.PRJobPayload{
-			Repository:     payload.Repository.FullName,
-			PRNumber:       prNumber,
-			SHA:            headSHA,
-			Action:         payload.Action,
-			Sender:         payload.Sender.Login,
-			HeadRepository: headRepo,
-			Branch:         branch,
-			PromptType:     promptType,
-			Model:          fullModelID,
-			ModelImage:     modelImage,
+			Repository:      payload.Repository.FullName,
+			PRNumber:        prNumber,
+			SHA:             headSHA,
+			Action:          payload.Action,
+			Sender:          payload.Sender.Login,
+			HeadRepository:  headRepo,
+			Branch:          branch,
+			PromptType:      promptType,
+			Model:           fullModelID,
+			ModelImage:      modelImage,
+			IsCleanupAction: promptType == "cleanup",
 		}
 
 		// Update Gitea status to "pending" (queued)
