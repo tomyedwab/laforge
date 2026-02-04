@@ -21,17 +21,18 @@ import (
 
 // Client wraps the Docker client for workspace operations
 type Client struct {
-	docker *client.Client
+	docker  *client.Client
+	jobName string
 }
 
 // NewClient creates a new Docker client
-func NewClient() (*Client, error) {
+func NewClient(jobName string) (*Client, error) {
 	cli, err := client.NewClientWithOpts(client.FromEnv, client.WithAPIVersionNegotiation())
 	if err != nil {
 		return nil, fmt.Errorf("failed to create Docker client: %w", err)
 	}
 
-	return &Client{docker: cli}, nil
+	return &Client{docker: cli, jobName: jobName}, nil
 }
 
 // Close closes the Docker client connection
@@ -121,7 +122,7 @@ func (c *Client) RunInitContainer(ctx context.Context, volumeName, cloneURL, sha
 	}
 
 	// Create the container
-	resp, err := c.docker.ContainerCreate(ctx, containerConfig, hostConfig, nil, nil, "")
+	resp, err := c.docker.ContainerCreate(ctx, containerConfig, hostConfig, nil, nil, c.jobName+"-init")
 	if err != nil {
 		return fmt.Errorf("failed to create init container: %w", err)
 	}
@@ -185,7 +186,7 @@ func (c *Client) CopyFilesToVolume(ctx context.Context, volumeName string, files
 	}
 
 	// Create the temporary container
-	resp, err := c.docker.ContainerCreate(ctx, containerConfig, hostConfig, nil, nil, "")
+	resp, err := c.docker.ContainerCreate(ctx, containerConfig, hostConfig, nil, nil, c.jobName+"-up")
 	if err != nil {
 		return fmt.Errorf("failed to create temporary container for file copy: %w", err)
 	}
@@ -296,7 +297,7 @@ func (c *Client) RunAgentContainer(ctx context.Context, volumeName, imageName, p
 	}
 
 	// Create the container
-	resp, err := c.docker.ContainerCreate(ctx, containerConfig, hostConfig, nil, nil, "")
+	resp, err := c.docker.ContainerCreate(ctx, containerConfig, hostConfig, nil, nil, c.jobName+"-agent")
 	if err != nil {
 		return fmt.Errorf("failed to create agent container: %w", err)
 	}
@@ -357,7 +358,7 @@ func (c *Client) CopyFilesFromVolume(ctx context.Context, volumeName string, fil
 	}
 
 	// Create the temporary container
-	resp, err := c.docker.ContainerCreate(ctx, containerConfig, hostConfig, nil, nil, "")
+	resp, err := c.docker.ContainerCreate(ctx, containerConfig, hostConfig, nil, nil, c.jobName+"-dn")
 	if err != nil {
 		return nil, fmt.Errorf("failed to create temporary container for file extraction: %w", err)
 	}
@@ -516,7 +517,7 @@ echo "NEW_HEAD_SHA: $(git rev-parse HEAD)"
 	}
 
 	// Create the container
-	resp, err := c.docker.ContainerCreate(ctx, containerConfig, hostConfig, nil, nil, "")
+	resp, err := c.docker.ContainerCreate(ctx, containerConfig, hostConfig, nil, nil, c.jobName+"-commit")
 	if err != nil {
 		return "", fmt.Errorf("failed to create git commit container: %w", err)
 	}

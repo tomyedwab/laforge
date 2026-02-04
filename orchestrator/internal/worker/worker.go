@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"strings"
 	"time"
 
 	"github.com/hibiken/asynq"
@@ -192,29 +193,21 @@ func (s *Server) handlePRJob(ctx context.Context, t *asynq.Task) error {
 
 // processJob handles the actual PR job processing
 func (s *Server) processJob(ctx context.Context, payload *queue.PRJobPayload) error {
-	// Generate unique volume name
-	volumeName := fmt.Sprintf("laforge-pr-%s-%d-%d",
-		payload.Repository,
+	// Generate unique job name
+	jobName := fmt.Sprintf("laforge-pr-%s-%d-%d",
+		strings.ReplaceAll(payload.Repository, "/", "-"),
 		payload.PRNumber,
 		time.Now().Unix(),
 	)
-	// Replace slashes with dashes for Docker volume name
-	volumeName = fmt.Sprintf("laforge-pr-%s-%d-%d",
-		fmt.Sprintf("%s", payload.Repository),
-		payload.PRNumber,
-		time.Now().Unix(),
-	)
-	// Docker volume names can't contain slashes
-	volumeName = "laforge-pr-" + fmt.Sprintf("%d-%d", payload.PRNumber, time.Now().Unix())
 
 	slog.Info("setting up workspace",
-		"volume", volumeName,
+		"volume", jobName,
 		"repository", payload.Repository,
 		"pr_number", payload.PRNumber,
 	)
 
 	// Initialize Docker client
-	dockerClient, err := docker.NewClient()
+	dockerClient, err := docker.NewClient(jobName)
 	if err != nil {
 		return fmt.Errorf("failed to create Docker client: %w", err)
 	}
@@ -227,15 +220,15 @@ func (s *Server) processJob(ctx context.Context, payload *queue.PRJobPayload) er
 	}
 
 	// Create Docker volume
-	if err := dockerClient.CreateVolume(ctx, volumeName); err != nil {
+	if err := dockerClient.CreateVolume(ctx, jobName); err != nil {
 		return fmt.Errorf("failed to create volume: %w", err)
 	}
 
 	// Ensure volume cleanup on exit
 	defer func() {
 		cleanupCtx := context.Background()
-		if err := dockerClient.DeleteVolume(cleanupCtx, volumeName); err != nil {
-			slog.Error("failed to delete volume", "volume", volumeName, "error", err)
+		if err := dockerClient.DeleteVolume(cleanupCtx, jobName); err != nil {
+			slog.Error("failed to delete volume", "volume", jobName, "error", err)
 		}
 	}()
 
@@ -246,7 +239,7 @@ func (s *Server) processJob(ctx context.Context, payload *queue.PRJobPayload) er
 	}
 
 	// Run init container to clone repository
-	if err := dockerClient.RunInitContainer(ctx, volumeName, cloneURL, payload.SHA, s.gitImage); err != nil {
+	if err := dockerClient.RunInitContainer(ctx, jobName, cloneURL, payload.SHA, s.gitImage); err != nil {
 		return fmt.Errorf("failed to run init container: %w", err)
 	}
 
@@ -269,7 +262,7 @@ func (s *Server) processJob(ctx context.Context, payload *queue.PRJobPayload) er
 	}
 
 	// Copy .pr files to volume
-	if err := dockerClient.CopyFilesToVolume(ctx, volumeName, files, s.gitImage); err != nil {
+	if err := dockerClient.CopyFilesToVolume(ctx, jobName, files, s.gitImage); err != nil {
 		return fmt.Errorf("failed to copy files to volume: %w", err)
 	}
 
@@ -282,9 +275,9 @@ func (s *Server) processJob(ctx context.Context, payload *queue.PRJobPayload) er
 	*/
 
 	// Run agent container
-	slog.Info("running agent container", "volume", volumeName)
+	slog.Info("running agent container", "volume", jobName)
 
-	if err := dockerClient.RunAgentContainer(ctx, volumeName, s.agentImage, payload.PromptType, payload.Model); err != nil {
+	if err := dockerClient.RunAgentContainer(ctx, jobName, s.agentImage, payload.PromptType, payload.Model); err != nil {
 		return fmt.Errorf("failed to run agent container: %w", err)
 	}
 
@@ -293,7 +286,7 @@ func (s *Server) processJob(ctx context.Context, payload *queue.PRJobPayload) er
 
 	// Extract files we need from the volume
 	filesToExtract := []string{".pr/commit.md", ".pr/status.yaml"}
-	extractedFiles, err := dockerClient.CopyFilesFromVolume(ctx, volumeName, filesToExtract, s.gitImage)
+	extractedFiles, err := dockerClient.CopyFilesFromVolume(ctx, jobName, filesToExtract, s.gitImage)
 	if err != nil {
 		return fmt.Errorf("failed to extract files from volume: %w", err)
 	}
@@ -302,7 +295,7 @@ func (s *Server) processJob(ctx context.Context, payload *queue.PRJobPayload) er
 	commitMessage := extractedFiles[".pr/commit.md"]
 	headSHA, err := dockerClient.CommitAndPushChanges(
 		ctx,
-		volumeName,
+		jobName,
 		s.gitImage,
 		s.giteaURL,
 		s.giteaToken,
