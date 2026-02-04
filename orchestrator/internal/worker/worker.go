@@ -144,12 +144,12 @@ func (s *Server) handlePRJob(ctx context.Context, t *asynq.Task) error {
 
 		// Send failure notification only if retries are exhausted
 		// Asynq will retry the task, so we check if this is the final attempt
-		retried, err := asynq.GetRetryCount(ctx)
-		if err {
+		retried, ok := asynq.GetRetryCount(ctx)
+		if !ok {
 			slog.Warn("failed to get retry count", "error", err)
 		}
-		maxRetry, err := asynq.GetMaxRetry(ctx)
-		if err {
+		maxRetry, ok := asynq.GetMaxRetry(ctx)
+		if !ok {
 			slog.Warn("failed to get max retry", "error", err)
 		}
 
