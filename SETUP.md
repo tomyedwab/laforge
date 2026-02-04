@@ -73,25 +73,54 @@ The orchestrator needs a Gitea API token to update commit statuses (to show when
 
 **Note**: The token must be created by a user who has write access to the repository. If you're testing on a personal repository, use your own account to generate the token.
 
-### 4. Set Environment Variables
+### 4. Configure Laforge
 
-Create a `.env` file in the root of the repository (or add to your existing one):
+Copy the example configuration file and customize it:
 
 ```bash
-# Webhook authentication secret
-WEBHOOK_SECRET=your-generated-secret-here
-
-# Gitea API token for commit status updates
-GITEA_TOKEN=your-gitea-token-here
-
-# Bot username (to prevent self-triggering on comments, default: laforge)
-BOT_USERNAME=laforge
-
-# Optional: Adjust worker concurrency (default: 5)
-WORKER_CONCURRENCY=5
+cp laforge-config.example.yaml laforge-config.yaml
 ```
 
-Then restart the orchestrator service:
+Edit `laforge-config.yaml` with your settings:
+
+```yaml
+server:
+  port: "8080"
+  webhook_secret: "your-generated-secret-here"  # From step 2
+
+redis:
+  address: "redis:6379"
+
+gitea:
+  url: "http://gitea:3000"
+  external_url: "http://localhost:3010"  # URL users access Gitea at
+  token: "your-gitea-token-here"  # From step 3
+
+worker:
+  concurrency: 5
+
+bot:
+  username: "laforge"
+  email: "laforge@example.com"
+
+# Model configuration - see laforge-config.example.yaml for full options
+models:
+  sonnet:
+    model_id: "claude-sonnet-4-5-20250929"
+    image: "laforge/claudecode"
+
+prompts:
+  default_type: "implement"
+  default_model: "sonnet"
+```
+
+Start the orchestrator service:
+
+```bash
+docker-compose up -d orchestrator
+```
+
+To restart after configuration changes:
 
 ```bash
 docker-compose restart orchestrator
