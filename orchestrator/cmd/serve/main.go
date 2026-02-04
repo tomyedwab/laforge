@@ -11,13 +11,13 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
-	"strconv"
 	"strings"
 	"syscall"
 	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
+	"github.com/tom/laforge/orchestrator/internal/config"
 	"github.com/tom/laforge/orchestrator/internal/gitea"
 	"github.com/tom/laforge/orchestrator/internal/notify"
 	"github.com/tom/laforge/orchestrator/internal/queue"
@@ -25,31 +25,8 @@ import (
 )
 
 const (
-	defaultPort              = "8080"
-	defaultWorkerConcurrency = 5
-	defaultBotUsername       = "laforge"
-	giteaSignatureHeader     = "X-Gitea-Signature"
-
-	// Default prompt type and model
-	defaultPromptType = "implement"
-	defaultModel      = "sonnet"
+	giteaSignatureHeader = "X-Gitea-Signature"
 )
-
-// modelRegistry maps short model names to full model IDs
-var modelRegistry = map[string]string{
-	"sonnet": "claude-sonnet-4-5-20250929",
-	"opus":   "claude-opus-4-5-20251101",
-	"haiku":  "claude-haiku-4-5-20251001",
-	"qwen":   "lmstudio/qwen/qwen3-coder-30b",
-	"gpt":    "lmstudio/openai/gpt-oss-20b",
-}
-
-// validPromptTypes lists the allowed prompt types
-var validPromptTypes = map[string]bool{
-	"implement": true,
-	"plan":      true,
-	"critique":  true,
-}
 
 // GiteaWebhookPayload represents a generic Gitea webhook payload
 type GiteaWebhookPayload struct {
@@ -74,69 +51,30 @@ func main() {
 	}))
 	slog.SetDefault(logger)
 
-	// Load configuration from environment
-	port := os.Getenv("PORT")
-	if port == "" {
-		port = defaultPort
+	// Load configuration from file
+	configPath := os.Getenv("CONFIG_FILE")
+	if configPath == "" {
+		configPath = "/etc/laforge/laforge-config.yaml"
 	}
 
-	webhookSecret := os.Getenv("WEBHOOK_SECRET")
-	if webhookSecret == "" {
-		slog.Warn("WEBHOOK_SECRET not set, webhook signature validation disabled")
-	}
-
-	redisAddr := os.Getenv("REDIS_ADDR")
-	if redisAddr == "" {
-		slog.Error("REDIS_ADDR not set")
+	cfg, err := config.Load(configPath)
+	if err != nil {
+		slog.Error("failed to load configuration", "error", err, "path", configPath)
 		os.Exit(1)
 	}
 
-	giteaURL := os.Getenv("GITEA_URL")
-	if giteaURL == "" {
-		slog.Error("GITEA_URL not set")
-		os.Exit(1)
-	}
+	slog.Info("configuration loaded successfully", "path", configPath)
 
-	giteaExternalURL := os.Getenv("GITEA_EXTERNAL_URL")
-	if giteaExternalURL == "" {
-		// Default to internal URL if not set
-		giteaExternalURL = giteaURL
+	// Log warnings for optional fields
+	if cfg.Server.WebhookSecret == "" {
+		slog.Warn("webhook_secret not set, webhook signature validation disabled")
 	}
-
-	giteaToken := os.Getenv("GITEA_TOKEN")
-	if giteaToken == "" {
-		slog.Warn("GITEA_TOKEN not set, commit status updates will fail")
-	}
-
-	workerConcurrency := defaultWorkerConcurrency
-	if concStr := os.Getenv("WORKER_CONCURRENCY"); concStr != "" {
-		if conc, err := strconv.Atoi(concStr); err == nil && conc > 0 {
-			workerConcurrency = conc
-		}
-	}
-
-	botUsername := os.Getenv("BOT_USERNAME")
-	if botUsername == "" {
-		botUsername = defaultBotUsername
-	}
-
-	gitImage := os.Getenv("GIT_IMAGE")
-	if gitImage == "" {
-		gitImage = "alpine/git:latest"
-	}
-
-	agentImage := os.Getenv("AGENT_IMAGE")
-	if agentImage == "" {
-		agentImage = "alpine:latest" // Placeholder for now
-	}
-
-	ntfyEndpoint := os.Getenv("NTFY_ENDPOINT")
-	if ntfyEndpoint == "" {
-		ntfyEndpoint = "http://ntfy:80"
+	if cfg.Gitea.Token == "" {
+		slog.Warn("gitea.token not set, commit status updates will fail")
 	}
 
 	// Initialize Gitea client
-	giteaClient, err := gitea.NewClient(giteaURL, giteaToken)
+	giteaClient, err := gitea.NewClient(cfg.Gitea.URL, cfg.Gitea.Token)
 	if err != nil {
 		slog.Error("failed to create Gitea client", "error", err)
 		os.Exit(1)
@@ -144,29 +82,30 @@ func main() {
 
 	// Initialize notification client
 	notifyClient := notify.NewClient(notify.Config{
-		Endpoint: ntfyEndpoint,
-		GiteaURL: giteaExternalURL,
+		Endpoint: cfg.Notifications.NtfyEndpoint,
+		GiteaURL: cfg.Gitea.ExternalURL,
 	})
 
 	// Initialize queue client
-	queueClient := queue.NewClient(redisAddr)
+	queueClient := queue.NewClient(cfg.Redis.Address)
 	defer queueClient.Close()
 
 	// Initialize and start worker server in a goroutine
 	workerServer := worker.NewServer(worker.Config{
-		RedisAddr:    redisAddr,
-		Concurrency:  workerConcurrency,
+		RedisAddr:    cfg.Redis.Address,
+		Concurrency:  cfg.Worker.Concurrency,
 		GiteaClient:  giteaClient,
 		NotifyClient: notifyClient,
-		GiteaURL:     giteaURL,
-		GiteaToken:   giteaToken,
-		GitImage:     gitImage,
-		AgentImage:   agentImage,
+		GiteaURL:     cfg.Gitea.URL,
+		GiteaToken:   cfg.Gitea.Token,
+		GitImage:     cfg.Docker.GitImage,
+		BotUsername:  cfg.Bot.Username,
+		BotEmail:     cfg.Bot.Email,
 	})
 	workerServer.RegisterHandlers()
 
 	go func() {
-		slog.Info("starting worker server", "concurrency", workerConcurrency)
+		slog.Info("starting worker server", "concurrency", cfg.Worker.Concurrency)
 		if err := workerServer.Start(); err != nil {
 			slog.Error("worker server failed", "error", err)
 			os.Exit(1)
@@ -184,14 +123,14 @@ func main() {
 
 	// Routes
 	r.Get("/health", handleHealth)
-	r.Post("/webhook", handleWebhook(webhookSecret, botUsername, queueClient, giteaClient))
+	r.Post("/webhook", handleWebhook(cfg, queueClient, giteaClient))
 
 	// Set up graceful shutdown
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
 	// Start HTTP server in a goroutine
-	addr := ":" + port
+	addr := ":" + cfg.Server.Port
 	server := &http.Server{Addr: addr, Handler: r}
 
 	go func() {
@@ -229,10 +168,10 @@ func handleHealth(w http.ResponseWriter, r *http.Request) {
 // Format: /<prompt-type> <model>
 // Examples: /plan sonnet, /critique opus, /implement haiku
 // Returns: promptType, modelName, found
-func parseSlashCommand(commentBody string) (string, string, bool) {
+func parseSlashCommand(cfg *config.Config, commentBody string) (string, string, bool) {
 	// Match /<word> <word> pattern
 	// Allowed prompt types: implement, plan, critique
-	for promptType := range validPromptTypes {
+	for _, promptType := range cfg.Prompts.ValidTypes {
 		if idx := strings.Index(commentBody, "/"+promptType); idx != -1 {
 			// Extract the model name after the prompt type
 			remaining := commentBody[idx:]
@@ -240,7 +179,7 @@ func parseSlashCommand(commentBody string) (string, string, bool) {
 			if len(parts) >= 2 {
 				modelName := parts[1]
 				// Validate model name
-				if _, ok := modelRegistry[modelName]; ok {
+				if _, ok := cfg.Models[modelName]; ok {
 					return promptType, modelName, true
 				}
 			}
@@ -250,24 +189,20 @@ func parseSlashCommand(commentBody string) (string, string, bool) {
 }
 
 // resolvePromptTypeAndModel resolves prompt type and model to full values
-// Returns: promptType, fullModelID
-func resolvePromptTypeAndModel(promptType, modelName string) (string, string) {
+// Returns: promptType, fullModelID, modelImage
+func resolvePromptTypeAndModel(cfg *config.Config, promptType, modelName string) (string, string, string) {
 	// Default values
 	if promptType == "" {
-		promptType = defaultPromptType
+		promptType = cfg.Prompts.DefaultType
 	}
 	if modelName == "" {
-		modelName = defaultModel
+		modelName = cfg.Prompts.DefaultModel
 	}
 
-	// Resolve model name to full model ID
-	fullModelID := modelRegistry[modelName]
-	if fullModelID == "" {
-		// Fallback to default if invalid model name
-		fullModelID = modelRegistry[defaultModel]
-	}
+	// Resolve model name to full model configuration
+	model := cfg.GetModel(modelName)
 
-	return promptType, fullModelID
+	return promptType, model.ModelID, model.Image
 }
 
 // shouldTriggerAgent determines if a webhook event should trigger an agent run
@@ -318,7 +253,8 @@ func shouldTriggerAgent(eventType, action, sender, botUsername string) bool {
 // 1. Bot is assigned to the PR
 // 2. A new comment contains a slash command
 // Returns: shouldActivate, promptType, modelName, commentBody (for logging)
-func shouldActivateAgent(ctx context.Context, giteaClient *gitea.Client, eventType string, payload GiteaWebhookPayload, botUsername string) (bool, string, string, string) {
+func shouldActivateAgent(ctx context.Context, cfg *config.Config, giteaClient *gitea.Client, eventType string, payload GiteaWebhookPayload) (bool, string, string, string) {
+	botUsername := cfg.Bot.Username
 	repository := payload.Repository.FullName
 	prNumber := payload.Number
 
@@ -376,7 +312,7 @@ func shouldActivateAgent(ctx context.Context, giteaClient *gitea.Client, eventTy
 
 	// Parse slash command if we have a comment body
 	if commentBody != "" {
-		promptType, modelName, hasSlashCommand = parseSlashCommand(commentBody)
+		promptType, modelName, hasSlashCommand = parseSlashCommand(cfg, commentBody)
 	}
 
 	// Activation logic:
@@ -388,14 +324,14 @@ func shouldActivateAgent(ctx context.Context, giteaClient *gitea.Client, eventTy
 
 	// If activated but no slash command, use defaults
 	if shouldActivate && !hasSlashCommand {
-		promptType = defaultPromptType
-		modelName = defaultModel
+		promptType = cfg.Prompts.DefaultType
+		modelName = cfg.Prompts.DefaultModel
 	}
 
 	return shouldActivate, promptType, modelName, commentBody
 }
 
-func handleWebhook(secret string, botUsername string, queueClient *queue.Client, giteaClient *gitea.Client) http.HandlerFunc {
+func handleWebhook(cfg *config.Config, queueClient *queue.Client, giteaClient *gitea.Client) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
 
@@ -409,7 +345,7 @@ func handleWebhook(secret string, botUsername string, queueClient *queue.Client,
 		defer r.Body.Close()
 
 		// Validate signature if secret is configured
-		if secret != "" {
+		if cfg.Server.WebhookSecret != "" {
 			signature := r.Header.Get(giteaSignatureHeader)
 			if signature == "" {
 				slog.Warn("webhook received without signature")
@@ -417,7 +353,7 @@ func handleWebhook(secret string, botUsername string, queueClient *queue.Client,
 				return
 			}
 
-			if !validateSignature(body, signature, secret) {
+			if !validateSignature(body, signature, cfg.Server.WebhookSecret) {
 				slog.Warn("webhook signature validation failed")
 				http.Error(w, "Invalid signature", http.StatusUnauthorized)
 				return
@@ -445,7 +381,7 @@ func handleWebhook(secret string, botUsername string, queueClient *queue.Client,
 		)
 
 		// Check if this event should trigger an agent run
-		if !shouldTriggerAgent(eventType, payload.Action, payload.Sender.Login, botUsername) {
+		if !shouldTriggerAgent(eventType, payload.Action, payload.Sender.Login, cfg.Bot.Username) {
 			slog.Debug("event filtered out, not triggering agent",
 				"event", eventType,
 				"action", payload.Action,
@@ -459,7 +395,7 @@ func handleWebhook(secret string, botUsername string, queueClient *queue.Client,
 		}
 
 		// Check if agent should be activated (bot assigned or slash command present)
-		shouldActivate, promptType, modelName, commentBody := shouldActivateAgent(ctx, giteaClient, eventType, payload, botUsername)
+		shouldActivate, promptType, modelName, commentBody := shouldActivateAgent(ctx, cfg, giteaClient, eventType, payload)
 		if !shouldActivate {
 			slog.Info("agent not activated - bot not assigned and no slash command found",
 				"event", eventType,
@@ -474,7 +410,7 @@ func handleWebhook(secret string, botUsername string, queueClient *queue.Client,
 		}
 
 		// Resolve prompt type and model to full values
-		promptType, fullModelID := resolvePromptTypeAndModel(promptType, modelName)
+		promptType, fullModelID, modelImage := resolvePromptTypeAndModel(cfg, promptType, modelName)
 
 		slog.Info("agent activated",
 			"event", eventType,
@@ -619,6 +555,7 @@ func handleWebhook(secret string, botUsername string, queueClient *queue.Client,
 			Branch:         branch,
 			PromptType:     promptType,
 			Model:          fullModelID,
+			ModelImage:     modelImage,
 		}
 
 		// Update Gitea status to "pending" (queued)

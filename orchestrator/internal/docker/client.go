@@ -438,7 +438,7 @@ func extractTarFile(reader io.Reader, fileName string) ([]byte, error) {
 
 // CommitAndPushChanges commits and pushes changes from the volume to the PR branch
 // Returns the HEAD commit SHA after committing, or empty string if no changes
-func (c *Client) CommitAndPushChanges(ctx context.Context, volumeName, imageName, giteaURL, giteaToken, repository, branch string, commitMessage []byte) (string, error) {
+func (c *Client) CommitAndPushChanges(ctx context.Context, volumeName, imageName, giteaURL, giteaToken, repository, branch, botUsername, botEmail string, commitMessage []byte) (string, error) {
 	slog.Info("committing and pushing changes",
 		"volume", volumeName,
 		"repository", repository,
@@ -459,9 +459,9 @@ func (c *Client) CommitAndPushChanges(ctx context.Context, volumeName, imageName
 	// Format: http://username:token@host/repo.git
 	pushURL := gitBaseURL
 	if strings.HasPrefix(pushURL, "http://") {
-		pushURL = "http://laforge:" + giteaToken + "@" + strings.TrimPrefix(gitBaseURL, "http://")
+		pushURL = "http://" + botUsername + ":" + giteaToken + "@" + strings.TrimPrefix(gitBaseURL, "http://")
 	} else if strings.HasPrefix(pushURL, "https://") {
-		pushURL = "https://laforge:" + giteaToken + "@" + strings.TrimPrefix(gitBaseURL, "https://")
+		pushURL = "https://" + botUsername + ":" + giteaToken + "@" + strings.TrimPrefix(gitBaseURL, "https://")
 	}
 	pushURL = pushURL + "/" + repository + ".git"
 
@@ -471,8 +471,8 @@ set -e
 cd /workspace/repo
 
 # Configure git
-git config user.name "Laforge agent"
-git config user.email "laforge@tomyedwab.com"
+git config user.name %s
+git config user.email %s
 
 # Stage all changes except special files
 git add .
@@ -492,7 +492,7 @@ git push %s HEAD:%s
 
 # Output the HEAD SHA with a clear marker
 echo "NEW_HEAD_SHA: $(git rev-parse HEAD)"
-`, shellQuote(message), shellQuote(pushURL), shellQuote(branch))
+`, shellQuote(botUsername), shellQuote(botEmail), shellQuote(message), shellQuote(pushURL), shellQuote(branch))
 
 	// Create container config
 	// Note: Override the entrypoint to use sh instead of git, since the git image

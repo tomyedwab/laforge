@@ -1,0 +1,94 @@
+# Laforge Configuration File
+# This file contains all configuration options for the Laforge orchestrator.
+# Copy this file to laforge-config.yaml and customize as needed.
+
+# Server configuration
+server:
+  # Port for the HTTP server (default: "8080")
+  port: "8080"
+
+  # Webhook secret for validating Gitea webhook signatures
+  # Leave empty to disable signature validation (not recommended for production)
+  webhook_secret: ""
+
+# Redis configuration
+redis:
+  # Redis server address (required)
+  address: "redis:6379"
+
+# Gitea configuration
+gitea:
+  # Internal Gitea URL for API calls (required)
+  url: "http://gitea:3000"
+
+  # External Gitea URL for user-facing links
+  # Defaults to 'url' if not set
+  external_url: ""
+
+  # Gitea API token for authentication (required for commit status updates)
+  # Generate this in Gitea under Settings > Applications > Generate New Token
+  token: ""
+
+# Worker configuration
+worker:
+  # Number of concurrent worker processes (default: 5)
+  concurrency: 5
+
+# Bot user configuration
+bot:
+  # Username for the bot account in Gitea (default: "laforge")
+  # This is used to prevent the bot from triggering itself
+  username: "laforge"
+
+  # Email address for git commits made by the bot
+  email: "laforge@example.com"
+
+# Docker configuration
+docker:
+  # Docker image for git operations (default: "alpine/git:latest")
+  git_image: "alpine/git:latest"
+
+# Notification configuration
+notifications:
+  # NTFY endpoint for sending notifications (default: "http://ntfy:80")
+  ntfy_endpoint: "http://ntfy:80"
+
+# Model registry
+# Each model maps a short name to a full model ID and container image
+models:
+  # Claude Sonnet 4.5
+  sonnet:
+    model_id: "claude-sonnet-4-5-20250929"
+    image: "laforge/claudecode"
+
+  # Claude Opus 4.5
+  opus:
+    model_id: "claude-opus-4-5-20251101"
+    image: "laforge/claudecode"
+
+  # Claude Haiku 4.5
+  haiku:
+    model_id: "claude-haiku-4-5-20251001"
+    image: "laforge/claudecode"
+
+  # GPT model via LMStudio
+  gpt:
+    model_id: "lmstudio/openai/gpt-oss-20b"
+    image: "laforge/lmstudio"
+
+# Prompt configuration
+prompts:
+  # Default prompt type when none is specified (default: "implement")
+  default_type: "implement"
+
+  # Default model when none is specified (default: "sonnet")
+  # Must be a key from the models section above
+  default_model: "sonnet"
+
+  # Valid prompt types that can be used in slash commands
+  # Format: /<prompt_type> <model>
+  # Example: /plan sonnet, /critique opus, /implement haiku
+  valid_types:
+    - implement
+    - plan
+    - critique

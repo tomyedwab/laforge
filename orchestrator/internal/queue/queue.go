@@ -33,6 +33,7 @@ type PRJobPayload struct {
 	Branch         string `json:"branch"`          // PR branch name (head ref)
 	PromptType     string `json:"prompt_type"`     // Prompt type (e.g., "implement", "plan", "critique")
 	Model          string `json:"model"`           // Full model ID (e.g., "claude-sonnet-4-5-20250929")
+	ModelImage     string `json:"model_image"`     // Container image for the model (e.g., "laforge/claudecode:sonnet")
 }
 
 // Client wraps the Asynq client for enqueueing tasks

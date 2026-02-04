@@ -75,16 +75,9 @@ services:
       - gitea
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
+      - ./laforge-config.yaml:/etc/laforge/laforge-config.yaml:ro
     environment:
-      - PORT=8080
-      - WEBHOOK_SECRET=${WEBHOOK_SECRET:-}
-      - REDIS_ADDR=redis:6379
-      - GITEA_URL=${GITEA_URL:-http://gitea:3000}
-      - GITEA_EXTERNAL_URL=${GITEA_EXTERNAL_URL:-}
-      - GITEA_TOKEN=${GITEA_TOKEN:-}
-      - WORKER_CONCURRENCY=${WORKER_CONCURRENCY:-5}
-      - NTFY_ENDPOINT=${NTFY_ENDPOINT:-http://ntfy:80}
-      - AGENT_IMAGE=laforge/claudecode
+      - CONFIG_FILE=/etc/laforge/laforge-config.yaml
     ports:
       - "8080:8080"
     depends_on:

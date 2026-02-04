@@ -17,15 +17,16 @@ import (
 
 // Server wraps the Asynq server for processing tasks
 type Server struct {
-	asynq      *asynq.Server
-	mux        *asynq.ServeMux
-	gitea      *gitea.Client
-	notify     *notify.Client
-	redisAddr  string
-	giteaURL   string
-	giteaToken string
-	gitImage   string
-	agentImage string
+	asynq       *asynq.Server
+	mux         *asynq.ServeMux
+	gitea       *gitea.Client
+	notify      *notify.Client
+	redisAddr   string
+	giteaURL    string
+	giteaToken  string
+	gitImage    string
+	botUsername string
+	botEmail    string
 }
 
 // Config holds the configuration for the worker server
@@ -37,7 +38,8 @@ type Config struct {
 	GiteaURL     string
 	GiteaToken   string
 	GitImage     string
-	AgentImage   string
+	BotUsername  string
+	BotEmail     string
 }
 
 // NewServer creates a new worker server
@@ -59,15 +61,16 @@ func NewServer(cfg Config) *Server {
 	mux := asynq.NewServeMux()
 
 	return &Server{
-		asynq:      srv,
-		mux:        mux,
-		gitea:      cfg.GiteaClient,
-		notify:     cfg.NotifyClient,
-		redisAddr:  cfg.RedisAddr,
-		giteaURL:   cfg.GiteaURL,
-		giteaToken: cfg.GiteaToken,
-		gitImage:   cfg.GitImage,
-		agentImage: cfg.AgentImage,
+		asynq:       srv,
+		mux:         mux,
+		gitea:       cfg.GiteaClient,
+		notify:      cfg.NotifyClient,
+		redisAddr:   cfg.RedisAddr,
+		giteaURL:    cfg.GiteaURL,
+		giteaToken:  cfg.GiteaToken,
+		gitImage:    cfg.GitImage,
+		botUsername: cfg.BotUsername,
+		botEmail:    cfg.BotEmail,
 	}
 }
 
@@ -266,18 +269,18 @@ func (s *Server) processJob(ctx context.Context, payload *queue.PRJobPayload) er
 		return fmt.Errorf("failed to copy files to volume: %w", err)
 	}
 
-	/* TODO: If we end up hosting the images somewhere, pull them.
+	/* TODO: If we deploy images to a repository, may need to pull the latest version
 	// Pull agent image if needed
-	slog.Info("pulling agent image", "image", s.agentImage)
-	if err := dockerClient.PullImage(ctx, s.agentImage); err != nil {
+	slog.Info("pulling agent image", "image", payload.ModelImage)
+	if err := dockerClient.PullImage(ctx, payload.ModelImage); err != nil {
 		return fmt.Errorf("failed to pull agent image: %w", err)
 	}
 	*/
 
 	// Run agent container
-	slog.Info("running agent container", "volume", jobName)
+	slog.Info("running agent container", "volume", jobName, "model_image", payload.ModelImage)
 
-	if err := dockerClient.RunAgentContainer(ctx, jobName, s.agentImage, payload.PromptType, payload.Model); err != nil {
+	if err := dockerClient.RunAgentContainer(ctx, jobName, payload.ModelImage, payload.PromptType, payload.Model); err != nil {
 		return fmt.Errorf("failed to run agent container: %w", err)
 	}
 
@@ -301,6 +304,8 @@ func (s *Server) processJob(ctx context.Context, payload *queue.PRJobPayload) er
 		s.giteaToken,
 		payload.Repository,
 		payload.Branch,
+		s.botUsername,
+		s.botEmail,
 		commitMessage,
 	)
 	if err != nil {
