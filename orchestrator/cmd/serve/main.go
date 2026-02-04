@@ -20,6 +20,7 @@ import (
 	"github.com/tom/laforge/orchestrator/internal/config"
 	"github.com/tom/laforge/orchestrator/internal/gitea"
 	"github.com/tom/laforge/orchestrator/internal/notify"
+	"github.com/tom/laforge/orchestrator/internal/proxy"
 	"github.com/tom/laforge/orchestrator/internal/queue"
 	"github.com/tom/laforge/orchestrator/internal/worker"
 )
@@ -90,17 +91,25 @@ func main() {
 	queueClient := queue.NewClient(cfg.Redis.Address)
 	defer queueClient.Close()
 
+	// Build Anthropic proxy URL if token is configured
+	var anthropicProxyURL string
+	if cfg.Anthropic.APIKey != "" || cfg.Anthropic.OAuthToken != "" {
+		anthropicProxyURL = "http://orchestrator:" + cfg.Anthropic.Port
+	}
+
 	// Initialize and start worker server in a goroutine
 	workerServer := worker.NewServer(worker.Config{
-		RedisAddr:    cfg.Redis.Address,
-		Concurrency:  cfg.Worker.Concurrency,
-		GiteaClient:  giteaClient,
-		NotifyClient: notifyClient,
-		GiteaURL:     cfg.Gitea.URL,
-		GiteaToken:   cfg.Gitea.Token,
-		GitImage:     cfg.Docker.GitImage,
-		BotUsername:  cfg.Bot.Username,
-		BotEmail:     cfg.Bot.Email,
+		RedisAddr:         cfg.Redis.Address,
+		Concurrency:       cfg.Worker.Concurrency,
+		GiteaClient:       giteaClient,
+		NotifyClient:      notifyClient,
+		GiteaURL:          cfg.Gitea.URL,
+		GiteaToken:        cfg.Gitea.Token,
+		GitImage:          cfg.Docker.GitImage,
+		BotUsername:       cfg.Bot.Username,
+		BotEmail:          cfg.Bot.Email,
+		NetworkName:       cfg.Docker.NetworkName,
+		AnthropicProxyURL: anthropicProxyURL,
 	})
 	workerServer.RegisterHandlers()
 
@@ -111,6 +120,40 @@ func main() {
 			os.Exit(1)
 		}
 	}()
+
+	// Start Anthropic proxy server if authentication is configured
+	var proxyServer *http.Server
+	if cfg.Anthropic.APIKey != "" || cfg.Anthropic.OAuthToken != "" {
+		authType := "api_key"
+		if cfg.Anthropic.OAuthToken != "" {
+			authType = "oauth_token"
+		}
+		slog.Info("Anthropic API proxy enabled", "port", cfg.Anthropic.Port, "auth_type", authType)
+
+		// Create proxy router
+		proxyRouter := chi.NewRouter()
+		proxyRouter.Use(middleware.RequestID)
+		proxyRouter.Use(middleware.Logger)
+		proxyRouter.Use(middleware.Recoverer)
+
+		anthropicProxy := proxy.NewAnthropicProxy(cfg.Anthropic.APIKey, cfg.Anthropic.OAuthToken)
+		proxyRouter.Post("/v1/messages", anthropicProxy.ServeHTTP)
+		proxyRouter.Post("/v1/messages/count_tokens", anthropicProxy.ServeHTTP)
+
+		// Start proxy server on separate port
+		proxyAddr := ":" + cfg.Anthropic.Port
+		proxyServer = &http.Server{Addr: proxyAddr, Handler: proxyRouter}
+
+		go func() {
+			slog.Info("starting Anthropic proxy server", "addr", proxyAddr)
+			if err := proxyServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+				slog.Error("proxy server failed", "error", err)
+				os.Exit(1)
+			}
+		}()
+	} else {
+		slog.Warn("Anthropic API proxy disabled - no authentication configured")
+	}
 
 	// Set up HTTP router
 	r := chi.NewRouter()
@@ -153,6 +196,13 @@ func main() {
 	defer cancel()
 	if err := server.Shutdown(shutdownCtx); err != nil {
 		slog.Error("server shutdown failed", "error", err)
+	}
+
+	// Shutdown proxy server if it was started
+	if proxyServer != nil {
+		if err := proxyServer.Shutdown(shutdownCtx); err != nil {
+			slog.Error("proxy server shutdown failed", "error", err)
+		}
 	}
 
 	slog.Info("server stopped")

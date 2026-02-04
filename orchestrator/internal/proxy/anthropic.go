@@ -1,0 +1,60 @@
+package proxy
+
+import (
+	"log/slog"
+	"net/http"
+	"net/http/httputil"
+	"net/url"
+)
+
+const anthropicAPIBase = "https://api.anthropic.com"
+
+// AnthropicProxy handles proxying requests to Anthropic API
+type AnthropicProxy struct {
+	apiKey     string
+	oauthToken string
+	proxy      *httputil.ReverseProxy
+}
+
+// NewAnthropicProxy creates a new Anthropic API proxy
+// Accepts either apiKey or oauthToken (preferring oauthToken if both are provided)
+func NewAnthropicProxy(apiKey, oauthToken string) *AnthropicProxy {
+	target, _ := url.Parse(anthropicAPIBase)
+
+	proxy := httputil.NewSingleHostReverseProxy(target)
+
+	// Customize the director to add authentication
+	originalDirector := proxy.Director
+	proxy.Director = func(req *http.Request) {
+		originalDirector(req)
+
+		// Use OAuth token if available, otherwise use API key
+		if oauthToken != "" {
+			// For OAuth, use Authorization: Bearer header
+			req.Header.Set("Authorization", "Bearer "+oauthToken)
+		} else if apiKey != "" {
+			// For API key, use x-api-key header and strip any incoming Authorization header
+			req.Header.Del("Authorization")
+			req.Header.Set("x-api-key", apiKey)
+		}
+
+		req.Header.Set("anthropic-version", "2023-06-01")
+		req.Host = target.Host
+	}
+
+	return &AnthropicProxy{
+		apiKey:     apiKey,
+		oauthToken: oauthToken,
+		proxy:      proxy,
+	}
+}
+
+// ServeHTTP handles the proxy request
+func (p *AnthropicProxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	slog.Debug("proxying Anthropic API request",
+		"method", r.Method,
+		"path", r.URL.Path,
+	)
+
+	p.proxy.ServeHTTP(w, r)
+}

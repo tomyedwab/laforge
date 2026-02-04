@@ -48,6 +48,28 @@ docker:
   # Docker image for git operations (default: "alpine/git:latest")
   git_image: "alpine/git:latest"
 
+  # Docker network name for agent containers (default: "laforge_gitea")
+  # Agent containers will join this network to communicate with orchestrator
+  network_name: "laforge_gitea"
+
+# Anthropic API proxy configuration
+anthropic:
+  # Anthropic API key for authenticating requests to Claude API
+  # Use EITHER api_key OR oauth_token, not both
+  # Generate an API key at https://console.anthropic.com/settings/keys
+  api_key: ""
+
+  # Anthropic OAuth token for authenticating requests to Claude API
+  # Use EITHER api_key OR oauth_token, not both
+  # If both are set, oauth_token takes precedence
+  # When using api_key, any incoming Authorization header will be stripped
+  oauth_token: ""
+
+  # Port for the Anthropic proxy server (default: "8081")
+  # This port is separate from the webhook handler and only accessible
+  # within the Docker network
+  port: "8081"
+
 # Notification configuration
 notifications:
   # NTFY endpoint for sending notifications (default: "http://ntfy:80")

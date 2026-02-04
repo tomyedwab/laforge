@@ -21,8 +21,11 @@ import (
 
 // Client wraps the Docker client for workspace operations
 type Client struct {
-	docker  *client.Client
-	jobName string
+	docker            *client.Client
+	jobName           string
+	networkName       string
+	anthropicProxyURL string
+	hasAnthropicProxy bool
 }
 
 // NewClient creates a new Docker client
@@ -32,7 +35,21 @@ func NewClient(jobName string) (*Client, error) {
 		return nil, fmt.Errorf("failed to create Docker client: %w", err)
 	}
 
-	return &Client{docker: cli, jobName: jobName}, nil
+	return &Client{
+		docker:  cli,
+		jobName: jobName,
+	}, nil
+}
+
+// SetNetworkConfig sets the network configuration for agent containers
+func (c *Client) SetNetworkConfig(networkName string) {
+	c.networkName = networkName
+}
+
+// SetAnthropicProxy sets the Anthropic proxy configuration for agent containers
+func (c *Client) SetAnthropicProxy(proxyURL string) {
+	c.anthropicProxyURL = proxyURL
+	c.hasAnthropicProxy = true
 }
 
 // Close closes the Docker client connection
@@ -336,11 +353,23 @@ func (c *Client) RunAgentContainer(ctx context.Context, volumeName, imageName, p
 		"model", model,
 	)
 
-	// For now, just run a sleep command as a placeholder
+	// Build environment variables
+	env := []string{
+		"PROMPTNAME=" + promptType,
+		"MODELNAME=" + model,
+	}
+
+	// Add Anthropic proxy configuration if enabled
+	if c.hasAnthropicProxy {
+		env = append(env, "ANTHROPIC_BASE_URL="+c.anthropicProxyURL)
+		env = append(env, "CLAUDE_CODE_OAUTH_TOKEN=dummy")
+		slog.Info("agent container configured with Anthropic proxy", "proxy_url", c.anthropicProxyURL)
+	}
+
 	containerConfig := &container.Config{
 		Image:      imageName,
 		Cmd:        []string{"/bin/run.sh"},
-		Env:        []string{"PROMPTNAME=" + promptType, "MODELNAME=" + model},
+		Env:        env,
 		WorkingDir: "/workspace/repo",
 	}
 
@@ -352,13 +381,14 @@ func (c *Client) RunAgentContainer(ctx context.Context, volumeName, imageName, p
 				Source: volumeName,
 				Target: "/workspace",
 			},
-			{
-				Type:   mount.TypeVolume,
-				Source: "laforge-claude-credentials",
-				Target: "/credentials",
-			},
 		},
 		AutoRemove: true,
+	}
+
+	// Join the Docker network if configured
+	if c.networkName != "" {
+		hostConfig.NetworkMode = container.NetworkMode(c.networkName)
+		slog.Debug("agent container joining network", "network", c.networkName)
 	}
 
 	// Create the container

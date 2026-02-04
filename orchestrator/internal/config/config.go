@@ -16,6 +16,7 @@ type Config struct {
 	Bot           BotConfig           `yaml:"bot"`
 	Docker        DockerConfig        `yaml:"docker"`
 	Notifications NotificationsConfig `yaml:"notifications"`
+	Anthropic     AnthropicConfig     `yaml:"anthropic"`
 	Models        map[string]Model    `yaml:"models"`
 	Prompts       PromptsConfig       `yaml:"prompts"`
 }
@@ -51,12 +52,20 @@ type BotConfig struct {
 
 // DockerConfig contains Docker image configuration
 type DockerConfig struct {
-	GitImage string `yaml:"git_image"`
+	GitImage    string `yaml:"git_image"`
+	NetworkName string `yaml:"network_name"`
 }
 
 // NotificationsConfig contains notification settings
 type NotificationsConfig struct {
 	NtfyEndpoint string `yaml:"ntfy_endpoint"`
+}
+
+// AnthropicConfig contains Anthropic API proxy configuration
+type AnthropicConfig struct {
+	APIKey     string `yaml:"api_key"`
+	OAuthToken string `yaml:"oauth_token"`
+	Port       string `yaml:"port"`
 }
 
 // Model represents a model configuration with its ID and container image
@@ -100,6 +109,9 @@ func Load(path string) (*Config, error) {
 	if cfg.Docker.GitImage == "" {
 		cfg.Docker.GitImage = "alpine/git:latest"
 	}
+	if cfg.Docker.NetworkName == "" {
+		cfg.Docker.NetworkName = "laforge_gitea"
+	}
 	if cfg.Notifications.NtfyEndpoint == "" {
 		cfg.Notifications.NtfyEndpoint = "http://ntfy:80"
 	}
@@ -116,6 +128,11 @@ func Load(path string) (*Config, error) {
 	// Set default for Gitea external URL
 	if cfg.Gitea.ExternalURL == "" {
 		cfg.Gitea.ExternalURL = cfg.Gitea.URL
+	}
+
+	// Set default for Anthropic proxy port
+	if cfg.Anthropic.Port == "" {
+		cfg.Anthropic.Port = "8081"
 	}
 
 	// Validate required fields

@@ -17,29 +17,33 @@ import (
 
 // Server wraps the Asynq server for processing tasks
 type Server struct {
-	asynq       *asynq.Server
-	mux         *asynq.ServeMux
-	gitea       *gitea.Client
-	notify      *notify.Client
-	redisAddr   string
-	giteaURL    string
-	giteaToken  string
-	gitImage    string
-	botUsername string
-	botEmail    string
+	asynq             *asynq.Server
+	mux               *asynq.ServeMux
+	gitea             *gitea.Client
+	notify            *notify.Client
+	redisAddr         string
+	giteaURL          string
+	giteaToken        string
+	gitImage          string
+	botUsername       string
+	botEmail          string
+	networkName       string
+	anthropicProxyURL string
 }
 
 // Config holds the configuration for the worker server
 type Config struct {
-	RedisAddr    string
-	Concurrency  int
-	GiteaClient  *gitea.Client
-	NotifyClient *notify.Client
-	GiteaURL     string
-	GiteaToken   string
-	GitImage     string
-	BotUsername  string
-	BotEmail     string
+	RedisAddr         string
+	Concurrency       int
+	GiteaClient       *gitea.Client
+	NotifyClient      *notify.Client
+	GiteaURL          string
+	GiteaToken        string
+	GitImage          string
+	BotUsername       string
+	BotEmail          string
+	NetworkName       string
+	AnthropicProxyURL string
 }
 
 // NewServer creates a new worker server
@@ -61,16 +65,18 @@ func NewServer(cfg Config) *Server {
 	mux := asynq.NewServeMux()
 
 	return &Server{
-		asynq:       srv,
-		mux:         mux,
-		gitea:       cfg.GiteaClient,
-		notify:      cfg.NotifyClient,
-		redisAddr:   cfg.RedisAddr,
-		giteaURL:    cfg.GiteaURL,
-		giteaToken:  cfg.GiteaToken,
-		gitImage:    cfg.GitImage,
-		botUsername: cfg.BotUsername,
-		botEmail:    cfg.BotEmail,
+		asynq:             srv,
+		mux:               mux,
+		gitea:             cfg.GiteaClient,
+		notify:            cfg.NotifyClient,
+		redisAddr:         cfg.RedisAddr,
+		giteaURL:          cfg.GiteaURL,
+		giteaToken:        cfg.GiteaToken,
+		gitImage:          cfg.GitImage,
+		botUsername:       cfg.BotUsername,
+		botEmail:          cfg.BotEmail,
+		networkName:       cfg.NetworkName,
+		anthropicProxyURL: cfg.AnthropicProxyURL,
 	}
 }
 
@@ -236,6 +242,14 @@ func (s *Server) processCleanupAction(ctx context.Context, payload *queue.PRJobP
 	}
 	defer dockerClient.Close()
 
+	// Configure Docker client with network and proxy settings
+	if s.networkName != "" {
+		dockerClient.SetNetworkConfig(s.networkName)
+	}
+	if s.anthropicProxyURL != "" {
+		dockerClient.SetAnthropicProxy(s.anthropicProxyURL)
+	}
+
 	// Pull git image if needed
 	slog.Info("pulling git image", "image", s.gitImage)
 	if err := dockerClient.PullImage(ctx, s.gitImage); err != nil {
@@ -387,6 +401,14 @@ func (s *Server) processJob(ctx context.Context, payload *queue.PRJobPayload) er
 		return fmt.Errorf("failed to create Docker client: %w", err)
 	}
 	defer dockerClient.Close()
+
+	// Configure Docker client with network and proxy settings
+	if s.networkName != "" {
+		dockerClient.SetNetworkConfig(s.networkName)
+	}
+	if s.anthropicProxyURL != "" {
+		dockerClient.SetAnthropicProxy(s.anthropicProxyURL)
+	}
 
 	// Pull git image if needed
 	slog.Info("pulling git image", "image", s.gitImage)

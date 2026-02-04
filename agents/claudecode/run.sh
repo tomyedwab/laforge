@@ -2,14 +2,7 @@
 
 set -euo pipefail
 
-echo "Invoking Claude Code..."
-
-# Copy config files and fix permissions
-mkdir -p ~/.claude
-cp /credentials/.claude/.claude.json ~/
-cp /credentials/.claude/.credentials.json ~/.claude/
-chmod 600 ~/.claude.json
-chmod 600 ~/.claude/.credentials.json
+echo "Invoking Claude Code: ${ANTHROPIC_BASE_URL}"
 
 mkdir -p .claude
 cp /config/settings.local.json .claude/
