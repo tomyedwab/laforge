@@ -11,8 +11,6 @@ import (
 	"github.com/tom/laforge/orchestrator/internal/docker"
 	"github.com/tom/laforge/orchestrator/internal/gitea"
 	"github.com/tom/laforge/orchestrator/internal/notify"
-	"github.com/tom/laforge/orchestrator/internal/poststatus"
-	"github.com/tom/laforge/orchestrator/internal/prfetch"
 	"github.com/tom/laforge/orchestrator/internal/queue"
 )
 
@@ -242,7 +240,7 @@ func (s *Server) processJob(ctx context.Context, payload *queue.PRJobPayload) er
 	}()
 
 	// Construct git clone URL with authentication
-	cloneURL, err := prfetch.GetCloneURL(s.giteaURL, s.giteaToken, payload.Repository, payload.SHA)
+	cloneURL, err := gitea.GetCloneURL(s.giteaURL, s.giteaToken, payload.Repository, payload.SHA)
 	if err != nil {
 		return fmt.Errorf("failed to construct clone URL: %w", err)
 	}
@@ -253,7 +251,7 @@ func (s *Server) processJob(ctx context.Context, payload *queue.PRJobPayload) er
 	}
 
 	// Fetch PR history and attachments
-	fetcher := prfetch.NewFetcher(s.gitea.GetSDKClient(), s.giteaURL, s.giteaToken)
+	fetcher := gitea.NewFetcher(s.gitea.GetSDKClient(), s.giteaURL, s.giteaToken)
 	history, err := fetcher.FetchPRHistory(ctx, payload.Repository, payload.PRNumber)
 	if err != nil {
 		return fmt.Errorf("failed to fetch PR history: %w", err)
@@ -328,7 +326,7 @@ func (s *Server) processJob(ctx context.Context, payload *queue.PRJobPayload) er
 
 	// Post status updates to the PR if status.yaml exists
 	if statusYAML, ok := extractedFiles[".pr/status.yaml"]; ok {
-		if err := poststatus.PostStatus(ctx, statusYAML, statusCommitSHA, payload.Repository, payload.PRNumber, s.gitea); err != nil {
+		if err := gitea.PostStatus(ctx, statusYAML, statusCommitSHA, payload.Repository, payload.PRNumber, s.gitea); err != nil {
 			return fmt.Errorf("failed to post status to PR: %w", err)
 		}
 	} else {

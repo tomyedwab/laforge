@@ -1,4 +1,4 @@
-package prfetch
+package gitea
 
 import (
 	"context"

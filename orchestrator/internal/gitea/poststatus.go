@@ -1,4 +1,4 @@
-package poststatus
+package gitea
 
 import (
 	"context"
@@ -6,21 +6,20 @@ import (
 	"log/slog"
 	"strings"
 
-	"github.com/tom/laforge/orchestrator/internal/gitea"
 	"github.com/tom/laforge/orchestrator/internal/types"
 	"gopkg.in/yaml.v3"
 )
 
 // StatusData represents the structure of .pr/status.yaml
 type StatusData struct {
-	Status       string                `yaml:"status"`
-	FileComments []*types.FileComment  `yaml:"file_comments"`
-	Unassign     bool                  `yaml:"unassign"`
+	Status       string               `yaml:"status"`
+	FileComments []*types.FileComment `yaml:"file_comments"`
+	Unassign     bool                 `yaml:"unassign"`
 }
 
 // PostStatus parses and posts status updates from .pr/status.yaml
 // commitSHA should be the HEAD commit SHA after the agent's changes were committed
-func PostStatus(ctx context.Context, statusYAML []byte, commitSHA, repository string, prNumber int, giteaClient *gitea.Client) error {
+func PostStatus(ctx context.Context, statusYAML []byte, commitSHA, repository string, prNumber int, giteaClient *Client) error {
 	if len(statusYAML) == 0 {
 		slog.Info("no status file found, skipping status post")
 		return nil
