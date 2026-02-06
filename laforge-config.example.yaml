@@ -1,6 +1,6 @@
 # Laforge Configuration File
 # This file contains all configuration options for the Laforge orchestrator.
-# Copy this file to laforge-config.yaml and customize as needed.
+# Copy this file to ~/.laforge/config.yaml and customize as needed.
 
 # Server configuration
 server:

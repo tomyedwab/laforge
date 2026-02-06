@@ -66,7 +66,7 @@ Agents are activated when:
 | `/critique haiku` | Run code critique with Claude Haiku |
 | `/cleanup` | Remove `.pr` directory and prepare PR for merge |
 
-The model name is optional; defaults are configured in `laforge-config.yaml`.
+The model name is optional; defaults are configured in `~/.laforge/config.yaml`.
 
 ### Webhook Events
 
@@ -109,7 +109,7 @@ The `.pr` directory is removed when `/cleanup` is run before merging.
 ## Quick Start
 
 1. Clone this repository
-2. Copy `laforge-config.example.yaml` to `laforge-config.yaml` and configure
+2. Copy `laforge-config.example.yaml` to `~/.laforge/config.yaml` and configure
 3. Start services: `docker-compose up -d`
 4. Configure Gitea webhook (see [SETUP.md](SETUP.md))
 5. Assign the bot user to a PR or use a slash command

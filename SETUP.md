@@ -78,10 +78,10 @@ The orchestrator needs a Gitea API token to update commit statuses (to show when
 Copy the example configuration file and customize it:
 
 ```bash
-cp laforge-config.example.yaml laforge-config.yaml
+cp laforge-config.example.yaml ~/.laforge/config.yaml
 ```
 
-Edit `laforge-config.yaml` with your settings:
+Edit `config.yaml` with your settings:
 
 ```yaml
 server:

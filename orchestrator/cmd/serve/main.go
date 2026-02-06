@@ -55,7 +55,7 @@ func main() {
 	// Load configuration from file
 	configPath := os.Getenv("CONFIG_FILE")
 	if configPath == "" {
-		configPath = "/etc/laforge/laforge-config.yaml"
+		configPath = "/etc/laforge/config.yaml"
 	}
 
 	cfg, err := config.Load(configPath)

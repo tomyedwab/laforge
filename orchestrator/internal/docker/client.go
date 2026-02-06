@@ -203,6 +203,12 @@ func (c *Client) RunInitContainer(ctx context.Context, volumeName, cloneURL, sha
 		AutoRemove: true, // Automatically remove container after it exits
 	}
 
+	// Join the Docker network if configured
+	if c.networkName != "" {
+		hostConfig.NetworkMode = container.NetworkMode(c.networkName)
+		slog.Debug("agent container joining network", "network", c.networkName)
+	}
+
 	// Create the container
 	resp, err := c.docker.ContainerCreate(ctx, containerConfig, hostConfig, nil, nil, c.jobName+"-init")
 	if err != nil {
@@ -611,6 +617,12 @@ echo "NEW_HEAD_SHA: $(git rev-parse HEAD)"
 			},
 		},
 		// Note: Don't use AutoRemove here because we need to get logs after the container exits
+	}
+
+	// Join the Docker network if configured
+	if c.networkName != "" {
+		hostConfig.NetworkMode = container.NetworkMode(c.networkName)
+		slog.Debug("agent container joining network", "network", c.networkName)
 	}
 
 	// Create the container
