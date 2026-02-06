@@ -45,14 +45,23 @@ func (c *Client) GetSDKClient() *gitea.Client {
 	return c.client
 }
 
+// parseRepository splits a repository string into owner and repo components
+// Returns owner, repo, error
+func parseRepository(repository string) (string, string, error) {
+	parts := strings.Split(repository, "/")
+	if len(parts) != 2 {
+		return "", "", fmt.Errorf("invalid repository format: %s (expected owner/repo)", repository)
+	}
+	return parts[0], parts[1], nil
+}
+
 // UpdateStatus updates the commit status for a PR
 func (c *Client) UpdateStatus(ctx context.Context, repository, sha string, status Status) error {
 	// Parse repository into owner and repo
-	parts := strings.Split(repository, "/")
-	if len(parts) != 2 {
-		return fmt.Errorf("invalid repository format: %s (expected owner/repo)", repository)
+	owner, repo, err := parseRepository(repository)
+	if err != nil {
+		return err
 	}
-	owner, repo := parts[0], parts[1]
 
 	// Convert our status to Gitea status
 	var giteaStatus gitea.StatusState
@@ -94,12 +103,11 @@ func (c *Client) UpdateStatus(ctx context.Context, repository, sha string, statu
 	if err != nil {
 		// Add more context to the error
 		statusCode := 0
-		body := ""
 		if resp != nil {
 			statusCode = resp.StatusCode
 		}
-		return fmt.Errorf("failed to create status (HTTP %d) for %s/%s@%s: %w (response: %s)",
-			statusCode, owner, repo, sha[:min(7, len(sha))], err, body)
+		return fmt.Errorf("failed to create status (HTTP %d) for %s/%s@%s: %w",
+			statusCode, owner, repo, sha[:min(7, len(sha))], err)
 	}
 
 	slog.Info("updated commit status",
@@ -123,11 +131,10 @@ type PRDetails struct {
 // GetPullRequest retrieves basic PR information from Gitea
 func (c *Client) GetPullRequest(ctx context.Context, repository string, prNumber int) (*PRDetails, error) {
 	// Parse repository into owner and repo
-	parts := strings.Split(repository, "/")
-	if len(parts) != 2 {
-		return nil, fmt.Errorf("invalid repository format: %s (expected owner/repo)", repository)
+	owner, repo, err := parseRepository(repository)
+	if err != nil {
+		return nil, err
 	}
-	owner, repo := parts[0], parts[1]
 
 	// Debug logging before API call
 	slog.Debug("fetching pull request",
@@ -147,20 +154,20 @@ func (c *Client) GetPullRequest(ctx context.Context, repository string, prNumber
 			statusCode, owner, repo, prNumber, err)
 	}
 
-	// Extract head repository
+	// Extract head repository, SHA, and branch
 	headRepo := repository // default to base repo
-	if pr.Head != nil && pr.Head.Repository != nil {
-		headRepo = pr.Head.Repository.FullName
-	}
-
-	// Extract branch name
+	headSHA := ""
 	branch := ""
 	if pr.Head != nil {
+		headSHA = pr.Head.Sha
 		branch = pr.Head.Ref
+		if pr.Head.Repository != nil {
+			headRepo = pr.Head.Repository.FullName
+		}
 	}
 
 	return &PRDetails{
-		HeadSHA:  pr.Head.Sha,
+		HeadSHA:  headSHA,
 		HeadRepo: headRepo,
 		Branch:   branch,
 		Title:    pr.Title,
@@ -170,11 +177,10 @@ func (c *Client) GetPullRequest(ctx context.Context, repository string, prNumber
 // GetPullRequestAssignees retrieves the list of assignees for a PR
 func (c *Client) GetPullRequestAssignees(ctx context.Context, repository string, prNumber int) ([]string, error) {
 	// Parse repository into owner and repo
-	parts := strings.Split(repository, "/")
-	if len(parts) != 2 {
-		return nil, fmt.Errorf("invalid repository format: %s (expected owner/repo)", repository)
+	owner, repo, err := parseRepository(repository)
+	if err != nil {
+		return nil, err
 	}
-	owner, repo := parts[0], parts[1]
 
 	// Fetch PR from Gitea
 	pr, resp, err := c.client.GetPullRequest(owner, repo, int64(prNumber))
@@ -201,11 +207,10 @@ func (c *Client) GetPullRequestAssignees(ctx context.Context, repository string,
 // PostComment posts a comment to a PR
 func (c *Client) PostComment(ctx context.Context, repository string, prNumber int, body string) error {
 	// Parse repository into owner and repo
-	parts := strings.Split(repository, "/")
-	if len(parts) != 2 {
-		return fmt.Errorf("invalid repository format: %s (expected owner/repo)", repository)
+	owner, repo, err := parseRepository(repository)
+	if err != nil {
+		return err
 	}
-	owner, repo := parts[0], parts[1]
 
 	slog.Debug("posting comment to PR",
 		"owner", owner,
@@ -233,11 +238,10 @@ func (c *Client) PostComment(ctx context.Context, repository string, prNumber in
 // PostReviewComments posts file-level comments as a PR review
 func (c *Client) PostReviewComments(ctx context.Context, repository string, prNumber int, commitSHA string, comments []*types.FileComment) error {
 	// Parse repository into owner and repo
-	parts := strings.Split(repository, "/")
-	if len(parts) != 2 {
-		return fmt.Errorf("invalid repository format: %s (expected owner/repo)", repository)
+	owner, repo, err := parseRepository(repository)
+	if err != nil {
+		return err
 	}
-	owner, repo := parts[0], parts[1]
 
 	fileComments := comments
 
@@ -293,11 +297,10 @@ func (c *Client) PostReviewComments(ctx context.Context, repository string, prNu
 // UpdatePRAssignees updates the assignees for a PR
 func (c *Client) UpdatePRAssignees(ctx context.Context, repository string, prNumber int, assignees []string) error {
 	// Parse repository into owner and repo
-	parts := strings.Split(repository, "/")
-	if len(parts) != 2 {
-		return fmt.Errorf("invalid repository format: %s (expected owner/repo)", repository)
+	owner, repo, err := parseRepository(repository)
+	if err != nil {
+		return err
 	}
-	owner, repo := parts[0], parts[1]
 
 	slog.Debug("updating PR assignees",
 		"owner", owner,
@@ -326,11 +329,10 @@ func (c *Client) UpdatePRAssignees(ctx context.Context, repository string, prNum
 // UpdatePRTitle updates the title of a PR
 func (c *Client) UpdatePRTitle(ctx context.Context, repository string, prNumber int, title string) error {
 	// Parse repository into owner and repo
-	parts := strings.Split(repository, "/")
-	if len(parts) != 2 {
-		return fmt.Errorf("invalid repository format: %s (expected owner/repo)", repository)
+	owner, repo, err := parseRepository(repository)
+	if err != nil {
+		return err
 	}
-	owner, repo := parts[0], parts[1]
 
 	slog.Debug("updating PR title",
 		"owner", owner,
@@ -354,11 +356,4 @@ func (c *Client) UpdatePRTitle(ctx context.Context, repository string, prNumber 
 
 	slog.Info("updated PR title", "repository", repository, "pr_number", prNumber, "title", title)
 	return nil
-}
-
-func min(a, b int) int {
-	if a < b {
-		return a
-	}
-	return b
 }

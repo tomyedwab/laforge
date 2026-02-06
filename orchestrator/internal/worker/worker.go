@@ -205,8 +205,8 @@ func (s *Server) handlePRJob(ctx context.Context, t *asynq.Task) error {
 		"pr_number", payload.PRNumber,
 	)
 
-	// Update Gitea status to "success"
-	if err := s.gitea.UpdateStatus(ctx, payload.Repository, payload.SHA, gitea.StatusSuccess); err != nil {
+	// Update Gitea status to "success" - use HeadRepository for fork PRs
+	if err := s.gitea.UpdateStatus(ctx, payload.HeadRepository, payload.SHA, gitea.StatusSuccess); err != nil {
 		slog.Error("failed to update status to success", "error", err)
 		return fmt.Errorf("failed to update final status: %w", err)
 	}
@@ -321,7 +321,7 @@ func (s *Server) processCleanupAction(ctx context.Context, payload *queue.PRJobP
 		// Continue with cleanup even if this fails
 	} else {
 		// Remove bot from assignees
-		botUsername := "laforge" // TODO: Get from config
+		botUsername := s.botUsername
 		newAssignees := []string{}
 		botWasAssigned := false
 		for _, assignee := range assignees {
@@ -336,9 +336,9 @@ func (s *Server) processCleanupAction(ctx context.Context, payload *queue.PRJobP
 			if err := s.gitea.UpdatePRAssignees(ctx, payload.Repository, payload.PRNumber, newAssignees); err != nil {
 				slog.Error("failed to update PR assignees", "error", err)
 				// Continue with cleanup even if this fails
-				cleanupActions = append(cleanupActions, "Failed to unassign laforge")
+				cleanupActions = append(cleanupActions, fmt.Sprintf("Failed to unassign %s", botUsername))
 			} else {
-				cleanupActions = append(cleanupActions, "Unassigned laforge")
+				cleanupActions = append(cleanupActions, fmt.Sprintf("Unassigned %s", botUsername))
 				slog.Info("cleanup: unassigned bot from PR")
 			}
 		}

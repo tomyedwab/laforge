@@ -50,11 +50,10 @@ func NewFetcher(client *gitea.Client, baseURL, token string) *Fetcher {
 // FetchPRHistory fetches and formats the complete PR history
 func (f *Fetcher) FetchPRHistory(ctx context.Context, repository string, prNumber int) (*PRHistory, error) {
 	// Parse repository into owner and repo
-	parts := strings.Split(repository, "/")
-	if len(parts) != 2 {
-		return nil, fmt.Errorf("invalid repository format: %s (expected owner/repo)", repository)
+	owner, repo, err := parseRepository(repository)
+	if err != nil {
+		return nil, err
 	}
-	owner, repo := parts[0], parts[1]
 
 	slog.Info("fetching PR history",
 		"repository", repository,
@@ -223,8 +222,8 @@ func (f *Fetcher) downloadAttachment(ctx context.Context, attachment *Attachment
 		return fmt.Errorf("unexpected status code: %d", resp.StatusCode)
 	}
 
-	// Read content
-	content, err := io.ReadAll(resp.Body)
+	// Read content with size limit to prevent DoS
+	content, err := io.ReadAll(io.LimitReader(resp.Body, 100<<20)) // 100MB limit
 	if err != nil {
 		return fmt.Errorf("failed to read content: %w", err)
 	}
@@ -245,7 +244,7 @@ func (f *Fetcher) formatMarkdown(
 	// PR header
 	sb.WriteString(fmt.Sprintf("# PR #%d: %s\n\n", pr.Index, pr.Title))
 	sb.WriteString(fmt.Sprintf("**Author:** %s\n", pr.Poster.UserName))
-	sb.WriteString("**Branch:** ${pr.head.ref}\n")
+	sb.WriteString(fmt.Sprintf("**Branch:** %s\n", pr.Head.Ref))
 	sb.WriteString(fmt.Sprintf("**Created:** %s\n\n", pr.Created.Format(time.RFC3339)))
 
 	// PR description

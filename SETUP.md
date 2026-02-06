@@ -1,6 +1,6 @@
-# Laforge Agent Configuration
+# Laforge Setup Guide
 
-This document describes how to configure Gitea to send webhook events to the orchestrator service.
+This document describes how to set up Laforge and configure Gitea to send webhook events to the orchestrator service.
 
 ## Prerequisites
 
@@ -96,6 +96,11 @@ gitea:
   external_url: "http://localhost:3010"  # URL users access Gitea at
   token: "your-gitea-token-here"  # From step 3
 
+anthropic:
+  api_key: ""  # Optional: Anthropic API key
+  oauth_token: ""  # Optional: Claude Code OAuth token (preferred)
+  port: "8001"
+
 worker:
   concurrency: 5
 
@@ -113,6 +118,8 @@ prompts:
   default_type: "implement"
   default_model: "sonnet"
 ```
+
+All configuration is done through `~/.laforge/config.yaml`. Environment variables are not used for configuration.
 
 Start the orchestrator service:
 
@@ -205,7 +212,7 @@ The orchestrator is configured to handle the following webhook events, matching 
 
 The orchestrator implements smart event filtering to prevent unnecessary agent runs:
 
-1. **Bot Self-Filtering**: Events triggered by the bot user (configured via `BOT_USERNAME`) are automatically ignored to prevent infinite loops. When the bot comments on a PR, it won't trigger itself.
+1. **Bot Self-Filtering**: Events triggered by the bot user (configured in `~/.laforge/config.yaml` under `bot.username`) are automatically ignored to prevent infinite loops. When the bot comments on a PR, it won't trigger itself.
 
 2. **Action Whitelisting**: Only specific actions within each event type trigger the agent. For example:
    - ✅ `pull_request.opened` - Triggers agent
@@ -241,9 +248,9 @@ ALLOWED_HOST_LIST = private, host.docker.internal
 - Ensure both services are on the same Docker network (`gitea`) if using service names
 
 ### Signature validation fails
-- Verify the `WEBHOOK_SECRET` environment variable matches the secret configured in Gitea
+- Verify the `webhook_secret` in `~/.laforge/config.yaml` matches the secret configured in Gitea
 - Check orchestrator logs for "webhook signature validation failed" messages
-- Ensure you've restarted the orchestrator after setting the environment variable
+- Ensure you've restarted the orchestrator after updating the configuration file
 
 ### No logs appear
 - Check if the webhook is set to **Active**
@@ -267,7 +274,7 @@ This typically means the Gitea API token doesn't have the correct permissions. T
    - In Gitea, go to **Settings** → **Applications**
    - Delete the old token
    - Create a new token with **repository** permissions (includes status updates)
-   - Update the `GITEA_TOKEN` environment variable
+   - Update the `gitea.token` field in `~/.laforge/config.yaml`
    - Restart the orchestrator: `docker-compose restart orchestrator`
 
 2. **Verify the repository exists**: Ensure the repository name in the webhook payload matches exactly
@@ -283,10 +290,43 @@ This typically means the Gitea API token doesn't have the correct permissions. T
 
 If the issue persists, check the orchestrator logs for more detailed error information including HTTP status codes.
 
-## Claude Code
+## Building Agent Docker Images
+
+Before running Laforge, you need to build Docker images for the agents you want to use:
+
+### Claude Code Agent
+
+```bash
+cd agents/claudecode
+docker build -t laforge/claudecode .
+```
+
+This builds a Docker image containing Claude Code CLI. Make sure the image tag (`laforge/claudecode`) matches what's configured in your `~/.laforge/config.yaml` under `models.*.image`.
+
+### Other Agents
+
+If you add custom agents in the `agents/` directory, build them similarly:
+
+```bash
+cd agents/your-agent
+docker build -t laforge/your-agent .
+```
+
+Then configure the image in `~/.laforge/config.yaml`:
+
+```yaml
+models:
+  myagent:
+    model_id: "your-model-id"
+    image: "laforge/your-agent"
+```
+
+## Claude Code OAuth Token
 
 To generate a Claude Code OAuth token tied to your Pro/Max account, run this command locally:
 
 ```bash
 claude setup-token
 ```
+
+This will guide you through the OAuth flow and generate a token. Add this token to `~/.laforge/config.yaml` under `anthropic.oauth_token`.

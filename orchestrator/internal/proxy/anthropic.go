@@ -19,7 +19,11 @@ type AnthropicProxy struct {
 // NewAnthropicProxy creates a new Anthropic API proxy
 // Accepts either apiKey or oauthToken (preferring oauthToken if both are provided)
 func NewAnthropicProxy(apiKey, oauthToken string) *AnthropicProxy {
-	target, _ := url.Parse(anthropicAPIBase)
+	target, err := url.Parse(anthropicAPIBase)
+	if err != nil {
+		// This should never happen with a constant URL, but handle it defensively
+		panic("failed to parse Anthropic API base URL: " + err.Error())
+	}
 
 	proxy := httputil.NewSingleHostReverseProxy(target)
 
@@ -38,7 +42,10 @@ func NewAnthropicProxy(apiKey, oauthToken string) *AnthropicProxy {
 			req.Header.Set("x-api-key", apiKey)
 		}
 
-		req.Header.Set("anthropic-version", "2023-06-01")
+		// Only set anthropic-version if the client didn't send one
+		if req.Header.Get("anthropic-version") == "" {
+			req.Header.Set("anthropic-version", "2023-06-01")
+		}
 		req.Host = target.Host
 	}
 

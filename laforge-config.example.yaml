@@ -93,10 +93,11 @@ models:
     model_id: "claude-haiku-4-5-20251001"
     image: "laforge/claudecode"
 
-  # GPT model via LMStudio
-  gpt:
-    model_id: "lmstudio/openai/gpt-oss-20b"
-    image: "laforge/lmstudio"
+  # Example: GPT model via LMStudio
+  # Uncomment and customize if you have a working LMStudio setup
+  # gpt:
+  #   model_id: "your-lmstudio-model-id"
+  #   image: "laforge/lmstudio"
 
 # Prompt configuration
 prompts:

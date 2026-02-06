@@ -71,7 +71,7 @@ The model name is optional; defaults are configured in `~/.laforge/config.yaml`.
 ### Webhook Events
 
 The orchestrator responds to:
-- `pull_request`: opened, reopened, assigned, edited
+- `pull_request`: opened, reopened, assigned
 - `issue_comment`: created, edited (on PRs only)
 - `pull_request_review`: submitted
 - `pull_request_review_comment`: created, edited
@@ -109,10 +109,17 @@ The `.pr` directory is removed when `/cleanup` is run before merging.
 ## Quick Start
 
 1. Clone this repository
-2. Copy `laforge-config.example.yaml` to `~/.laforge/config.yaml` and configure
-3. Start services: `docker-compose up -d`
-4. Configure Gitea webhook (see [SETUP.md](SETUP.md))
-5. Assign the bot user to a PR or use a slash command
+2. Build agent Docker image(s):
+   - Claude Code: `cd agents/claudecode && docker build -t laforge/claudecode .`
+3. Create bot user in Gitea and generate API token
+4. Copy `laforge-config.example.yaml` to `~/.laforge/config.yaml` and configure:
+   - Add Gitea API token
+   - Configure bot username/email
+   - Set Anthropic API key or OAuth token (for Claude models)
+   - Configure model images to match built images
+5. Start services: `docker-compose up -d`
+6. Configure Gitea webhook (see [SETUP.md](SETUP.md))
+7. Assign the bot user to a PR or use a slash command
 
 ## Configuration
 

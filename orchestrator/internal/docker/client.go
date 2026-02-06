@@ -154,17 +154,8 @@ func (c *Client) RunCleanupContainer(ctx context.Context, volumeName, imageName 
 	}
 
 	// Wait for container to finish
-	statusCh, errCh := c.docker.ContainerWait(ctx, containerID, container.WaitConditionNotRunning)
-	select {
-	case err := <-errCh:
-		if err != nil {
-			return fmt.Errorf("error waiting for cleanup container: %w", err)
-		}
-	case status := <-statusCh:
-		if status.StatusCode != 0 {
-			logs, _ := c.getContainerLogs(ctx, containerID)
-			return fmt.Errorf("cleanup container exited with code %d: %s", status.StatusCode, logs)
-		}
+	if err := c.waitForContainer(ctx, containerID, "cleanup"); err != nil {
+		return err
 	}
 
 	logs, _ := c.getContainerLogs(ctx, containerID)
@@ -224,18 +215,8 @@ func (c *Client) RunInitContainer(ctx context.Context, volumeName, cloneURL, sha
 	}
 
 	// Wait for container to finish
-	statusCh, errCh := c.docker.ContainerWait(ctx, containerID, container.WaitConditionNotRunning)
-	select {
-	case err := <-errCh:
-		if err != nil {
-			return fmt.Errorf("error waiting for init container: %w", err)
-		}
-	case status := <-statusCh:
-		// Get logs to help debug
-		if status.StatusCode != 0 {
-			logs, _ := c.getContainerLogs(ctx, containerID)
-			return fmt.Errorf("init container exited with code %d: %s", status.StatusCode, logs)
-		}
+	if err := c.waitForContainer(ctx, containerID, "init"); err != nil {
+		return err
 	}
 
 	logs, _ := c.getContainerLogs(ctx, containerID)
@@ -316,7 +297,6 @@ func (c *Client) CopyFilesToVolume(ctx context.Context, volumeName string, files
 func createTarArchive(files map[string][]byte) (*bytes.Reader, error) {
 	var buf bytes.Buffer
 	tw := tar.NewWriter(&buf)
-	defer tw.Close()
 
 	for path, content := range files {
 		// Clean the path and ensure it's relative
@@ -414,17 +394,8 @@ func (c *Client) RunAgentContainer(ctx context.Context, volumeName, imageName, p
 	}
 
 	// Wait for container to finish
-	statusCh, errCh := c.docker.ContainerWait(ctx, containerID, container.WaitConditionNotRunning)
-	select {
-	case err := <-errCh:
-		if err != nil {
-			return fmt.Errorf("error waiting for agent container: %w", err)
-		}
-	case status := <-statusCh:
-		if status.StatusCode != 0 {
-			logs, _ := c.getContainerLogs(ctx, containerID)
-			return fmt.Errorf("agent container exited with code %d: %s", status.StatusCode, logs)
-		}
+	if err := c.waitForContainer(ctx, containerID, "agent"); err != nil {
+		return err
 	}
 
 	slog.Info("agent container completed successfully")
@@ -647,17 +618,8 @@ echo "NEW_HEAD_SHA: $(git rev-parse HEAD)"
 	}
 
 	// Wait for container to finish
-	statusCh, errCh := c.docker.ContainerWait(ctx, containerID, container.WaitConditionNotRunning)
-	select {
-	case err := <-errCh:
-		if err != nil {
-			return "", fmt.Errorf("error waiting for git commit container: %w", err)
-		}
-	case status := <-statusCh:
-		if status.StatusCode != 0 {
-			logs, _ := c.getContainerLogs(ctx, containerID)
-			return "", fmt.Errorf("git commit container exited with code %d: %s", status.StatusCode, logs)
-		}
+	if err := c.waitForContainer(ctx, containerID, "git commit"); err != nil {
+		return "", err
 	}
 
 	// Get output to check if there were changes and get the SHA
@@ -702,6 +664,31 @@ echo "NEW_HEAD_SHA: $(git rev-parse HEAD)"
 func shellQuote(s string) string {
 	// Use single quotes and escape any single quotes in the string
 	return "'" + strings.ReplaceAll(s, "'", "'\"'\"'") + "'"
+}
+
+// waitForContainer waits for a container to finish and returns an error if the
+// container exits with a non-zero status code. This correctly handles the Docker
+// SDK's ContainerWait semantics where errCh may fire with nil before statusCh.
+func (c *Client) waitForContainer(ctx context.Context, containerID, name string) error {
+	statusCh, errCh := c.docker.ContainerWait(ctx, containerID, container.WaitConditionNotRunning)
+	select {
+	case err := <-errCh:
+		if err != nil {
+			return fmt.Errorf("error waiting for %s container: %w", name, err)
+		}
+		// errCh returned nil — still need to check exit status
+		status := <-statusCh
+		if status.StatusCode != 0 {
+			logs, _ := c.getContainerLogs(ctx, containerID)
+			return fmt.Errorf("%s container exited with code %d: %s", name, status.StatusCode, logs)
+		}
+	case status := <-statusCh:
+		if status.StatusCode != 0 {
+			logs, _ := c.getContainerLogs(ctx, containerID)
+			return fmt.Errorf("%s container exited with code %d: %s", name, status.StatusCode, logs)
+		}
+	}
+	return nil
 }
 
 // getContainerLogs retrieves logs from a container

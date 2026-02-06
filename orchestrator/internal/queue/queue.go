@@ -19,7 +19,8 @@ const (
 	QueueDefault = "default"
 
 	// Redis lock configuration
-	lockTTL = 5 * time.Minute
+	// Lock TTL needs to be long enough for AI agent runs which can take 30+ minutes
+	lockTTL = 60 * time.Minute
 )
 
 // PRJobPayload represents the payload for a PR job
