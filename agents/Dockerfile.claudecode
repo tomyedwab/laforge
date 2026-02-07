@@ -10,6 +10,7 @@ RUN apt update && apt install -y \
     iproute2 \
     dnsutils \
     sudo \
+    jq \
     && apt clean && rm -rf /var/lib/apt/lists/*
 
 # Install Node.js system-wide via NodeSource

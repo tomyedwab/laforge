@@ -11,6 +11,12 @@ echo "Invoking Claude Code: ${ANTHROPIC_BASE_URL}"
 mkdir -p .claude
 cp /config/settings.local.json .claude/
 
+# Set up bash proxy if configured
+if [ -n "${LAFORGE_BASH_PROXY_URL:-}" ] && [ -n "${LAFORGE_BASH_PROXY_TOKEN:-}" ]; then
+    echo "Bash proxy enabled: ${LAFORGE_BASH_PROXY_URL}"
+    export CLAUDE_CODE_SHELL_PREFIX="/bin/bash-proxy.sh"
+fi
+
 if [ -f CLAUDE.md ]; then
     mv CLAUDE.md .pr/CLAUDE-PROJECT.md
 fi

@@ -331,12 +331,13 @@ func createTarArchive(files map[string][]byte) (*bytes.Reader, error) {
 }
 
 // RunAgentContainer runs the agent container with the workspace volume mounted
-func (c *Client) RunAgentContainer(ctx context.Context, volumeName, imageName, promptType, model string) error {
+func (c *Client) RunAgentContainer(ctx context.Context, volumeName, imageName, promptType, model, bashProxyToken string) error {
 	slog.Info("running agent container",
 		"volume", volumeName,
 		"image", imageName,
 		"prompt", promptType,
 		"model", model,
+		"has_bash_proxy", bashProxyToken != "",
 	)
 
 	// Build environment variables
@@ -350,6 +351,13 @@ func (c *Client) RunAgentContainer(ctx context.Context, volumeName, imageName, p
 		env = append(env, "ANTHROPIC_BASE_URL="+c.anthropicProxyURL)
 		env = append(env, "CLAUDE_CODE_OAUTH_TOKEN=dummy")
 		slog.Info("agent container configured with Anthropic proxy", "proxy_url", c.anthropicProxyURL)
+	}
+
+	// Add bash proxy configuration if token is provided
+	if bashProxyToken != "" {
+		env = append(env, "LAFORGE_BASH_PROXY_TOKEN="+bashProxyToken)
+		env = append(env, "LAFORGE_BASH_PROXY_URL=http://orchestrator:8080")
+		slog.Info("agent container configured with bash proxy")
 	}
 
 	containerConfig := &container.Config{
@@ -712,4 +720,241 @@ func (c *Client) getContainerLogs(ctx context.Context, containerID string) (stri
 	}
 
 	return stdout.String() + stderr.String(), nil
+}
+
+// StartDevcontainer starts a persistent devcontainer with the workspace volume mounted
+// Returns the container ID
+func (c *Client) StartDevcontainer(ctx context.Context, volumeName, devcontainerImage string) (string, error) {
+	slog.Info("starting persistent devcontainer",
+		"volume", volumeName,
+		"image", devcontainerImage,
+	)
+
+	// Create container config with a long-running process
+	// We use 'sleep infinity' to keep the container running
+	containerConfig := &container.Config{
+		Image:      devcontainerImage,
+		Entrypoint: []string{"sleep"},
+		Cmd:        []string{"infinity"},
+		WorkingDir: "/workspace/repo",
+	}
+
+	// Mount the volume
+	hostConfig := &container.HostConfig{
+		Mounts: []mount.Mount{
+			{
+				Type:   mount.TypeVolume,
+				Source: volumeName,
+				Target: "/workspace",
+			},
+		},
+		// Don't use AutoRemove - we'll manually remove it after stopping
+	}
+
+	// Join the Docker network if configured
+	if c.networkName != "" {
+		hostConfig.NetworkMode = container.NetworkMode(c.networkName)
+		slog.Debug("devcontainer joining network", "network", c.networkName)
+	}
+
+	// Create the container
+	resp, err := c.docker.ContainerCreate(ctx, containerConfig, hostConfig, nil, nil, c.jobName+"-devcontainer")
+	if err != nil {
+		return "", fmt.Errorf("failed to create devcontainer: %w", err)
+	}
+
+	containerID := resp.ID
+	slog.Debug("created devcontainer", "id", containerID)
+
+	// Start the container
+	if err := c.docker.ContainerStart(ctx, containerID, container.StartOptions{}); err != nil {
+		return "", fmt.Errorf("failed to start devcontainer: %w", err)
+	}
+
+	slog.Info("persistent devcontainer started successfully", "id", containerID)
+	return containerID, nil
+}
+
+// ExecDevcontainerCommand executes a bash command in a running devcontainer using docker exec
+// Returns stdout, stderr, and exit code
+func (c *Client) ExecDevcontainerCommand(ctx context.Context, containerID, command string) (string, string, int, error) {
+	slog.Info("executing command in devcontainer",
+		"container_id", containerID,
+		"command", command,
+	)
+
+	// Create exec configuration
+	execConfig := container.ExecOptions{
+		Cmd:          []string{"bash", "-c", command},
+		AttachStdout: true,
+		AttachStderr: true,
+		WorkingDir:   "/workspace/repo",
+	}
+
+	// Create the exec instance
+	execResp, err := c.docker.ContainerExecCreate(ctx, containerID, execConfig)
+	if err != nil {
+		return "", "", 1, fmt.Errorf("failed to create exec: %w", err)
+	}
+
+	execID := execResp.ID
+	slog.Debug("created exec instance", "exec_id", execID)
+
+	// Attach to the exec instance to capture output
+	attachResp, err := c.docker.ContainerExecAttach(ctx, execID, container.ExecStartOptions{})
+	if err != nil {
+		return "", "", 1, fmt.Errorf("failed to attach to exec: %w", err)
+	}
+	defer attachResp.Close()
+
+	// Read stdout and stderr from the exec
+	var stdout, stderr strings.Builder
+	_, err = stdcopy.StdCopy(&stdout, &stderr, attachResp.Reader)
+	if err != nil && err != io.EOF {
+		return "", "", 1, fmt.Errorf("failed to read exec output: %w", err)
+	}
+
+	// Wait for the exec to complete and get exit code
+	// We need to inspect the exec to get the exit code
+	var exitCode int
+	for {
+		inspectResp, err := c.docker.ContainerExecInspect(ctx, execID)
+		if err != nil {
+			return "", "", 1, fmt.Errorf("failed to inspect exec: %w", err)
+		}
+
+		if !inspectResp.Running {
+			exitCode = inspectResp.ExitCode
+			break
+		}
+
+		// Small sleep to avoid busy-waiting
+		time.Sleep(100 * time.Millisecond)
+	}
+
+	slog.Info("devcontainer command completed", "exit_code", exitCode)
+	return stdout.String(), stderr.String(), exitCode, nil
+}
+
+// StopDevcontainer stops and removes a running devcontainer
+func (c *Client) StopDevcontainer(ctx context.Context, containerID string) error {
+	slog.Info("stopping devcontainer", "container_id", containerID)
+
+	// Stop the container with a timeout
+	timeout := 10 // 10 seconds
+	stopOptions := container.StopOptions{
+		Timeout: &timeout,
+	}
+
+	if err := c.docker.ContainerStop(ctx, containerID, stopOptions); err != nil {
+		// Container might already be stopped, log but continue to remove
+		slog.Warn("failed to stop devcontainer (may already be stopped)", "error", err)
+	}
+
+	// Remove the container
+	if err := c.docker.ContainerRemove(ctx, containerID, container.RemoveOptions{Force: true}); err != nil {
+		return fmt.Errorf("failed to remove devcontainer: %w", err)
+	}
+
+	slog.Info("devcontainer stopped and removed successfully")
+	return nil
+}
+
+// RunDevcontainerCommand executes a bash command in a devcontainer with the workspace volume mounted
+// DEPRECATED: Use StartDevcontainer + ExecDevcontainerCommand + StopDevcontainer instead
+// Returns stdout, stderr, and exit code
+func (c *Client) RunDevcontainerCommand(ctx context.Context, volumeName, devcontainerImage, command string) (string, string, int, error) {
+	slog.Info("running command in devcontainer",
+		"volume", volumeName,
+		"image", devcontainerImage,
+		"command", command,
+	)
+
+	// Create container config to run the command
+	containerConfig := &container.Config{
+		Image:      devcontainerImage,
+		Entrypoint: []string{"bash", "-c"},
+		Cmd:        []string{command},
+		WorkingDir: "/workspace/repo",
+	}
+
+	// Mount the volume
+	hostConfig := &container.HostConfig{
+		Mounts: []mount.Mount{
+			{
+				Type:   mount.TypeVolume,
+				Source: volumeName,
+				Target: "/workspace",
+			},
+		},
+		AutoRemove: true,
+	}
+
+	// Join the Docker network if configured
+	if c.networkName != "" {
+		hostConfig.NetworkMode = container.NetworkMode(c.networkName)
+		slog.Debug("devcontainer joining network", "network", c.networkName)
+	}
+
+	// Create the container
+	resp, err := c.docker.ContainerCreate(ctx, containerConfig, hostConfig, nil, nil, c.jobName+"-devcontainer")
+	if err != nil {
+		return "", "", 1, fmt.Errorf("failed to create devcontainer: %w", err)
+	}
+
+	containerID := resp.ID
+	slog.Debug("created devcontainer", "id", containerID)
+
+	// Start the container
+	if err := c.docker.ContainerStart(ctx, containerID, container.StartOptions{}); err != nil {
+		return "", "", 1, fmt.Errorf("failed to start devcontainer: %w", err)
+	}
+
+	// Wait for container to finish
+	statusCh, errCh := c.docker.ContainerWait(ctx, containerID, container.WaitConditionNotRunning)
+
+	var exitCode int64
+	select {
+	case err := <-errCh:
+		if err != nil {
+			return "", "", 1, fmt.Errorf("error waiting for devcontainer: %w", err)
+		}
+		// errCh returned nil — still need to check exit status
+		status := <-statusCh
+		exitCode = status.StatusCode
+	case status := <-statusCh:
+		exitCode = status.StatusCode
+	}
+
+	// Get stdout and stderr separately
+	stdout, stderr, err := c.getContainerLogsWithSeparation(ctx, containerID)
+	if err != nil {
+		return "", "", int(exitCode), fmt.Errorf("failed to get devcontainer logs: %w", err)
+	}
+
+	slog.Info("devcontainer command completed", "exit_code", exitCode)
+	return stdout, stderr, int(exitCode), nil
+}
+
+// getContainerLogsWithSeparation retrieves logs from a container with stdout and stderr separated
+func (c *Client) getContainerLogsWithSeparation(ctx context.Context, containerID string) (string, string, error) {
+	options := container.LogsOptions{
+		ShowStdout: true,
+		ShowStderr: true,
+	}
+
+	logs, err := c.docker.ContainerLogs(ctx, containerID, options)
+	if err != nil {
+		return "", "", err
+	}
+	defer logs.Close()
+
+	// Use stdcopy to demultiplex the logs
+	var stdout, stderr strings.Builder
+	_, err = stdcopy.StdCopy(&stdout, &stderr, logs)
+	if err != nil && err != io.EOF {
+		return "", "", err
+	}
+
+	return stdout.String(), stderr.String(), nil
 }

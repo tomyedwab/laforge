@@ -9,41 +9,48 @@ import (
 	"time"
 
 	"github.com/hibiken/asynq"
+	"github.com/tom/laforge/orchestrator/internal/bashproxy"
+	"github.com/tom/laforge/orchestrator/internal/config"
 	"github.com/tom/laforge/orchestrator/internal/docker"
 	"github.com/tom/laforge/orchestrator/internal/gitea"
 	"github.com/tom/laforge/orchestrator/internal/notify"
 	"github.com/tom/laforge/orchestrator/internal/queue"
+	"github.com/tom/laforge/orchestrator/internal/types"
 )
 
 // Server wraps the Asynq server for processing tasks
 type Server struct {
-	asynq             *asynq.Server
-	mux               *asynq.ServeMux
-	gitea             *gitea.Client
-	notify            *notify.Client
-	redisAddr         string
-	giteaURL          string
-	giteaToken        string
-	gitImage          string
-	botUsername       string
-	botEmail          string
-	networkName       string
-	anthropicProxyURL string
+	asynq                 *asynq.Server
+	mux                   *asynq.ServeMux
+	gitea                 *gitea.Client
+	notify                *notify.Client
+	redisAddr             string
+	giteaURL              string
+	giteaToken            string
+	gitImage              string
+	botUsername           string
+	botEmail              string
+	networkName           string
+	anthropicProxyURL     string
+	bashProxyTokenManager *bashproxy.TokenManager
+	repositories          config.RepositoriesConfig
 }
 
 // Config holds the configuration for the worker server
 type Config struct {
-	RedisAddr         string
-	Concurrency       int
-	GiteaClient       *gitea.Client
-	NotifyClient      *notify.Client
-	GiteaURL          string
-	GiteaToken        string
-	GitImage          string
-	BotUsername       string
-	BotEmail          string
-	NetworkName       string
-	AnthropicProxyURL string
+	RedisAddr             string
+	Concurrency           int
+	GiteaClient           *gitea.Client
+	NotifyClient          *notify.Client
+	GiteaURL              string
+	GiteaToken            string
+	GitImage              string
+	BotUsername           string
+	BotEmail              string
+	NetworkName           string
+	AnthropicProxyURL     string
+	BashProxyTokenManager *bashproxy.TokenManager
+	Repositories          config.RepositoriesConfig
 }
 
 // NewServer creates a new worker server
@@ -65,18 +72,20 @@ func NewServer(cfg Config) *Server {
 	mux := asynq.NewServeMux()
 
 	return &Server{
-		asynq:             srv,
-		mux:               mux,
-		gitea:             cfg.GiteaClient,
-		notify:            cfg.NotifyClient,
-		redisAddr:         cfg.RedisAddr,
-		giteaURL:          cfg.GiteaURL,
-		giteaToken:        cfg.GiteaToken,
-		gitImage:          cfg.GitImage,
-		botUsername:       cfg.BotUsername,
-		botEmail:          cfg.BotEmail,
-		networkName:       cfg.NetworkName,
-		anthropicProxyURL: cfg.AnthropicProxyURL,
+		asynq:                 srv,
+		mux:                   mux,
+		gitea:                 cfg.GiteaClient,
+		notify:                cfg.NotifyClient,
+		redisAddr:             cfg.RedisAddr,
+		giteaURL:              cfg.GiteaURL,
+		giteaToken:            cfg.GiteaToken,
+		gitImage:              cfg.GitImage,
+		botUsername:           cfg.BotUsername,
+		botEmail:              cfg.BotEmail,
+		networkName:           cfg.NetworkName,
+		anthropicProxyURL:     cfg.AnthropicProxyURL,
+		bashProxyTokenManager: cfg.BashProxyTokenManager,
+		repositories:          cfg.Repositories,
 	}
 }
 
@@ -471,10 +480,66 @@ func (s *Server) processJob(ctx context.Context, payload *queue.PRJobPayload) er
 	}
 	*/
 
+	// Start persistent devcontainer if configured for this repository
+	var bashProxyToken string
+	var devcontainerID string
+	repoConfig := s.repositories[payload.Repository]
+	if repoConfig.DevcontainerImage != "" && s.bashProxyTokenManager != nil {
+		slog.Info("starting persistent devcontainer",
+			"repository", payload.Repository,
+			"devcontainer_image", repoConfig.DevcontainerImage,
+		)
+
+		// Pull devcontainer image if needed
+		/* TODO: If we deploy images to a repository, may need to pull the latest version
+		if err := dockerClient.PullImage(ctx, repoConfig.DevcontainerImage); err != nil {
+			return fmt.Errorf("failed to pull devcontainer image: %w", err)
+		}
+		*/
+
+		// Start the persistent devcontainer
+		containerID, err := dockerClient.StartDevcontainer(ctx, jobName, repoConfig.DevcontainerImage)
+		if err != nil {
+			return fmt.Errorf("failed to start devcontainer: %w", err)
+		}
+		devcontainerID = containerID
+
+		// Ensure devcontainer is cleaned up after job completes
+		defer func() {
+			cleanupCtx := context.Background()
+			if err := dockerClient.StopDevcontainer(cleanupCtx, devcontainerID); err != nil {
+				slog.Error("failed to stop devcontainer", "container_id", devcontainerID, "error", err)
+			}
+		}()
+
+		slog.Info("devcontainer started successfully", "container_id", devcontainerID)
+
+		// Create bash job context with devcontainer ID
+		bashJobContext := &types.BashJobContext{
+			VolumeName:        jobName,
+			DevcontainerImage: repoConfig.DevcontainerImage,
+			DevcontainerID:    devcontainerID,
+			Repository:        payload.Repository,
+			CommandTimeout:    300, // 5 minutes default timeout
+		}
+
+		// Generate token
+		token, err := s.bashProxyTokenManager.GenerateToken(bashJobContext)
+		if err != nil {
+			return fmt.Errorf("failed to generate bash proxy token: %w", err)
+		}
+		bashProxyToken = token
+
+		// Ensure token is revoked after job completes
+		defer s.bashProxyTokenManager.RevokeToken(bashProxyToken)
+
+		slog.Info("bash proxy token generated successfully")
+	}
+
 	// Run agent container
 	slog.Info("running agent container", "volume", jobName, "model_image", payload.ModelImage)
 
-	if err := dockerClient.RunAgentContainer(ctx, jobName, payload.ModelImage, payload.PromptType, payload.Model); err != nil {
+	if err := dockerClient.RunAgentContainer(ctx, jobName, payload.ModelImage, payload.PromptType, payload.Model, bashProxyToken); err != nil {
 		return fmt.Errorf("failed to run agent container: %w", err)
 	}
 

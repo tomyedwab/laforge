@@ -17,6 +17,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
+	"github.com/tom/laforge/orchestrator/internal/bashproxy"
 	"github.com/tom/laforge/orchestrator/internal/config"
 	"github.com/tom/laforge/orchestrator/internal/gitea"
 	"github.com/tom/laforge/orchestrator/internal/notify"
@@ -81,19 +82,24 @@ func main() {
 		anthropicProxyURL = "http://orchestrator:" + cfg.Anthropic.Port
 	}
 
+	// Initialize bash proxy token manager (30 minute timeout for tokens)
+	bashProxyTokenManager := bashproxy.NewTokenManager(30 * time.Minute)
+
 	// Initialize and start worker server in a goroutine
 	workerServer := worker.NewServer(worker.Config{
-		RedisAddr:         cfg.Redis.Address,
-		Concurrency:       cfg.Worker.Concurrency,
-		GiteaClient:       giteaClient,
-		NotifyClient:      notifyClient,
-		GiteaURL:          cfg.Gitea.URL,
-		GiteaToken:        cfg.Gitea.Token,
-		GitImage:          cfg.Docker.GitImage,
-		BotUsername:       cfg.Bot.Username,
-		BotEmail:          cfg.Bot.Email,
-		NetworkName:       cfg.Docker.NetworkName,
-		AnthropicProxyURL: anthropicProxyURL,
+		RedisAddr:             cfg.Redis.Address,
+		Concurrency:           cfg.Worker.Concurrency,
+		GiteaClient:           giteaClient,
+		NotifyClient:          notifyClient,
+		GiteaURL:              cfg.Gitea.URL,
+		GiteaToken:            cfg.Gitea.Token,
+		GitImage:              cfg.Docker.GitImage,
+		BotUsername:           cfg.Bot.Username,
+		BotEmail:              cfg.Bot.Email,
+		NetworkName:           cfg.Docker.NetworkName,
+		AnthropicProxyURL:     anthropicProxyURL,
+		BashProxyTokenManager: bashProxyTokenManager,
+		Repositories:          cfg.Repositories,
 	})
 	workerServer.RegisterHandlers()
 
@@ -151,6 +157,10 @@ func main() {
 	// Routes
 	r.Get("/health", handleHealth)
 	r.Post("/webhook", handleWebhook(cfg, queueClient, giteaClient))
+
+	// Bash proxy endpoint
+	bashProxyHandler := bashproxy.NewHandler(bashProxyTokenManager, cfg.Docker.NetworkName)
+	r.Post("/api/v1/bash", bashProxyHandler.HandleBashRequest)
 
 	// Set up graceful shutdown
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)

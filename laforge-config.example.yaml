@@ -115,3 +115,15 @@ prompts:
     - implement
     - plan
     - critique
+
+# Repository-specific configuration
+# Configure devcontainer images for each repository
+repositories:
+  # Example: "owner/repo": configuration
+  # "myorg/myrepo":
+  #   devcontainer_image: "myorg/myrepo-devcontainer:latest"
+
+  # When a devcontainer_image is configured for a repository, the agent's
+  # Bash commands will be executed in that devcontainer instead of directly
+  # in the agent container. This allows each repository to have its own
+  # development environment with specific tools and dependencies.

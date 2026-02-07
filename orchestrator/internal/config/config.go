@@ -19,6 +19,7 @@ type Config struct {
 	Anthropic     AnthropicConfig     `yaml:"anthropic"`
 	Models        map[string]Model    `yaml:"models"`
 	Prompts       PromptsConfig       `yaml:"prompts"`
+	Repositories  RepositoriesConfig  `yaml:"repositories"`
 }
 
 // ServerConfig contains server-related configuration
@@ -55,6 +56,14 @@ type DockerConfig struct {
 	GitImage    string `yaml:"git_image"`
 	NetworkName string `yaml:"network_name"`
 }
+
+// RepositoryConfig contains per-repository configuration
+type RepositoryConfig struct {
+	DevcontainerImage string `yaml:"devcontainer_image"`
+}
+
+// RepositoriesConfig maps repository names to their configurations
+type RepositoriesConfig map[string]RepositoryConfig
 
 // NotificationsConfig contains notification settings
 type NotificationsConfig struct {
@@ -191,4 +200,13 @@ func (c *Config) IsValidPromptType(promptType string) bool {
 		}
 	}
 	return false
+}
+
+// GetRepositoryConfig returns the repository configuration for a given repository
+// Returns an empty config if the repository is not found
+func (c *Config) GetRepositoryConfig(repository string) RepositoryConfig {
+	if config, ok := c.Repositories[repository]; ok {
+		return config
+	}
+	return RepositoryConfig{}
 }

@@ -158,6 +158,76 @@ prompts:
   default_model: "sonnet"
 ```
 
+## Devcontainers
+
+Laforge supports running bash commands in per-repository development containers instead of the agent container. This allows each repository to have its own customized development environment with specific tools, compilers, and dependencies.
+
+### How It Works
+
+When a devcontainer is configured for a repository:
+
+1. **Before the agent starts**, a persistent devcontainer is launched with the workspace volume mounted
+2. **All bash commands** executed by the agent run inside the devcontainer via `docker exec`
+3. **Background processes** persist across commands, allowing the agent to start processes and check on them later
+4. **After the agent finishes**, the devcontainer is automatically cleaned up
+
+This architecture allows agents to:
+- Use repository-specific tools and environments
+- Run background processes and monitor them over time
+- Maintain shell state across multiple command invocations
+- Access the same workspace files as the agent
+
+### Configuration
+
+Add devcontainer configuration per repository in `~/.laforge/config.yaml`:
+
+```yaml
+repositories:
+  "owner/repo":
+    devcontainer_image: "owner/repo-devcontainer:latest"
+```
+
+The devcontainer image should:
+- Include all build tools and dependencies needed for the repository
+- Have the workspace accessible at `/workspace/repo`
+- Be accessible from the Docker daemon running the orchestrator
+
+### Example Devcontainer
+
+A simple Dockerfile for a Go project devcontainer:
+
+```dockerfile
+FROM golang:1.21-bookworm
+
+# Install additional tools
+RUN apt-get update && apt-get install -y \\
+    git \\
+    make \\
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /workspace/repo
+```
+
+Build and push the image:
+```bash
+docker build -t myorg/myrepo-devcontainer:latest .
+docker push myorg/myrepo-devcontainer:latest
+```
+
+Then configure it in `~/.laforge/config.yaml`:
+```yaml
+repositories:
+  "myorg/myrepo":
+    devcontainer_image: "myorg/myrepo-devcontainer:latest"
+```
+
+### Benefits
+
+- **Isolated environments**: Each repository can have different tool versions without conflicts
+- **Faster agent execution**: No need to install tools during agent runtime
+- **Persistent state**: Background jobs and shell state are maintained across commands
+- **Reproducible builds**: Same environment for agents and local development
+
 ## Documentation
 
 - [SETUP.md](SETUP.md) - Detailed setup and webhook configuration

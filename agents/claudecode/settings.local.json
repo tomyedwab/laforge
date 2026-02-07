@@ -1,7 +1,7 @@
 {
   "permissions": {
-    "allow": ["Edit(/**/*)", "Read(/**/*)", "Bash", "WebFetch", "WebSearch"],
-    "deny": [],
+    "allow": ["Edit(/**/*)", "Read(/**/*)", "Bash"],
+    "deny": ["WebFetch", "WebSearch"],
     "ask": []
   }
 }
