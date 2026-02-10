@@ -42,6 +42,7 @@ main {
 .jobs-list h2,
 .job-view h2 {
     margin-bottom: 1.5rem;
+    margin-top: 1.5rem;
     color: #2c3e50;
 }
 
@@ -205,7 +206,8 @@ tbody tr.status-failure {
 }
 
 .tool-result-header {
-    padding: 0.75rem 1rem;
+    padding: 0.25rem 0.5rem;
+    font-size: 0.75rem;
     cursor: pointer;
     user-select: none;
     background-color: #f8f9fa;
@@ -218,6 +220,8 @@ tbody tr.status-failure {
 
 .tool-result-content {
     padding: 0 1rem 1rem 1rem;
+    font-size: 0.75rem;
+    overflow: auto;
 }
 
 .toggle-icon {
@@ -243,7 +247,8 @@ tbody tr.status-failure {
 
 .tool-error {
     margin: 1rem 0;
-    padding: 1rem;
+    padding: 0.25rem 0.5rem;
+    font-size: 0.75rem;
     background-color: #fee;
     border-left: 3px solid #e74c3c;
     border-radius: 4px;

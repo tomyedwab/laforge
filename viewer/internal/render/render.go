@@ -253,7 +253,7 @@ func RenderMessage(line string) string {
 			output.WriteString(fmt.Sprintf("<p>%s</p>\n", strings.Join(summaryParts, " • ")))
 
 			if msg.Result != "" {
-				output.WriteString(fmt.Sprintf("<p>%s</p>\n", html.EscapeString(msg.Result)))
+				output.WriteString(fmt.Sprintf("<p>%s</p>\n", renderMarkdown(msg.Result)))
 			}
 			output.WriteString("</div>\n")
 		}
