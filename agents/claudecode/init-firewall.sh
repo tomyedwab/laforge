@@ -10,8 +10,10 @@ echo "Fixing workspace permissions..."
 
 # Change group ownership to claudecode's group while keeping root as owner
 chown -R root:claudecode /workspace
+chown -R root:claudecode /logs
 # Set group write permissions so claudecode user can write
 chmod -R g+w /workspace
+chmod -R g+w /logs
 # Ensure new files created inherit the group
 chmod g+s /workspace/repo
 

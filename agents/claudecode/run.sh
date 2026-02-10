@@ -24,7 +24,20 @@ cp /config/CLAUDE.md ./CLAUDE.md
 
 PROMPT=$(cat /config/prompts/$PROMPTNAME.md)
 
-claude --model $MODELNAME --output-format stream-json --verbose -p "$PROMPT" | node /bin/format-claude-output.js
+# Tee Claude output to log file if LAFORGE_LOG_FILE is set
+if [ -n "${LAFORGE_LOG_FILE:-}" ]; then
+    # Ensure log directory exists and is writable
+    LOG_DIR=$(dirname "$LAFORGE_LOG_FILE")
+    if [ -d "$LOG_DIR" ] && [ -w "$LOG_DIR" ]; then
+        echo "Logging Claude output to: ${LAFORGE_LOG_FILE}"
+        claude --model $MODELNAME --output-format stream-json --verbose -p "$PROMPT" | tee -a "$LAFORGE_LOG_FILE" | node /bin/format-claude-output.js
+    else
+        echo "Warning: Log directory $LOG_DIR not writable, logging disabled"
+        claude --model $MODELNAME --output-format stream-json --verbose -p "$PROMPT" | node /bin/format-claude-output.js
+    fi
+else
+    claude --model $MODELNAME --output-format stream-json --verbose -p "$PROMPT" | node /bin/format-claude-output.js
+fi
 
 # Check if there are changes outside of the .pr directory
 if git diff --quiet HEAD -- ':!.pr'; then
@@ -32,7 +45,11 @@ if git diff --quiet HEAD -- ':!.pr'; then
 else
     # Check if .pr/commit.md file exists. If it doesn't, create it.
     if [ ! -f .pr/commit.md ]; then
-        claude --model $MODELNAME --output-format stream-json --verbose -c -p "Write a commit message to .pr/commit.md" | node /bin/format-claude-output.js
+        if [ -n "${LAFORGE_LOG_FILE:-}" ] && [ -d "$(dirname "$LAFORGE_LOG_FILE")" ] && [ -w "$(dirname "$LAFORGE_LOG_FILE")" ]; then
+            claude --model $MODELNAME --output-format stream-json --verbose -c -p "Write a commit message to .pr/commit.md" | tee -a "$LAFORGE_LOG_FILE" | node /bin/format-claude-output.js
+        else
+            claude --model $MODELNAME --output-format stream-json --verbose -c -p "Write a commit message to .pr/commit.md" | node /bin/format-claude-output.js
+        fi
     fi
 fi
 

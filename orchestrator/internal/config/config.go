@@ -53,8 +53,9 @@ type BotConfig struct {
 
 // DockerConfig contains Docker image configuration
 type DockerConfig struct {
-	GitImage    string `yaml:"git_image"`
-	NetworkName string `yaml:"network_name"`
+	GitImage       string `yaml:"git_image"`
+	NetworkName    string `yaml:"network_name"`
+	LogsVolumeName string `yaml:"logs_volume_name"`
 }
 
 // RepositoryConfig contains per-repository configuration
@@ -120,6 +121,9 @@ func Load(path string) (*Config, error) {
 	}
 	if cfg.Docker.NetworkName == "" {
 		cfg.Docker.NetworkName = "laforge_gitea"
+	}
+	if cfg.Docker.LogsVolumeName == "" {
+		cfg.Docker.LogsVolumeName = "laforge_logs"
 	}
 	if cfg.Notifications.NtfyEndpoint == "" {
 		cfg.Notifications.NtfyEndpoint = "http://ntfy:80"

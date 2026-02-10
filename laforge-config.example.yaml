@@ -52,6 +52,11 @@ docker:
   # Agent containers will join this network to communicate with orchestrator
   network_name: "laforge_gitea"
 
+  # Docker volume for job logs (default: "laforge_logs")
+  # Agent containers write their logs into this volume and the logs viewer image
+  # reads them
+  logs_volume_name: "laforge_logs"
+
 # Anthropic API proxy configuration
 anthropic:
   # Anthropic API key for authenticating requests to Claude API

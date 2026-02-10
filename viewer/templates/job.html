@@ -1,0 +1,83 @@
+<div class="job-view">
+    <div class="job-header">
+        <h2>{{.Job.JobName}}</h2>
+        <div class="job-meta">
+            <span><strong>Repository:</strong> {{.Job.Repository}}</span>
+            <span><strong>PR:</strong> #{{.Job.PRNumber}}</span>
+            <span><strong>SHA:</strong> {{.Job.SHA}}</span>
+            <span><strong>Model:</strong> {{.Job.Model}}</span>
+            <span><strong>Status:</strong> <span class="status-badge status-{{.Job.Status}}">{{.Job.Status}}</span></span>
+            <span><strong>Started:</strong> {{.Job.StartedAt.Format "2006-01-02 15:04:05"}}</span>
+            {{if .Job.FinishedAt.Valid}}
+            <span><strong>Finished:</strong> {{.Job.FinishedAt.Time.Format "2006-01-02 15:04:05"}}</span>
+            {{end}}
+        </div>
+    </div>
+
+    <div class="job-logs" id="logs">
+        {{.LogHTML}}
+    </div>
+</div>
+
+<script>
+// Toggle function for collapsible tool results
+function toggleTool(id) {
+    const content = document.getElementById(id);
+    const icon = document.getElementById('icon-' + id);
+    if (content.style.display === 'none') {
+        content.style.display = 'block';
+        icon.classList.add('expanded');
+    } else {
+        content.style.display = 'none';
+        icon.classList.remove('expanded');
+    }
+}
+</script>
+
+{{if eq .Job.Status "running"}}
+<script>
+// Auto-reload every 15 seconds for running jobs
+let currentOffset = {{.LogLines}};
+const jobName = "{{.Job.JobName}}";
+let pollInterval = null;
+
+function updateLogs() {
+    fetch(`/api/jobs/${jobName}/content?offset=${currentOffset}`)
+        .then(response => {
+            // Get authoritative offset from server
+            const newOffset = response.headers.get('X-Log-Offset');
+            if (newOffset) {
+                currentOffset = parseInt(newOffset, 10);
+            }
+            return response.text();
+        })
+        .then(html => {
+            if (html.trim()) {
+                const logsDiv = document.getElementById('logs');
+                logsDiv.insertAdjacentHTML('beforeend', html);
+
+                // Check if job has completed by looking for job_end in the new content
+                if (html.includes('job_end') || html.includes('status-success') || html.includes('status-failure')) {
+                    // Job completed, stop polling and reload page to update header
+                    if (pollInterval) {
+                        clearInterval(pollInterval);
+                        pollInterval = null;
+                    }
+                    // Reload page after a short delay to update the status badge
+                    setTimeout(() => location.reload(), 2000);
+                }
+
+                // Scroll to bottom
+                window.scrollTo(0, document.body.scrollHeight);
+            }
+        })
+        .catch(error => console.error('Error fetching logs:', error));
+}
+
+// Poll every 15 seconds
+pollInterval = setInterval(updateLogs, 15000);
+
+// Also check once after 2 seconds for immediate updates
+setTimeout(updateLogs, 2000);
+</script>
+{{end}}

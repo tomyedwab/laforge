@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -34,6 +36,7 @@ type Server struct {
 	anthropicProxyURL     string
 	bashProxyTokenManager *bashproxy.TokenManager
 	repositories          config.RepositoriesConfig
+	logsVolumeName        string
 }
 
 // Config holds the configuration for the worker server
@@ -51,6 +54,7 @@ type Config struct {
 	AnthropicProxyURL     string
 	BashProxyTokenManager *bashproxy.TokenManager
 	Repositories          config.RepositoriesConfig
+	LogsVolumeName        string
 }
 
 // NewServer creates a new worker server
@@ -86,6 +90,7 @@ func NewServer(cfg Config) *Server {
 		anthropicProxyURL:     cfg.AnthropicProxyURL,
 		bashProxyTokenManager: cfg.BashProxyTokenManager,
 		repositories:          cfg.Repositories,
+		logsVolumeName:        cfg.LogsVolumeName,
 	}
 }
 
@@ -258,6 +263,9 @@ func (s *Server) processCleanupAction(ctx context.Context, payload *queue.PRJobP
 	if s.anthropicProxyURL != "" {
 		dockerClient.SetAnthropicProxy(s.anthropicProxyURL)
 	}
+	if s.logsVolumeName != "" {
+		dockerClient.SetLogsVolume(s.logsVolumeName)
+	}
 
 	// Pull git image if needed
 	slog.Info("pulling git image", "image", s.gitImage)
@@ -418,6 +426,9 @@ func (s *Server) processJob(ctx context.Context, payload *queue.PRJobPayload) er
 	if s.anthropicProxyURL != "" {
 		dockerClient.SetAnthropicProxy(s.anthropicProxyURL)
 	}
+	if s.logsVolumeName != "" {
+		dockerClient.SetLogsVolume(s.logsVolumeName)
+	}
 
 	// Pull git image if needed
 	slog.Info("pulling git image", "image", s.gitImage)
@@ -536,11 +547,29 @@ func (s *Server) processJob(ctx context.Context, payload *queue.PRJobPayload) er
 		slog.Info("bash proxy token generated successfully")
 	}
 
+	// Write job start metadata to log file
+	if err := s.writeJobMetadata(jobName, payload, "start"); err != nil {
+		slog.Error("failed to write job start metadata to log file", "error", err)
+		// Continue even if metadata write fails - don't fail the entire job
+	}
+
 	// Run agent container
 	slog.Info("running agent container", "volume", jobName, "model_image", payload.ModelImage)
 
-	if err := dockerClient.RunAgentContainer(ctx, jobName, payload.ModelImage, payload.PromptType, payload.Model, bashProxyToken); err != nil {
-		return fmt.Errorf("failed to run agent container: %w", err)
+	agentErr := dockerClient.RunAgentContainer(ctx, jobName, payload.ModelImage, payload.PromptType, payload.Model, bashProxyToken)
+
+	// Write job end metadata to log file
+	status := "success"
+	if agentErr != nil {
+		status = "failure"
+	}
+	if err := s.writeJobMetadata(jobName, payload, status); err != nil {
+		slog.Error("failed to write job end metadata to log file", "error", err)
+		// Continue even if metadata write fails
+	}
+
+	if agentErr != nil {
+		return fmt.Errorf("failed to run agent container: %w", agentErr)
 	}
 
 	// Agent completed successfully - now run teardown to collect and commit changes
@@ -591,5 +620,71 @@ func (s *Server) processJob(ctx context.Context, payload *queue.PRJobPayload) er
 	}
 
 	slog.Info("teardown completed successfully")
+	return nil
+}
+
+// writeJobMetadata writes job metadata to the log file
+// eventType can be "start", "success", or "failure"
+func (s *Server) writeJobMetadata(jobName string, payload *queue.PRJobPayload, eventType string) error {
+	// Determine log directory from Docker named volume
+	// Docker named volumes are typically stored in /var/lib/docker/volumes/<name>/_data
+	// However, we can't reliably access this path. Instead, we'll write to a mounted path
+	// For the orchestrator, the logs volume should be mounted at /logs in docker-compose.yml
+	logDir := "/logs"
+	logFile := filepath.Join(logDir, jobName+".jsonl")
+
+	// Build metadata entry
+	var metadata map[string]interface{}
+	timestamp := time.Now().UTC().Format(time.RFC3339)
+
+	if eventType == "start" {
+		metadata = map[string]interface{}{
+			"type":        "job_start",
+			"job_name":    jobName,
+			"repository":  payload.Repository,
+			"pr_number":   payload.PRNumber,
+			"sha":         payload.SHA,
+			"model":       payload.Model,
+			"prompt_type": payload.PromptType,
+			"started_at":  timestamp,
+			"format":      "claude-json",
+		}
+	} else {
+		// "success" or "failure"
+		metadata = map[string]interface{}{
+			"type":        "job_end",
+			"job_name":    jobName,
+			"finished_at": timestamp,
+			"status":      eventType,
+		}
+	}
+
+	// Convert to JSON
+	jsonBytes, err := json.Marshal(metadata)
+	if err != nil {
+		return fmt.Errorf("failed to marshal metadata: %w", err)
+	}
+
+	// Append newline
+	jsonBytes = append(jsonBytes, '\n')
+
+	// Open log file in append mode, create if doesn't exist
+	file, err := os.OpenFile(logFile, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	if err != nil {
+		return fmt.Errorf("failed to open log file %s: %w", logFile, err)
+	}
+	defer file.Close()
+
+	// Write metadata entry
+	if _, err := file.Write(jsonBytes); err != nil {
+		return fmt.Errorf("failed to write metadata to log file: %w", err)
+	}
+
+	slog.Info("wrote job metadata to log file",
+		"job_name", jobName,
+		"event_type", eventType,
+		"log_file", logFile,
+	)
+
 	return nil
 }

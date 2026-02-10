@@ -26,6 +26,7 @@ type Client struct {
 	networkName       string
 	anthropicProxyURL string
 	hasAnthropicProxy bool
+	logsVolumeName    string
 }
 
 // NewClient creates a new Docker client
@@ -50,6 +51,11 @@ func (c *Client) SetNetworkConfig(networkName string) {
 func (c *Client) SetAnthropicProxy(proxyURL string) {
 	c.anthropicProxyURL = proxyURL
 	c.hasAnthropicProxy = true
+}
+
+// SetLogsVolume sets the logs volume name for agent containers
+func (c *Client) SetLogsVolume(volumeName string) {
+	c.logsVolumeName = volumeName
 }
 
 // Close closes the Docker client connection
@@ -346,6 +352,10 @@ func (c *Client) RunAgentContainer(ctx context.Context, volumeName, imageName, p
 		"MODELNAME=" + model,
 	}
 
+	if c.logsVolumeName != "" {
+		env = append(env, "LAFORGE_LOG_FILE=/logs/"+c.jobName+".jsonl")
+	}
+
 	// Add Anthropic proxy configuration if enabled
 	if c.hasAnthropicProxy {
 		env = append(env, "ANTHROPIC_BASE_URL="+c.anthropicProxyURL)
@@ -368,14 +378,25 @@ func (c *Client) RunAgentContainer(ctx context.Context, volumeName, imageName, p
 	}
 
 	// Mount the volume
-	hostConfig := &container.HostConfig{
-		Mounts: []mount.Mount{
-			{
-				Type:   mount.TypeVolume,
-				Source: volumeName,
-				Target: "/workspace",
-			},
+	mounts := []mount.Mount{
+		{
+			Type:   mount.TypeVolume,
+			Source: volumeName,
+			Target: "/workspace",
 		},
+	}
+
+	// Add logs volume if configured
+	if c.logsVolumeName != "" {
+		mounts = append(mounts, mount.Mount{
+			Type:   mount.TypeVolume,
+			Source: c.logsVolumeName,
+			Target: "/logs",
+		})
+	}
+
+	hostConfig := &container.HostConfig{
+		Mounts:     mounts,
 		AutoRemove: true,
 		// Grant NET_ADMIN capability to allow iptables firewall initialization
 		CapAdd: []string{"NET_ADMIN"},

@@ -100,6 +100,7 @@ func main() {
 		AnthropicProxyURL:     anthropicProxyURL,
 		BashProxyTokenManager: bashProxyTokenManager,
 		Repositories:          cfg.Repositories,
+		LogsVolumeName:        cfg.Docker.LogsVolumeName,
 	})
 	workerServer.RegisterHandlers()
 

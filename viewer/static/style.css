@@ -1,0 +1,292 @@
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+body {
+    font-family:
+        -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen, Ubuntu,
+        Cantarell, sans-serif;
+    line-height: 1.6;
+    color: #333;
+    background-color: #f5f5f5;
+}
+
+header {
+    background-color: #2c3e50;
+    color: white;
+    padding: 1rem 2rem;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+header h1 {
+    font-size: 1.5rem;
+}
+
+header h1 a {
+    color: white;
+    text-decoration: none;
+}
+
+header h1 a:hover {
+    color: #3498db;
+}
+
+main {
+    max-width: 1400px;
+    margin: 2rem auto;
+    padding: 0 2rem;
+}
+
+.jobs-list h2,
+.job-view h2 {
+    margin-bottom: 1.5rem;
+    color: #2c3e50;
+}
+
+table {
+    width: 100%;
+    background: white;
+    border-radius: 8px;
+    overflow: hidden;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+thead {
+    background-color: #34495e;
+    color: white;
+}
+
+th {
+    padding: 1rem;
+    text-align: left;
+    font-weight: 600;
+}
+
+td {
+    padding: 1rem;
+    border-bottom: 1px solid #ecf0f1;
+    color: #333;
+}
+
+tbody tr:hover {
+    background-color: #f8f9fa;
+}
+
+tbody tr:last-child td {
+    border-bottom: none;
+}
+
+/* Light background colors for job rows based on status */
+tbody tr.status-running {
+    background-color: #e3f2fd;
+}
+
+tbody tr.status-success {
+    background-color: #e8f5e9;
+}
+
+tbody tr.status-failure {
+    background-color: #ffebee;
+}
+
+.status-badge {
+    padding: 0.25rem 0.75rem;
+    border-radius: 12px;
+    font-size: 0.875rem;
+    font-weight: 600;
+    text-transform: uppercase;
+}
+
+.status-running {
+    background-color: #3498db;
+}
+
+.status-success {
+    background-color: #27ae60;
+}
+
+.status-failure {
+    background-color: #e74c3c;
+}
+
+.running {
+    color: #3498db;
+    font-style: italic;
+}
+
+.no-jobs {
+    background: white;
+    padding: 2rem;
+    border-radius: 8px;
+    text-align: center;
+    color: #7f8c8d;
+}
+
+.job-header {
+    background: white;
+    padding: 1.5rem;
+    border-radius: 8px;
+    margin-bottom: 1.5rem;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.job-meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 1.5rem;
+    margin-top: 1rem;
+    font-size: 0.9rem;
+    color: #555;
+}
+
+.job-logs {
+    background: white;
+    padding: 1.5rem;
+    border-radius: 8px;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+    font-family: "Monaco", "Menlo", "Consolas", monospace;
+    font-size: 0.9rem;
+    line-height: 1.5;
+}
+
+.session-header {
+    background-color: #ecf0f1;
+    padding: 1rem;
+    border-radius: 4px;
+    margin-bottom: 1rem;
+}
+
+.session-header h2 {
+    font-size: 1.1rem;
+    margin: 0;
+    color: #2c3e50;
+}
+
+.session-header p {
+    margin: 0.5rem 0 0 0;
+    color: #555;
+}
+
+.assistant-text {
+    margin: 1rem 0;
+    color: #2c3e50;
+}
+
+.assistant-text ol {
+    margin-left: 26px;
+}
+
+.assistant-text li {
+    margin-top: 8px;
+    margin-bottom: 8px;
+}
+
+.tool-use {
+    color: #3498db;
+    margin: 0.5rem 0;
+    font-weight: 500;
+}
+
+.tool-result {
+    margin: 1rem 0;
+    padding: 1rem;
+    background-color: #f8f9fa;
+    border-left: 3px solid #3498db;
+    border-radius: 4px;
+}
+
+.tool-result-collapsible {
+    margin: 1rem 0;
+    border-left: 3px solid #3498db;
+    border-radius: 4px;
+    background-color: #f8f9fa;
+}
+
+.tool-result-header {
+    padding: 0.75rem 1rem;
+    cursor: pointer;
+    user-select: none;
+    background-color: #f8f9fa;
+    border-radius: 4px;
+}
+
+.tool-result-header:hover {
+    background-color: #e9ecef;
+}
+
+.tool-result-content {
+    padding: 0 1rem 1rem 1rem;
+}
+
+.toggle-icon {
+    display: inline-block;
+    font-size: 0.8em;
+    transition: transform 0.2s;
+    color: #3498db;
+}
+
+.toggle-icon.expanded {
+    transform: rotate(90deg);
+}
+
+.tool-result pre {
+    margin: 0.5rem 0 0 0;
+    white-space: pre-wrap;
+    word-wrap: break-word;
+    background-color: #ecf0f1;
+    padding: 0.75rem;
+    border-radius: 4px;
+    overflow-x: auto;
+}
+
+.tool-error {
+    margin: 1rem 0;
+    padding: 1rem;
+    background-color: #fee;
+    border-left: 3px solid #e74c3c;
+    border-radius: 4px;
+    color: #c0392b;
+}
+
+.result-summary {
+    margin: 2rem 0 1rem 0;
+    padding: 1rem;
+    background-color: #e8f5e9;
+    border-radius: 4px;
+}
+
+.result-summary hr {
+    border: none;
+    border-top: 2px solid #27ae60;
+    margin-bottom: 1rem;
+}
+
+.result-summary p {
+    margin: 0.5rem 0;
+    color: #2c3e50;
+}
+
+.raw {
+    color: #7f8c8d;
+    font-style: italic;
+    margin: 0.5rem 0;
+}
+
+code {
+    background-color: #ecf0f1;
+    padding: 0.2rem 0.4rem;
+    border-radius: 3px;
+    font-family: "Monaco", "Menlo", "Consolas", monospace;
+    font-size: 0.875rem;
+}
+
+a {
+    color: #3498db;
+    text-decoration: none;
+}
+
+a:hover {
+    text-decoration: underline;
+}

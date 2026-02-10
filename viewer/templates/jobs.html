@@ -1,0 +1,40 @@
+<div class="jobs-list">
+    <h2>Agent Jobs</h2>
+    {{if .Jobs}}
+    <table>
+        <thead>
+            <tr>
+                <th>Job Name</th>
+                <th>Repository</th>
+                <th>PR #</th>
+                <th>Model</th>
+                <th>Status</th>
+                <th>Started</th>
+                <th>Duration</th>
+            </tr>
+        </thead>
+        <tbody>
+            {{range .Jobs}}
+            <tr class="status-{{.Status}}">
+                <td><a href="/jobs/{{.JobName}}">{{.JobName}}</a></td>
+                <td>{{.Repository}}</td>
+                <td>{{.PRNumber}}</td>
+                <td>{{.Model}}</td>
+                <td><span class="status-badge status-{{.Status}}">{{.Status}}</span></td>
+                <td>{{.StartedAt.Format "2006-01-02 15:04:05"}}</td>
+                <td>
+                    {{if .FinishedAt.Valid}}
+                        {{$duration := .FinishedAt.Time.Sub .StartedAt}}
+                        {{printf "%.1fs" $duration.Seconds}}
+                    {{else}}
+                        <span class="running">running...</span>
+                    {{end}}
+                </td>
+            </tr>
+            {{end}}
+        </tbody>
+    </table>
+    {{else}}
+    <p class="no-jobs">No jobs found. Jobs will appear here once agents start running.</p>
+    {{end}}
+</div>
