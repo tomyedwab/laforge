@@ -1,5 +1,9 @@
 package types
 
+// LiveCommentID represents the ID of a live status comment in a PR
+// Using a named type makes it explicit when a function is working with live comments
+type LiveCommentID int64
+
 // FileComment represents a file-level comment in a PR review
 type FileComment struct {
 	File    string `yaml:"file"`
@@ -26,4 +30,6 @@ type BashJobContext struct {
 	DevcontainerID       string // ID of the running devcontainer
 	Repository           string
 	CommandTimeout       int // timeout in seconds
+	PRNumber             int
+	LiveCommentID        LiveCommentID // ID of the live status comment for updates
 }

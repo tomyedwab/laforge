@@ -388,7 +388,7 @@ func (s *Server) processCleanupAction(ctx context.Context, payload *queue.PRJobP
 	}
 	commentBody += "\nThis PR is now ready for merge."
 
-	if err := s.gitea.PostComment(ctx, payload.Repository, payload.PRNumber, commentBody); err != nil {
+	if _, err := s.gitea.PostComment(ctx, payload.Repository, payload.PRNumber, commentBody); err != nil {
 		slog.Error("failed to post cleanup comment", "error", err)
 		return fmt.Errorf("failed to post cleanup comment: %w", err)
 	}
@@ -483,6 +483,22 @@ func (s *Server) processJob(ctx context.Context, payload *queue.PRJobPayload) er
 		return fmt.Errorf("failed to copy files to volume: %w", err)
 	}
 
+	// Create initial live status comment only if devcontainer is configured
+	// (since update_status only works via bash proxy)
+	var liveCommentID types.LiveCommentID
+	repoConfig := s.repositories[payload.Repository]
+	if repoConfig.DevcontainerImage != "" {
+		initialComment := fmt.Sprintf("🤖 **Laforge Agent** — Starting job...\n\n**Status updates:**")
+		commentID, err := s.gitea.PostComment(ctx, payload.Repository, payload.PRNumber, initialComment)
+		if err != nil {
+			// Log but don't fail the job if comment creation fails
+			slog.Error("failed to create initial live status comment", "error", err)
+		} else {
+			liveCommentID = types.LiveCommentID(commentID)
+			slog.Info("created initial live status comment", "comment_id", liveCommentID)
+		}
+	}
+
 	/* TODO: If we deploy images to a repository, may need to pull the latest version
 	// Pull agent image if needed
 	slog.Info("pulling agent image", "image", payload.ModelImage)
@@ -494,7 +510,7 @@ func (s *Server) processJob(ctx context.Context, payload *queue.PRJobPayload) er
 	// Start persistent devcontainer if configured for this repository
 	var bashProxyToken string
 	var devcontainerID string
-	repoConfig := s.repositories[payload.Repository]
+	var liveStatusTracker *bashproxy.LiveStatusTracker
 	if repoConfig.DevcontainerImage != "" && s.bashProxyTokenManager != nil {
 		slog.Info("starting persistent devcontainer",
 			"repository", payload.Repository,
@@ -525,21 +541,42 @@ func (s *Server) processJob(ctx context.Context, payload *queue.PRJobPayload) er
 
 		slog.Info("devcontainer started successfully", "container_id", devcontainerID)
 
-		// Create bash job context with devcontainer ID
+		// Create bash job context with devcontainer ID and live comment ID
 		bashJobContext := &types.BashJobContext{
 			VolumeName:        jobName,
 			DevcontainerImage: repoConfig.DevcontainerImage,
 			DevcontainerID:    devcontainerID,
 			Repository:        payload.Repository,
 			CommandTimeout:    300, // 5 minutes default timeout
+			PRNumber:          payload.PRNumber,
+			LiveCommentID:     liveCommentID,
 		}
 
-		// Generate token
-		token, err := s.bashProxyTokenManager.GenerateToken(bashJobContext)
-		if err != nil {
-			return fmt.Errorf("failed to generate bash proxy token: %w", err)
+		// Update the live comment with agent info if we have a comment ID
+		if liveCommentID > 0 {
+			header := bashproxy.FormatCommentHeader(payload.PromptType, payload.Model)
+			liveStatusTracker = bashproxy.NewLiveStatusTracker(header)
+			updatedComment := liveStatusTracker.BuildCommentBody()
+			if err := s.gitea.EditComment(ctx, payload.Repository, int64(liveCommentID), updatedComment); err != nil {
+				slog.Error("failed to update live comment with agent info", "error", err)
+			} else {
+				slog.Info("updated live comment with agent info")
+			}
+
+			// Generate token with status tracker
+			token, err := s.bashProxyTokenManager.GenerateToken(bashJobContext, liveStatusTracker)
+			if err != nil {
+				return fmt.Errorf("failed to generate bash proxy token: %w", err)
+			}
+			bashProxyToken = token
+		} else {
+			// No live comment, generate token without status tracker
+			token, err := s.bashProxyTokenManager.GenerateToken(bashJobContext, nil)
+			if err != nil {
+				return fmt.Errorf("failed to generate bash proxy token: %w", err)
+			}
+			bashProxyToken = token
 		}
-		bashProxyToken = token
 
 		// Ensure token is revoked after job completes
 		defer s.bashProxyTokenManager.RevokeToken(bashProxyToken)
@@ -612,7 +649,13 @@ func (s *Server) processJob(ctx context.Context, payload *queue.PRJobPayload) er
 
 	// Post status updates to the PR if status.yaml exists
 	if statusYAML, ok := extractedFiles[".pr/status.yaml"]; ok {
-		if err := gitea.PostStatus(ctx, statusYAML, statusCommitSHA, payload.Repository, payload.PRNumber, s.gitea); err != nil {
+		// Get the current comment body from the status tracker if available
+		currentCommentBody := ""
+		if liveStatusTracker != nil {
+			currentCommentBody = liveStatusTracker.BuildCommentBody()
+		}
+
+		if err := gitea.PostStatus(ctx, statusYAML, statusCommitSHA, payload.Repository, payload.PRNumber, s.gitea, liveCommentID, currentCommentBody); err != nil {
 			return fmt.Errorf("failed to post status to PR: %w", err)
 		}
 	} else {

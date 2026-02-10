@@ -58,6 +58,28 @@ Any changes in the workspace are committed for you automatically once you finish
 your work: To describe the changes, please write a `.pr/commit.md` file if any
 files have been modified.
 
+## Live Status Updates
+
+As you work, you can provide live status updates to the PR author by running the
+`update_status` command. This allows the PR author to see your progress in
+real-time without waiting for your final status update.
+
+Usage:
+```bash
+update_status '{"message": "Analyzing codebase structure"}'
+update_status '{"message": "Implementing authentication changes"}'
+update_status '{"message": "Running tests"}'
+```
+
+**Important:** The parameter to `update_status` must be a JSON object with a `message` field. Use single quotes around the JSON to avoid shell parsing issues.
+
+Guidelines:
+- Keep status messages short (one sentence or less)
+- Use them to communicate major milestones or phases of your work
+- Don't overuse them - a few key updates per session is sufficient
+- These updates appear in a live comment on the PR that is updated in real-time
+- The JSON format ensures your message is parsed correctly even if you have pipes or other bash operators in your workflow
+
 A `status.yaml` file might look like this:
 
 ```yaml

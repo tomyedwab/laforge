@@ -160,7 +160,7 @@ func main() {
 	r.Post("/webhook", handleWebhook(cfg, queueClient, giteaClient))
 
 	// Bash proxy endpoint
-	bashProxyHandler := bashproxy.NewHandler(bashProxyTokenManager, cfg.Docker.NetworkName)
+	bashProxyHandler := bashproxy.NewHandler(bashProxyTokenManager, cfg.Docker.NetworkName, giteaClient)
 	r.Post("/api/v1/bash", bashProxyHandler.HandleBashRequest)
 
 	// Set up graceful shutdown

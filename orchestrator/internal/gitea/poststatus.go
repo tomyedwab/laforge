@@ -19,7 +19,8 @@ type StatusData struct {
 
 // PostStatus parses and posts status updates from .pr/status.yaml
 // commitSHA should be the HEAD commit SHA after the agent's changes were committed
-func PostStatus(ctx context.Context, statusYAML []byte, commitSHA, repository string, prNumber int, giteaClient *Client) error {
+// If liveCommentID is non-zero, the final status will be appended to the existing comment
+func PostStatus(ctx context.Context, statusYAML []byte, commitSHA, repository string, prNumber int, giteaClient *Client, liveCommentID types.LiveCommentID, currentCommentBody string) error {
 	if len(statusYAML) == 0 {
 		slog.Info("no status file found, skipping status post")
 		return nil
@@ -49,12 +50,27 @@ func PostStatus(ctx context.Context, statusYAML []byte, commitSHA, repository st
 		}
 	}
 
-	// Post status comment if present
+	// Post or edit status comment if present
 	if statusData.Status != "" {
-		if err := giteaClient.PostComment(ctx, repository, prNumber, statusData.Status); err != nil {
-			return fmt.Errorf("failed to post status comment: %w", err)
+		if liveCommentID > 0 {
+			// Append the final status to the existing live comment
+			finalBody := currentCommentBody
+			if finalBody != "" {
+				finalBody += "\n\n---\n\n"
+			}
+			finalBody += statusData.Status
+
+			if err := giteaClient.EditComment(ctx, repository, int64(liveCommentID), finalBody); err != nil {
+				return fmt.Errorf("failed to edit status comment: %w", err)
+			}
+			slog.Info("appended final status to live status comment", "comment_id", liveCommentID)
+		} else {
+			// Create a new comment
+			if _, err := giteaClient.PostComment(ctx, repository, prNumber, statusData.Status); err != nil {
+				return fmt.Errorf("failed to post status comment: %w", err)
+			}
+			slog.Info("posted status comment to PR")
 		}
-		slog.Info("posted status comment to PR")
 	}
 
 	// Post file comments if present

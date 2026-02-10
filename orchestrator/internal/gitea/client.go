@@ -204,12 +204,12 @@ func (c *Client) GetPullRequestAssignees(ctx context.Context, repository string,
 	return assignees, nil
 }
 
-// PostComment posts a comment to a PR
-func (c *Client) PostComment(ctx context.Context, repository string, prNumber int, body string) error {
+// PostComment posts a comment to a PR and returns the comment ID
+func (c *Client) PostComment(ctx context.Context, repository string, prNumber int, body string) (int64, error) {
 	// Parse repository into owner and repo
 	owner, repo, err := parseRepository(repository)
 	if err != nil {
-		return err
+		return 0, err
 	}
 
 	slog.Debug("posting comment to PR",
@@ -219,7 +219,7 @@ func (c *Client) PostComment(ctx context.Context, repository string, prNumber in
 	)
 
 	// Create comment using Gitea SDK
-	_, resp, err := c.client.CreateIssueComment(owner, repo, int64(prNumber), gitea.CreateIssueCommentOption{
+	comment, resp, err := c.client.CreateIssueComment(owner, repo, int64(prNumber), gitea.CreateIssueCommentOption{
 		Body: body,
 	})
 	if err != nil {
@@ -227,11 +227,42 @@ func (c *Client) PostComment(ctx context.Context, repository string, prNumber in
 		if resp != nil {
 			statusCode = resp.StatusCode
 		}
-		return fmt.Errorf("failed to post comment (HTTP %d) to %s/%s#%d: %w",
+		return 0, fmt.Errorf("failed to post comment (HTTP %d) to %s/%s#%d: %w",
 			statusCode, owner, repo, prNumber, err)
 	}
 
-	slog.Info("posted comment to PR", "repository", repository, "pr_number", prNumber)
+	slog.Info("posted comment to PR", "repository", repository, "pr_number", prNumber, "comment_id", comment.ID)
+	return comment.ID, nil
+}
+
+// EditComment edits an existing PR comment
+func (c *Client) EditComment(ctx context.Context, repository string, commentID int64, body string) error {
+	// Parse repository into owner and repo
+	owner, repo, err := parseRepository(repository)
+	if err != nil {
+		return err
+	}
+
+	slog.Debug("editing comment",
+		"owner", owner,
+		"repo", repo,
+		"comment_id", commentID,
+	)
+
+	// Edit comment using Gitea SDK
+	_, resp, err := c.client.EditIssueComment(owner, repo, commentID, gitea.EditIssueCommentOption{
+		Body: body,
+	})
+	if err != nil {
+		statusCode := 0
+		if resp != nil {
+			statusCode = resp.StatusCode
+		}
+		return fmt.Errorf("failed to edit comment (HTTP %d) in %s/%s (comment %d): %w",
+			statusCode, owner, repo, commentID, err)
+	}
+
+	slog.Info("edited comment", "repository", repository, "comment_id", commentID)
 	return nil
 }
 
