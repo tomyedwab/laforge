@@ -8,6 +8,7 @@ import (
 	"io"
 	"log/slog"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"time"
 
@@ -853,8 +854,15 @@ func (c *Client) ExecDevcontainerCommand(ctx context.Context, containerID, comma
 		time.Sleep(100 * time.Millisecond)
 	}
 
+	// Filter out the shell-snapshots error from stderr
+	// This error occurs because the agent container's bash wrapper script
+	// doesn't exist in the devcontainer
+	stderrStr := stderr.String()
+	re := regexp.MustCompile(`bash: line \d+: /home/claudecode/\.claude/shell-snapshots/snapshot-bash-[^/]+\.sh: No such file or directory\n?`)
+	stderrStr = re.ReplaceAllString(stderrStr, "")
+
 	slog.Info("devcontainer command completed", "exit_code", exitCode)
-	return stdout.String(), stderr.String(), exitCode, nil
+	return stdout.String(), stderrStr, exitCode, nil
 }
 
 // StopDevcontainer stops and removes a running devcontainer
