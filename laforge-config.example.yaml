@@ -57,6 +57,12 @@ docker:
   # reads them
   logs_volume_name: "laforge_logs"
 
+  # Default devcontainer image for repositories (default: "python:3.11-slim")
+  # This image is used when a repository doesn't have a specific devcontainer
+  # image configured. All repositories require a devcontainer for running bash
+  # commands and providing status updates.
+  default_devcontainer_image: "python:3.11-slim"
+
 # Anthropic API proxy configuration
 anthropic:
   # Anthropic API key for authenticating requests to Claude API
@@ -128,7 +134,8 @@ repositories:
   # "myorg/myrepo":
   #   devcontainer_image: "myorg/myrepo-devcontainer:latest"
 
-  # When a devcontainer_image is configured for a repository, the agent's
-  # Bash commands will be executed in that devcontainer instead of directly
-  # in the agent container. This allows each repository to have its own
-  # development environment with specific tools and dependencies.
+  # The agent's Bash commands will be executed in a devcontainer. If a
+  # repository-specific devcontainer_image is not configured, the default
+  # devcontainer image (from docker.default_devcontainer_image) will be used.
+  # This allows each repository to have its own development environment with
+  # specific tools and dependencies, or use the default Python environment.

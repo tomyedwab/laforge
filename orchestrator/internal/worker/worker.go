@@ -22,39 +22,41 @@ import (
 
 // Server wraps the Asynq server for processing tasks
 type Server struct {
-	asynq                 *asynq.Server
-	mux                   *asynq.ServeMux
-	gitea                 *gitea.Client
-	notify                *notify.Client
-	redisAddr             string
-	giteaURL              string
-	giteaToken            string
-	gitImage              string
-	botUsername           string
-	botEmail              string
-	networkName           string
-	anthropicProxyURL     string
-	bashProxyTokenManager *bashproxy.TokenManager
-	repositories          config.RepositoriesConfig
-	logsVolumeName        string
+	asynq                    *asynq.Server
+	mux                      *asynq.ServeMux
+	gitea                    *gitea.Client
+	notify                   *notify.Client
+	redisAddr                string
+	giteaURL                 string
+	giteaToken               string
+	gitImage                 string
+	botUsername              string
+	botEmail                 string
+	networkName              string
+	anthropicProxyURL        string
+	bashProxyTokenManager    *bashproxy.TokenManager
+	repositories             config.RepositoriesConfig
+	logsVolumeName           string
+	defaultDevcontainerImage string
 }
 
 // Config holds the configuration for the worker server
 type Config struct {
-	RedisAddr             string
-	Concurrency           int
-	GiteaClient           *gitea.Client
-	NotifyClient          *notify.Client
-	GiteaURL              string
-	GiteaToken            string
-	GitImage              string
-	BotUsername           string
-	BotEmail              string
-	NetworkName           string
-	AnthropicProxyURL     string
-	BashProxyTokenManager *bashproxy.TokenManager
-	Repositories          config.RepositoriesConfig
-	LogsVolumeName        string
+	RedisAddr                string
+	Concurrency              int
+	GiteaClient              *gitea.Client
+	NotifyClient             *notify.Client
+	GiteaURL                 string
+	GiteaToken               string
+	GitImage                 string
+	BotUsername              string
+	BotEmail                 string
+	NetworkName              string
+	AnthropicProxyURL        string
+	BashProxyTokenManager    *bashproxy.TokenManager
+	Repositories             config.RepositoriesConfig
+	LogsVolumeName           string
+	DefaultDevcontainerImage string
 }
 
 // NewServer creates a new worker server
@@ -76,21 +78,22 @@ func NewServer(cfg Config) *Server {
 	mux := asynq.NewServeMux()
 
 	return &Server{
-		asynq:                 srv,
-		mux:                   mux,
-		gitea:                 cfg.GiteaClient,
-		notify:                cfg.NotifyClient,
-		redisAddr:             cfg.RedisAddr,
-		giteaURL:              cfg.GiteaURL,
-		giteaToken:            cfg.GiteaToken,
-		gitImage:              cfg.GitImage,
-		botUsername:           cfg.BotUsername,
-		botEmail:              cfg.BotEmail,
-		networkName:           cfg.NetworkName,
-		anthropicProxyURL:     cfg.AnthropicProxyURL,
-		bashProxyTokenManager: cfg.BashProxyTokenManager,
-		repositories:          cfg.Repositories,
-		logsVolumeName:        cfg.LogsVolumeName,
+		asynq:                    srv,
+		mux:                      mux,
+		gitea:                    cfg.GiteaClient,
+		notify:                   cfg.NotifyClient,
+		redisAddr:                cfg.RedisAddr,
+		giteaURL:                 cfg.GiteaURL,
+		giteaToken:               cfg.GiteaToken,
+		gitImage:                 cfg.GitImage,
+		botUsername:              cfg.BotUsername,
+		botEmail:                 cfg.BotEmail,
+		networkName:              cfg.NetworkName,
+		anthropicProxyURL:        cfg.AnthropicProxyURL,
+		bashProxyTokenManager:    cfg.BashProxyTokenManager,
+		repositories:             cfg.Repositories,
+		logsVolumeName:           cfg.LogsVolumeName,
+		defaultDevcontainerImage: cfg.DefaultDevcontainerImage,
 	}
 }
 
@@ -483,20 +486,20 @@ func (s *Server) processJob(ctx context.Context, payload *queue.PRJobPayload) er
 		return fmt.Errorf("failed to copy files to volume: %w", err)
 	}
 
-	// Create initial live status comment only if devcontainer is configured
-	// (since update_status only works via bash proxy)
+	// Create initial live status comment
 	var liveCommentID types.LiveCommentID
-	repoConfig := s.repositories[payload.Repository]
-	if repoConfig.DevcontainerImage != "" {
-		initialComment := fmt.Sprintf("🤖 **Laforge Agent** — Starting job...\n\n**Status updates:**")
-		commentID, err := s.gitea.PostComment(ctx, payload.Repository, payload.PRNumber, initialComment)
-		if err != nil {
-			// Log but don't fail the job if comment creation fails
-			slog.Error("failed to create initial live status comment", "error", err)
-		} else {
-			liveCommentID = types.LiveCommentID(commentID)
-			slog.Info("created initial live status comment", "comment_id", liveCommentID)
-		}
+	repoConfig, ok := s.repositories[payload.Repository]
+	if !ok || repoConfig.DevcontainerImage == "" {
+		repoConfig.DevcontainerImage = s.defaultDevcontainerImage
+	}
+	initialComment := fmt.Sprintf("🤖 **Laforge Agent** — Starting job...\n\n**Status updates:**")
+	commentID, err := s.gitea.PostComment(ctx, payload.Repository, payload.PRNumber, initialComment)
+	if err != nil {
+		// Log but don't fail the job if comment creation fails
+		slog.Error("failed to create initial live status comment", "error", err)
+	} else {
+		liveCommentID = types.LiveCommentID(commentID)
+		slog.Info("created initial live status comment", "comment_id", liveCommentID)
 	}
 
 	/* TODO: If we deploy images to a repository, may need to pull the latest version
@@ -507,82 +510,79 @@ func (s *Server) processJob(ctx context.Context, payload *queue.PRJobPayload) er
 	}
 	*/
 
-	// Start persistent devcontainer if configured for this repository
-	var bashProxyToken string
-	var devcontainerID string
-	var liveStatusTracker *bashproxy.LiveStatusTracker
-	if repoConfig.DevcontainerImage != "" && s.bashProxyTokenManager != nil {
-		slog.Info("starting persistent devcontainer",
-			"repository", payload.Repository,
-			"devcontainer_image", repoConfig.DevcontainerImage,
-		)
+	// Start persistent devcontainer
+	slog.Info("starting persistent devcontainer",
+		"repository", payload.Repository,
+		"devcontainer_image", repoConfig.DevcontainerImage,
+	)
 
-		// Pull devcontainer image if needed
-		/* TODO: If we deploy images to a repository, may need to pull the latest version
-		if err := dockerClient.PullImage(ctx, repoConfig.DevcontainerImage); err != nil {
-			return fmt.Errorf("failed to pull devcontainer image: %w", err)
-		}
-		*/
-
-		// Start the persistent devcontainer
-		containerID, err := dockerClient.StartDevcontainer(ctx, jobName, repoConfig.DevcontainerImage)
-		if err != nil {
-			return fmt.Errorf("failed to start devcontainer: %w", err)
-		}
-		devcontainerID = containerID
-
-		// Ensure devcontainer is cleaned up after job completes
-		defer func() {
-			cleanupCtx := context.Background()
-			if err := dockerClient.StopDevcontainer(cleanupCtx, devcontainerID); err != nil {
-				slog.Error("failed to stop devcontainer", "container_id", devcontainerID, "error", err)
-			}
-		}()
-
-		slog.Info("devcontainer started successfully", "container_id", devcontainerID)
-
-		// Create bash job context with devcontainer ID and live comment ID
-		bashJobContext := &types.BashJobContext{
-			VolumeName:        jobName,
-			DevcontainerImage: repoConfig.DevcontainerImage,
-			DevcontainerID:    devcontainerID,
-			Repository:        payload.Repository,
-			CommandTimeout:    300, // 5 minutes default timeout
-			PRNumber:          payload.PRNumber,
-			LiveCommentID:     liveCommentID,
-		}
-
-		// Update the live comment with agent info if we have a comment ID
-		if liveCommentID > 0 {
-			header := bashproxy.FormatCommentHeader(payload.PromptType, payload.Model)
-			liveStatusTracker = bashproxy.NewLiveStatusTracker(header)
-			updatedComment := liveStatusTracker.BuildCommentBody()
-			if err := s.gitea.EditComment(ctx, payload.Repository, int64(liveCommentID), updatedComment); err != nil {
-				slog.Error("failed to update live comment with agent info", "error", err)
-			} else {
-				slog.Info("updated live comment with agent info")
-			}
-
-			// Generate token with status tracker
-			token, err := s.bashProxyTokenManager.GenerateToken(bashJobContext, liveStatusTracker)
-			if err != nil {
-				return fmt.Errorf("failed to generate bash proxy token: %w", err)
-			}
-			bashProxyToken = token
-		} else {
-			// No live comment, generate token without status tracker
-			token, err := s.bashProxyTokenManager.GenerateToken(bashJobContext, nil)
-			if err != nil {
-				return fmt.Errorf("failed to generate bash proxy token: %w", err)
-			}
-			bashProxyToken = token
-		}
-
-		// Ensure token is revoked after job completes
-		defer s.bashProxyTokenManager.RevokeToken(bashProxyToken)
-
-		slog.Info("bash proxy token generated successfully")
+	// Pull devcontainer image if needed
+	/* TODO: If we deploy images to a repository, may need to pull the latest version
+	if err := dockerClient.PullImage(ctx, repoConfig.DevcontainerImage); err != nil {
+		return fmt.Errorf("failed to pull devcontainer image: %w", err)
 	}
+	*/
+
+	// Start the persistent devcontainer
+	containerID, err := dockerClient.StartDevcontainer(ctx, jobName, repoConfig.DevcontainerImage)
+	if err != nil {
+		return fmt.Errorf("failed to start devcontainer: %w", err)
+	}
+	devcontainerID := containerID
+
+	// Ensure devcontainer is cleaned up after job completes
+	defer func() {
+		cleanupCtx := context.Background()
+		if err := dockerClient.StopDevcontainer(cleanupCtx, devcontainerID); err != nil {
+			slog.Error("failed to stop devcontainer", "container_id", devcontainerID, "error", err)
+		}
+	}()
+
+	slog.Info("devcontainer started successfully", "container_id", devcontainerID)
+
+	// Create bash job context with devcontainer ID and live comment ID
+	bashJobContext := &types.BashJobContext{
+		VolumeName:        jobName,
+		DevcontainerImage: repoConfig.DevcontainerImage,
+		DevcontainerID:    devcontainerID,
+		Repository:        payload.Repository,
+		CommandTimeout:    300, // 5 minutes default timeout
+		PRNumber:          payload.PRNumber,
+		LiveCommentID:     liveCommentID,
+	}
+
+	// Update the live comment with agent info if we have a comment ID
+	var liveStatusTracker *bashproxy.LiveStatusTracker
+	var bashProxyToken string
+	if liveCommentID > 0 {
+		header := bashproxy.FormatCommentHeader(payload.PromptType, payload.Model)
+		liveStatusTracker = bashproxy.NewLiveStatusTracker(header)
+		updatedComment := liveStatusTracker.BuildCommentBody()
+		if err := s.gitea.EditComment(ctx, payload.Repository, int64(liveCommentID), updatedComment); err != nil {
+			slog.Error("failed to update live comment with agent info", "error", err)
+		} else {
+			slog.Info("updated live comment with agent info")
+		}
+
+		// Generate token with status tracker
+		token, err := s.bashProxyTokenManager.GenerateToken(bashJobContext, liveStatusTracker)
+		if err != nil {
+			return fmt.Errorf("failed to generate bash proxy token: %w", err)
+		}
+		bashProxyToken = token
+	} else {
+		// No live comment, generate token without status tracker
+		token, err := s.bashProxyTokenManager.GenerateToken(bashJobContext, nil)
+		if err != nil {
+			return fmt.Errorf("failed to generate bash proxy token: %w", err)
+		}
+		bashProxyToken = token
+	}
+
+	// Ensure token is revoked after job completes
+	defer s.bashProxyTokenManager.RevokeToken(bashProxyToken)
+
+	slog.Info("bash proxy token generated successfully")
 
 	// Write job start metadata to log file
 	if err := s.writeJobMetadata(jobName, payload, "start"); err != nil {

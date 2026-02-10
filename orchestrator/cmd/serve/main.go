@@ -87,20 +87,21 @@ func main() {
 
 	// Initialize and start worker server in a goroutine
 	workerServer := worker.NewServer(worker.Config{
-		RedisAddr:             cfg.Redis.Address,
-		Concurrency:           cfg.Worker.Concurrency,
-		GiteaClient:           giteaClient,
-		NotifyClient:          notifyClient,
-		GiteaURL:              cfg.Gitea.URL,
-		GiteaToken:            cfg.Gitea.Token,
-		GitImage:              cfg.Docker.GitImage,
-		BotUsername:           cfg.Bot.Username,
-		BotEmail:              cfg.Bot.Email,
-		NetworkName:           cfg.Docker.NetworkName,
-		AnthropicProxyURL:     anthropicProxyURL,
-		BashProxyTokenManager: bashProxyTokenManager,
-		Repositories:          cfg.Repositories,
-		LogsVolumeName:        cfg.Docker.LogsVolumeName,
+		RedisAddr:                cfg.Redis.Address,
+		Concurrency:              cfg.Worker.Concurrency,
+		GiteaClient:              giteaClient,
+		NotifyClient:             notifyClient,
+		GiteaURL:                 cfg.Gitea.URL,
+		GiteaToken:               cfg.Gitea.Token,
+		GitImage:                 cfg.Docker.GitImage,
+		BotUsername:              cfg.Bot.Username,
+		BotEmail:                 cfg.Bot.Email,
+		NetworkName:              cfg.Docker.NetworkName,
+		AnthropicProxyURL:        anthropicProxyURL,
+		BashProxyTokenManager:    bashProxyTokenManager,
+		Repositories:             cfg.Repositories,
+		LogsVolumeName:           cfg.Docker.LogsVolumeName,
+		DefaultDevcontainerImage: cfg.Docker.DefaultDevcontainerImage,
 	})
 	workerServer.RegisterHandlers()
 

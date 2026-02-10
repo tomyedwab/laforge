@@ -53,9 +53,10 @@ type BotConfig struct {
 
 // DockerConfig contains Docker image configuration
 type DockerConfig struct {
-	GitImage       string `yaml:"git_image"`
-	NetworkName    string `yaml:"network_name"`
-	LogsVolumeName string `yaml:"logs_volume_name"`
+	GitImage              string `yaml:"git_image"`
+	NetworkName           string `yaml:"network_name"`
+	LogsVolumeName        string `yaml:"logs_volume_name"`
+	DefaultDevcontainerImage string `yaml:"default_devcontainer_image"`
 }
 
 // RepositoryConfig contains per-repository configuration
@@ -148,6 +149,19 @@ func Load(path string) (*Config, error) {
 		cfg.Anthropic.Port = "8081"
 	}
 
+	// Set default devcontainer image
+	if cfg.Docker.DefaultDevcontainerImage == "" {
+		cfg.Docker.DefaultDevcontainerImage = "python:3.11-slim"
+	}
+
+	// Apply default devcontainer image to all repositories that don't have one configured
+	for repoName, repoConfig := range cfg.Repositories {
+		if repoConfig.DevcontainerImage == "" {
+			repoConfig.DevcontainerImage = cfg.Docker.DefaultDevcontainerImage
+			cfg.Repositories[repoName] = repoConfig
+		}
+	}
+
 	// Validate required fields
 	if err := cfg.Validate(); err != nil {
 		return nil, err
@@ -207,10 +221,13 @@ func (c *Config) IsValidPromptType(promptType string) bool {
 }
 
 // GetRepositoryConfig returns the repository configuration for a given repository
-// Returns an empty config if the repository is not found
+// Returns a config with the default devcontainer image if the repository is not found
 func (c *Config) GetRepositoryConfig(repository string) RepositoryConfig {
 	if config, ok := c.Repositories[repository]; ok {
 		return config
 	}
-	return RepositoryConfig{}
+	// Return config with default devcontainer image
+	return RepositoryConfig{
+		DevcontainerImage: c.Docker.DefaultDevcontainerImage,
+	}
 }
