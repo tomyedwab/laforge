@@ -28,21 +28,4 @@ COPY claudecode/settings.local.json /config/
 ADD AGENTS.md /config/CLAUDE.md
 COPY prompts/* /config/prompts/
 
-# Set up firewall script
-COPY claudecode/init-firewall.sh /usr/local/bin/init-firewall.sh
-RUN chmod +x /usr/local/bin/init-firewall.sh
-
-# Create non-root user
-RUN useradd -m -u 1000 -s /bin/bash claudecode
-
-# Configure sudoers to allow only firewall initialization
-RUN echo "claudecode ALL=(root) NOPASSWD: /usr/local/bin/init-firewall.sh" > /etc/sudoers.d/claudecode-firewall && \
-    chmod 0440 /etc/sudoers.d/claudecode-firewall
-
-# Set ownership of workspace and config
-RUN mkdir -p /workspace && chown -R claudecode:claudecode /workspace
-
-# Switch to non-root user
-USER claudecode
-
 WORKDIR /workspace/repo

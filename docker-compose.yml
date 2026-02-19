@@ -41,7 +41,7 @@ services:
     user: "1000:1000"
     volumes:
       - ~/.laforge/ntfy-cache:/var/cache/ntfy
-      - ./config:/etc/ntfy
+      - ~/.laforge/ntfy-config:/etc/ntfy
     ports:
       - "3031:80"
     healthcheck:
@@ -86,8 +86,6 @@ services:
       - logs:/logs
     environment:
       - CONFIG_FILE=/etc/laforge/config.yaml
-    ports:
-      - "8080:8080"
     depends_on:
       - redis
       - gitea

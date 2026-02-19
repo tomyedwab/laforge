@@ -4,138 +4,142 @@
 
 # Server configuration
 server:
-  # Port for the HTTP server (default: "8080")
-  port: "8080"
+    # Port for the HTTP server (default: "8080")
+    port: "8080"
 
-  # Webhook secret for validating Gitea webhook signatures
-  # Leave empty to disable signature validation (not recommended for production)
-  webhook_secret: ""
+    # Webhook secret for validating Gitea webhook signatures
+    # Leave empty to disable signature validation (not recommended for production)
+    webhook_secret: ""
 
 # Redis configuration
 redis:
-  # Redis server address (required)
-  address: "redis:6379"
+    # Redis server address (required)
+    address: "redis:6379"
 
 # Gitea configuration
 gitea:
-  # Internal Gitea URL for API calls (required)
-  url: "http://gitea:3000"
+    # Internal Gitea URL for API calls (required)
+    url: "http://gitea:3000"
 
-  # External Gitea URL for user-facing links
-  # Defaults to 'url' if not set
-  external_url: ""
+    # External Gitea URL for user-facing links
+    # Defaults to 'url' if not set
+    external_url: ""
 
-  # Gitea API token for authentication (required for commit status updates)
-  # Generate this in Gitea under Settings > Applications > Generate New Token
-  token: ""
+    # Gitea API token for authentication (required for commit status updates)
+    # Generate this in Gitea under Settings > Applications > Generate New Token
+    token: ""
 
 # Worker configuration
 worker:
-  # Number of concurrent worker processes (default: 5)
-  concurrency: 5
+    # Number of concurrent worker processes (default: 5)
+    concurrency: 5
 
 # Bot user configuration
 bot:
-  # Username for the bot account in Gitea (default: "laforge")
-  # This is used to prevent the bot from triggering itself
-  username: "laforge"
+    # Username for the bot account in Gitea (default: "laforge")
+    # This is used to prevent the bot from triggering itself
+    username: "laforge"
 
-  # Email address for git commits made by the bot
-  email: "laforge@example.com"
+    # Email address for git commits made by the bot
+    email: "laforge@example.com"
 
 # Docker configuration
 docker:
-  # Docker image for git operations (default: "alpine/git:latest")
-  git_image: "alpine/git:latest"
+    # Docker image for git operations (default: "alpine/git:latest")
+    git_image: "alpine/git:latest"
 
-  # Docker network name for agent containers (default: "laforge_gitea")
-  # Agent containers will join this network to communicate with orchestrator
-  network_name: "laforge_gitea"
+    # Docker network name for agent containers (default: "laforge_gitea")
+    # Agent containers will join this network to communicate with orchestrator
+    network_name: "laforge_gitea"
 
-  # Docker volume for job logs (default: "laforge_logs")
-  # Agent containers write their logs into this volume and the logs viewer image
-  # reads them
-  logs_volume_name: "laforge_logs"
+    # Docker volume for job logs (default: "laforge_logs")
+    # Agent containers write their logs into this volume and the logs viewer image
+    # reads them
+    logs_volume_name: "laforge_logs"
 
-  # Default devcontainer image for repositories (default: "python:3.11-slim")
-  # This image is used when a repository doesn't have a specific devcontainer
-  # image configured. All repositories require a devcontainer for running bash
-  # commands and providing status updates.
-  default_devcontainer_image: "python:3.11-slim"
+    # Default devcontainer image for repositories (default: "python:3.11-slim")
+    # This image is used when a repository doesn't have a specific devcontainer
+    # image configured. All repositories require a devcontainer for running bash
+    # commands and providing status updates.
+    default_devcontainer_image: "python:3.11-slim"
 
 # Anthropic API proxy configuration
 anthropic:
-  # Anthropic API key for authenticating requests to Claude API
-  # Use EITHER api_key OR oauth_token, not both
-  # Generate an API key at https://console.anthropic.com/settings/keys
-  api_key: ""
+    # The URL of the Anthropic API. Defaults to https://api.anthropic.com, but
+    # can be redirected to a compatible API server.
+    base_url: ""
 
-  # Anthropic OAuth token for authenticating requests to Claude API
-  # Use EITHER api_key OR oauth_token, not both
-  # If both are set, oauth_token takes precedence
-  # When using api_key, any incoming Authorization header will be stripped
-  oauth_token: ""
+    # Anthropic API key for authenticating requests to Claude API
+    # Use EITHER api_key OR oauth_token, not both
+    # Generate an API key at https://console.anthropic.com/settings/keys
+    api_key: ""
 
-  # Port for the Anthropic proxy server (default: "8081")
-  # This port is separate from the webhook handler and only accessible
-  # within the Docker network
-  port: "8081"
+    # Anthropic OAuth token for authenticating requests to Claude API
+    # Use EITHER api_key OR oauth_token, not both
+    # If both are set, oauth_token takes precedence
+    # When using api_key, any incoming Authorization header will be stripped
+    oauth_token: ""
+
+    # Port for the Anthropic proxy server (default: "8081")
+    # This port is separate from the webhook handler and only accessible
+    # within the Docker network
+    port: "8081"
 
 # Notification configuration
 notifications:
-  # NTFY endpoint for sending notifications (default: "http://ntfy:80")
-  ntfy_endpoint: "http://ntfy:80"
+    # NTFY endpoint for sending notifications (default: "http://ntfy:80")
+    ntfy_endpoint: "http://ntfy:80"
 
 # Model registry
 # Each model maps a short name to a full model ID and container image
 models:
-  # Claude Sonnet 4.5
-  sonnet:
-    model_id: "claude-sonnet-4-5-20250929"
-    image: "laforge/claudecode"
+    # Claude Sonnet 4.5
+    sonnet:
+        model_id: "claude-sonnet-4-5-20250929"
+        image: "laforge/claudecode"
 
-  # Claude Opus 4.5
-  opus:
-    model_id: "claude-opus-4-5-20251101"
-    image: "laforge/claudecode"
+    # Claude Opus 4.5
+    opus:
+        model_id: "claude-opus-4-5-20251101"
+        image: "laforge/claudecode"
 
-  # Claude Haiku 4.5
-  haiku:
-    model_id: "claude-haiku-4-5-20251001"
-    image: "laforge/claudecode"
+    # Claude Haiku 4.5
+    haiku:
+        model_id: "claude-haiku-4-5-20251001"
+        image: "laforge/claudecode"
 
-  # Example: GPT model via LMStudio
-  # Uncomment and customize if you have a working LMStudio setup
-  # gpt:
-  #   model_id: "your-lmstudio-model-id"
-  #   image: "laforge/lmstudio"
+    # Example: GPT model via LMStudio
+    # Uncomment and customize if you have a working LMStudio setup
+    # gpt:
+    #   model_id: "your-lmstudio-model-id"
+    #   image: "laforge/lmstudio"
 
 # Prompt configuration
 prompts:
-  # Default prompt type when none is specified (default: "implement")
-  default_type: "implement"
+    # Default prompt type when none is specified (default: "implement")
+    default_type: "implement"
 
-  # Default model when none is specified (default: "sonnet")
-  # Must be a key from the models section above
-  default_model: "sonnet"
+    # Default model when none is specified (default: "sonnet")
+    # Must be a key from the models section above
+    default_model: "sonnet"
 
-  # Valid prompt types that can be used in slash commands
-  # Format: /<prompt_type> <model>
-  # Example: /plan sonnet, /critique opus, /implement haiku
-  valid_types:
-    - implement
-    - plan
-    - critique
+    # Valid prompt types that can be used in slash commands
+    # Format: /<prompt_type> <model>
+    # Example: /plan sonnet, /critique opus, /implement haiku
+    valid_types:
+        - implement
+        - plan
+        - critique
 
 # Repository-specific configuration
 # Configure devcontainer images for each repository
 repositories:
-  # Example: "owner/repo": configuration
-  # "myorg/myrepo":
-  #   devcontainer_image: "myorg/myrepo-devcontainer:latest"
+    # Example: "owner/repo": configuration
+    # "myorg/myrepo":
+    #   devcontainer_image: "myorg/myrepo-devcontainer:latest"
 
-  # The agent's Bash commands will be executed in a devcontainer. If a
-  # repository-specific devcontainer_image is not configured, the default
-  # devcontainer image (from docker.default_devcontainer_image) will be used.
-  # This allows each repository to have its own development environment with
-  # specific tools and dependencies, or use the default Python environment.
+    # The agent's Bash commands will be executed in a devcontainer. If a
+    # repository-specific devcontainer_image is not configured, the default
+    # devcontainer image (from docker.default_devcontainer_image) will be used.
+    # This allows each repository to have its own development environment with
+    # specific tools and dependencies, or use the default Python environment.

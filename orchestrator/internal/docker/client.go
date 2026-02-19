@@ -858,7 +858,7 @@ func (c *Client) ExecDevcontainerCommand(ctx context.Context, containerID, comma
 	// This error occurs because the agent container's bash wrapper script
 	// doesn't exist in the devcontainer
 	stderrStr := stderr.String()
-	re := regexp.MustCompile(`bash: line \d+: /home/claudecode/\.claude/shell-snapshots/snapshot-bash-[^/]+\.sh: No such file or directory\n?`)
+	re := regexp.MustCompile(`bash: line \d+: /root/\.claude/shell-snapshots/snapshot-bash-[^/]+\.sh: No such file or directory\n?`)
 	stderrStr = re.ReplaceAllString(stderrStr, "")
 
 	slog.Info("devcontainer command completed", "exit_code", exitCode)

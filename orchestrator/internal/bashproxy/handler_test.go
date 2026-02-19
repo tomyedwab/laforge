@@ -31,13 +31,13 @@ func TestExtractUpdateStatusMessage(t *testing.T) {
 		},
 		{
 			name:    "actual Claude Code command with eval - no apostrophe",
-			command: `source /home/claudecode/.claude/shell-snapshots/snapshot-bash-1770707090061-rmx6cc.sh && { shopt -u extglob || setopt NO_EXTENDED_GLOB; } >/dev/null 2>&1 || true && eval "update_status '{\"message\": \"Bug found and fixed\"}'" \< /dev/null && pwd -P >| /tmp/claude-42be-cwd`,
+			command: `source /root/.claude/shell-snapshots/snapshot-bash-1770707090061-rmx6cc.sh && { shopt -u extglob || setopt NO_EXTENDED_GLOB; } >/dev/null 2>&1 || true && eval "update_status '{\"message\": \"Bug found and fixed\"}'" \< /dev/null && pwd -P >| /tmp/claude-42be-cwd`,
 			want:    "Bug found and fixed",
 			wantErr: false,
 		},
 		{
 			name:    "actual Claude Code command with apostrophe in message",
-			command: `source /home/claudecode/.claude/shell-snapshots/snapshot-bash-1770707090061-rmx6cc.sh && { shopt -u extglob || setopt NO_EXTENDED_GLOB; } >/dev/null 2>&1 || true && eval "update_status '{\"message\": \"Come out to the coast, we'll get together, have a few laughs...\"}'" \< /dev/null && pwd -P >| /tmp/claude-42be-cwd`,
+			command: `source /root/.claude/shell-snapshots/snapshot-bash-1770707090061-rmx6cc.sh && { shopt -u extglob || setopt NO_EXTENDED_GLOB; } >/dev/null 2>&1 || true && eval "update_status '{\"message\": \"Come out to the coast, we'll get together, have a few laughs...\"}'" \< /dev/null && pwd -P >| /tmp/claude-42be-cwd`,
 			want:    "Come out to the coast, we'll get together, have a few laughs...",
 			wantErr: false,
 		},

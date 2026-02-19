@@ -128,7 +128,7 @@ func main() {
 		proxyRouter.Use(middleware.Logger)
 		proxyRouter.Use(middleware.Recoverer)
 
-		anthropicProxy := proxy.NewAnthropicProxy(cfg.Anthropic.APIKey, cfg.Anthropic.OAuthToken)
+		anthropicProxy := proxy.NewAnthropicProxy(cfg.Anthropic.BaseUrl, cfg.Anthropic.APIKey, cfg.Anthropic.OAuthToken)
 		proxyRouter.Post("/v1/messages", anthropicProxy.ServeHTTP)
 		proxyRouter.Post("/v1/messages/count_tokens", anthropicProxy.ServeHTTP)
 

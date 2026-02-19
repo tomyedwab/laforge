@@ -2,10 +2,6 @@
 
 set -euo pipefail
 
-# Initialize firewall before running Claude Code
-echo "Initializing firewall..."
-sudo /usr/local/bin/init-firewall.sh
-
 echo "Invoking Claude Code: ${ANTHROPIC_BASE_URL}"
 
 mkdir -p .claude

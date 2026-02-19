@@ -7,19 +7,19 @@ import (
 	"net/url"
 )
 
-const anthropicAPIBase = "https://api.anthropic.com"
-
 // AnthropicProxy handles proxying requests to Anthropic API
 type AnthropicProxy struct {
+	baseUrl    string
 	apiKey     string
 	oauthToken string
 	proxy      *httputil.ReverseProxy
 }
 
 // NewAnthropicProxy creates a new Anthropic API proxy
-// Accepts either apiKey or oauthToken (preferring oauthToken if both are provided)
-func NewAnthropicProxy(apiKey, oauthToken string) *AnthropicProxy {
-	target, err := url.Parse(anthropicAPIBase)
+// Accepts a base URL and either apiKey or oauthToken (preferring oauthToken if
+// both are provided)
+func NewAnthropicProxy(baseUrl, apiKey, oauthToken string) *AnthropicProxy {
+	target, err := url.Parse(baseUrl)
 	if err != nil {
 		// This should never happen with a constant URL, but handle it defensively
 		panic("failed to parse Anthropic API base URL: " + err.Error())

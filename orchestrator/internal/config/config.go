@@ -74,6 +74,7 @@ type NotificationsConfig struct {
 
 // AnthropicConfig contains Anthropic API proxy configuration
 type AnthropicConfig struct {
+	BaseUrl    string `yaml:"base_url"`
 	APIKey     string `yaml:"api_key"`
 	OAuthToken string `yaml:"oauth_token"`
 	Port       string `yaml:"port"`
@@ -144,6 +145,10 @@ func Load(path string) (*Config, error) {
 		cfg.Gitea.ExternalURL = cfg.Gitea.URL
 	}
 
+	// Set default for Anthropic API url
+	if cfg.Anthropic.BaseUrl == "" {
+		cfg.Anthropic.BaseUrl = "https://api.anthropic.com"
+	}
 	// Set default for Anthropic proxy port
 	if cfg.Anthropic.Port == "" {
 		cfg.Anthropic.Port = "8081"
