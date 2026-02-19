@@ -82,8 +82,8 @@ func main() {
 		anthropicProxyURL = "http://orchestrator:" + cfg.Anthropic.Port
 	}
 
-	// Initialize bash proxy token manager (30 minute timeout for tokens)
-	bashProxyTokenManager := bashproxy.NewTokenManager(30 * time.Minute)
+	// Initialize bash proxy token manager (300 minute timeout for tokens)
+	bashProxyTokenManager := bashproxy.NewTokenManager(300 * time.Minute)
 
 	// Initialize and start worker server in a goroutine
 	workerServer := worker.NewServer(worker.Config{
